@@ -31,6 +31,11 @@ type Sidebar struct {
 	listView  *gtk.ListView
 	treeModel *gtk.TreeListModel
 
+	// context menu (native GMenu/GtkPopoverMenu + GSimpleActions)
+	actions  *gio.SimpleActionGroup
+	menuPop  *gtk.PopoverMenu
+	menuNode string // node id the currently-open context menu targets
+
 	// expandedByDefault records album node-ids the user has expanded, so the
 	// tree stays open across Reload (e.g. after moving a folder into an album).
 	expanded map[string]bool
@@ -103,8 +108,9 @@ func newSidebar(a *App) *Sidebar {
 	s.listView = gtk.NewListView(s.selection, &factory.ListItemFactory)
 	s.selection.ConnectSelectionChanged(func(uint, uint) { s.onSelectionChanged() })
 
-	// Right-click anywhere in the list opens a context menu for the row under
-	// the pointer.
+	// Native right-click menu: an action group backs a reusable GtkPopoverMenu
+	// that is re-modelled per row. This themes correctly (unlike hand-built
+	// button popovers).
 	s.installContextMenu()
 	s.installDragDrop()
 
@@ -118,6 +124,10 @@ func newSidebar(a *App) *Sidebar {
 	scroll := gtk.NewScrolledWindow()
 	scroll.SetVExpand(true)
 	scroll.SetChild(s.listView)
+
+	// The reusable popover is parented to the list view so it participates in
+	// the normal widget/style hierarchy.
+	s.menuPop.SetParent(s.listView)
 
 	s.box = gtk.NewBox(gtk.OrientationVertical, 0)
 	s.box.Append(newAlbumBtn)

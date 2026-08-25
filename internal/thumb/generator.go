@@ -19,8 +19,10 @@ import (
 	"git.hemmalab.se/scuttle/pichouse/internal/db"
 )
 
-// DefaultSize is the default maximum thumbnail dimension in pixels.
-const DefaultSize = 256
+// DefaultSize is the default maximum thumbnail dimension in pixels. It is at
+// least as large as the biggest grid display preset so thumbnails stay crisp at
+// every zoom level without regeneration.
+const DefaultSize = 320
 
 // Generator produces thumbnails and caches them in the thumbs database.
 type Generator struct {
