@@ -6,6 +6,8 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+
+	"git.hemmalab.se/scuttle/pichouse/internal/db"
 )
 
 // ShowSettings opens the settings window. It currently manages Library folders;
@@ -20,6 +22,8 @@ func (a *App) ShowSettings() {
 	stack := gtk.NewStack()
 	stack.SetVExpand(true)
 	stack.AddTitled(a.buildFolderSettings(win), "folders", "Library Folders")
+	stack.AddTitled(a.buildThumbSettings(win), "thumbs", "Thumbnails")
+	stack.AddTitled(a.buildStorageSettings(win), "storage", "Data Location")
 
 	switcher := gtk.NewStackSidebar()
 	switcher.SetStack(stack)
@@ -128,5 +132,137 @@ func (a *App) buildFolderSettings(parent *gtk.Window) gtk.Widgetter {
 	box.Append(help)
 	box.Append(buttons)
 	box.Append(scroll)
+	return box
+}
+
+// buildThumbSettings builds the Thumbnails preferences pane: the four preset
+// resolutions, regenerate-on-move, save-all-sizes, and a clear-cache button.
+func (a *App) buildThumbSettings(parent *gtk.Window) gtk.Widgetter {
+	box := gtk.NewBox(gtk.OrientationVertical, 8)
+	box.SetMarginTop(12)
+	box.SetMarginBottom(12)
+	box.SetMarginStart(12)
+	box.SetMarginEnd(12)
+
+	intro := gtk.NewLabel("Thumbnail sizes for the four slider positions (longest side, pixels).")
+	intro.SetXAlign(0)
+	intro.SetWrap(true)
+	box.Append(intro)
+
+	labels := []string{"Smallest", "Small", "Large", "Largest"}
+	spins := make([]*gtk.SpinButton, 4)
+	for i := 0; i < 4; i++ {
+		row := gtk.NewBox(gtk.OrientationHorizontal, 8)
+		name := gtk.NewLabel(labels[i])
+		name.SetXAlign(0)
+		name.SetSizeRequest(90, -1)
+		spin := gtk.NewSpinButtonWithRange(32, 2048, 16)
+		spin.SetValue(float64(a.prefs.sizes[i]))
+		spins[i] = spin
+		row.Append(name)
+		row.Append(spin)
+		box.Append(row)
+	}
+
+	apply := gtk.NewButtonWithLabel("Apply Sizes")
+	apply.ConnectClicked(func() {
+		for i := 0; i < 4; i++ {
+			a.prefs.sizes[i] = int(spins[i].Value())
+		}
+		a.lib.SetSetting(keyThumbSizes, formatSizes(a.prefs.sizes))
+		a.applyThumbPrefs()
+		a.grid.SetThumbSize(a.prefs.sizes[a.prefs.active])
+	})
+	box.Append(apply)
+
+	box.Append(gtk.NewSeparator(gtk.OrientationHorizontal))
+
+	regen := gtk.NewCheckButtonWithLabel("Regenerate thumbnails when moving the slider")
+	regen.SetActive(a.prefs.regenOnMove)
+	regen.ConnectToggled(func() {
+		a.prefs.regenOnMove = regen.Active()
+		a.lib.SetSetting(keyRegenOnMove, boolToStr(regen.Active()))
+	})
+	box.Append(regen)
+
+	saveAll := gtk.NewCheckButtonWithLabel("Save all thumbnail sizes (faster switching, more storage)")
+	saveAll.SetActive(a.prefs.saveAllSizes)
+	saveAll.ConnectToggled(func() {
+		a.prefs.saveAllSizes = saveAll.Active()
+		a.lib.SetSetting(keySaveAllSizes, boolToStr(saveAll.Active()))
+		a.applyThumbPrefs()
+	})
+	box.Append(saveAll)
+
+	box.Append(gtk.NewSeparator(gtk.OrientationHorizontal))
+
+	clear := gtk.NewButtonWithLabel("Clear Thumbnail Cache")
+	clear.AddCSSClass("destructive-action")
+	clear.ConnectClicked(func() {
+		a.confirm("Clear thumbnail cache",
+			"Delete all cached thumbnails? They will be regenerated on demand.",
+			func() {
+				if err := a.gen.ClearAll(); err != nil {
+					a.showError(err)
+					return
+				}
+				a.thumbCache = newThumbCache(512)
+				a.grid.RefreshVisible()
+				a.showInfo("Thumbnails", "Thumbnail cache cleared.")
+			})
+	})
+	box.Append(clear)
+
+	return box
+}
+
+func boolToStr(b bool) string {
+	if b {
+		return "1"
+	}
+	return "0"
+}
+
+// buildStorageSettings lets the user choose where the database files are stored.
+// This is the only setting kept in the config file (~/.config/pichouse/config);
+// all other settings live in library.db. Changing it takes effect on restart.
+func (a *App) buildStorageSettings(parent *gtk.Window) gtk.Widgetter {
+	box := gtk.NewBox(gtk.OrientationVertical, 8)
+	box.SetMarginTop(12)
+	box.SetMarginBottom(12)
+	box.SetMarginStart(12)
+	box.SetMarginEnd(12)
+
+	intro := gtk.NewLabel("Location of the pichouse database files. Changing this takes effect after restarting the application.")
+	intro.SetXAlign(0)
+	intro.SetWrap(true)
+	box.Append(intro)
+
+	current, _ := db.DataDir()
+	pathLabel := gtk.NewLabel(current)
+	pathLabel.SetXAlign(0)
+	pathLabel.SetSelectable(true)
+	pathLabel.SetWrap(true)
+	box.Append(pathLabel)
+
+	choose := gtk.NewButtonWithLabel("Choose Folder…")
+	choose.ConnectClicked(func() {
+		dialog := gtk.NewFileDialog()
+		dialog.SetTitle("Choose Data Folder")
+		dialog.SelectFolder(context.Background(), parent, func(res gio.AsyncResulter) {
+			file, err := dialog.SelectFolderFinish(res)
+			if err != nil || file == nil {
+				return
+			}
+			if err := db.WriteConfiguredDataDir(file.Path()); err != nil {
+				a.showError(err)
+				return
+			}
+			pathLabel.SetText(file.Path())
+			a.showInfo("Data Location", "Data location updated. Restart pichouse for it to take effect.")
+		})
+	})
+	box.Append(choose)
+
 	return box
 }

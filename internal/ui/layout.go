@@ -13,6 +13,7 @@ func (a *App) build() {
 	a.grid = newGrid(a)
 	a.sidebar = newSidebar(a)
 	a.folderTree = newFolderTree(a)
+	a.viewer = newViewer(a)
 
 	toolbar := newToolbar(a)
 
@@ -30,10 +31,20 @@ func (a *App) build() {
 	leftBox.Append(stack)
 	leftBox.SetSizeRequest(300, -1)
 
-	// Center-left split: sidebar | grid.
+	// Center: a stack swaps between the thumbnail grid and the full-image
+	// viewer. Opening a photo replaces the grid; closing returns to it.
+	centerStack := gtk.NewStack()
+	centerStack.SetVExpand(true)
+	centerStack.SetHExpand(true)
+	centerStack.AddNamed(a.grid.Widget(), "grid")
+	centerStack.AddNamed(a.viewer.Widget(), "viewer")
+	centerStack.SetVisibleChildName("grid")
+	a.centerStack = centerStack
+
+	// Center-left split: sidebar | (grid/viewer).
 	leftPaned := gtk.NewPaned(gtk.OrientationHorizontal)
 	leftPaned.SetStartChild(leftBox)
-	leftPaned.SetEndChild(a.grid.Widget())
+	leftPaned.SetEndChild(centerStack)
 	leftPaned.SetResizeStartChild(false)
 	leftPaned.SetPosition(300)
 
@@ -43,6 +54,11 @@ func (a *App) build() {
 	mainPaned.SetEndChild(a.properties.Widget())
 	mainPaned.SetResizeEndChild(false)
 	mainPaned.SetVExpand(true)
+	a.propsPaned = mainPaned
+
+	if !a.prefs.propsVisible {
+		a.properties.SetVisible(false)
+	}
 
 	root := gtk.NewBox(gtk.OrientationVertical, 0)
 	root.Append(toolbar.Widget())

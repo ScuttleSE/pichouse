@@ -15,9 +15,6 @@ import (
 	"git.hemmalab.se/scuttle/pichouse/internal/scan"
 )
 
-// thumbGridSize is the default thumbnail edge in the grid, in pixels.
-const thumbGridSize = 160
-
 // thumbWorkers bounds how many thumbnails are generated concurrently. The
 // thumbnail cache is SQLite-backed; too many concurrent writers cause
 // "database is locked" errors, so keep this modest.
@@ -63,7 +60,7 @@ type thumbJob struct {
 }
 
 func newGrid(a *App) *Grid {
-	g := &Grid{app: a, thumbSize: thumbGridSize}
+	g := &Grid{app: a, thumbSize: a.prefs.sizes[a.prefs.active]}
 
 	g.header = gtk.NewLabel("")
 	g.header.SetXAlign(0)
@@ -103,7 +100,7 @@ func newGrid(a *App) *Grid {
 	g.gridView.SetMinColumns(1)
 	g.gridView.ConnectActivate(func(pos uint) {
 		if int(pos) < len(g.photos) {
-			g.app.selectPhoto(g.photos[pos])
+			g.app.OpenViewer(g.photos, int(pos))
 		}
 	})
 	g.selection.ConnectSelectionChanged(func(uint, uint) {
@@ -128,9 +125,11 @@ func newGrid(a *App) *Grid {
 // Widget returns the grid root widget.
 func (g *Grid) Widget() gtk.Widgetter { return g.box }
 
-// SetThumbSize updates the thumbnail edge length and rebuilds the grid.
+// SetThumbSize updates the thumbnail edge length and rebuilds the grid. The
+// generator's active size is aligned so each size uses its own cache database.
 func (g *Grid) SetThumbSize(px int) {
 	g.thumbSize = px
+	g.app.gen.SetSize(px)
 	g.reload()
 }
 
@@ -253,6 +252,9 @@ func (g *Grid) bindCell(parts thumbCellParts, p model.Photo) {
 	if key == "" {
 		key = p.Path
 	}
+	// Include the active size and orientation so a slider change or a rotation
+	// does not serve a stale in-memory blob.
+	key = key + "|" + itoa(g.thumbSize) + "|" + itoa(p.Orientation)
 	parts.picture.SetName(key)
 	gen := g.generation
 
@@ -282,7 +284,7 @@ func (g *Grid) thumbWorker() {
 		if job.gen != g.generation {
 			continue
 		}
-		blob, err := g.app.gen.Get(job.photo.Hash, job.photo.Path)
+		blob, err := g.app.gen.Get(job.photo.Hash, job.photo.Path, job.photo.Orientation)
 		if err != nil {
 			if debugThumbs {
 				log.Printf("[thumb] generate FAILED %s (hash=%q): %v", job.photo.Path, job.photo.Hash, err)

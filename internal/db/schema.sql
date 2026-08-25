@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS photos (
     width       INTEGER NOT NULL DEFAULT 0,
     height      INTEGER NOT NULL DEFAULT 0,
     hash        TEXT NOT NULL DEFAULT '',
-    thumb_ready INTEGER NOT NULL DEFAULT 0
+    thumb_ready INTEGER NOT NULL DEFAULT 0,
+    orientation INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_photos_folder ON photos(folder_id);
@@ -55,3 +56,10 @@ CREATE TABLE IF NOT EXISTS album_folders (
 );
 
 CREATE INDEX IF NOT EXISTS idx_album_folders_folder ON album_folders(folder_id);
+
+-- Application settings as key/value pairs. All preferences other than the data
+-- directory location live here.
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);

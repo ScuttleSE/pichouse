@@ -8,8 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"git.hemmalab.se/scuttle/pichouse/internal/db"
 )
 
 func writeJPEG(t *testing.T, path string, w, h int) {
@@ -32,17 +30,16 @@ func writeJPEG(t *testing.T, path string, w, h int) {
 
 func TestGeneratorResizesAndCaches(t *testing.T) {
 	dir := t.TempDir()
+	// Redirect the data directory (where per-size thumb DBs live) to a temp dir.
+	t.Setenv("XDG_DATA_HOME", filepath.Join(dir, "data"))
+
 	src := filepath.Join(dir, "big.jpg")
 	writeJPEG(t, src, 800, 400)
 
-	th, err := db.OpenThumbsAt(filepath.Join(dir, "thumbs.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer th.Close()
+	g := New(100)
+	defer g.Close()
 
-	g := New(th, 100)
-	blob, err := g.Get("hash1", src)
+	blob, err := g.Get("hash1", src, 0)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -58,7 +55,7 @@ func TestGeneratorResizesAndCaches(t *testing.T) {
 	if err := os.Remove(src); err != nil {
 		t.Fatal(err)
 	}
-	blob2, err := g.Get("hash1", src)
+	blob2, err := g.Get("hash1", src, 0)
 	if err != nil {
 		t.Fatalf("cached get: %v", err)
 	}
@@ -67,35 +64,49 @@ func TestGeneratorResizesAndCaches(t *testing.T) {
 	}
 }
 
-func TestPool(t *testing.T) {
+func TestGeneratorRotation(t *testing.T) {
 	dir := t.TempDir()
-	th, err := db.OpenThumbsAt(filepath.Join(dir, "thumbs.db"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(dir, "data"))
+
+	src := filepath.Join(dir, "wide.jpg")
+	writeJPEG(t, src, 800, 400)
+
+	g := New(100)
+	defer g.Close()
+
+	// A 90° rotation swaps orientation: a wide image becomes tall.
+	blob, err := g.Get("hashrot", src, 90)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("get: %v", err)
 	}
-	defer th.Close()
-	g := New(th, 64)
-
-	jobs := make(chan Job)
-	results := g.Pool(3, jobs)
-
-	go func() {
-		for i := 0; i < 5; i++ {
-			p := filepath.Join(dir, image.Pt(i, 0).String()+".jpg")
-			writeJPEG(t, p, 128, 128)
-			jobs <- Job{Hash: p, Path: p}
-		}
-		close(jobs)
-	}()
-
-	count := 0
-	for r := range results {
-		if r.Err != nil {
-			t.Errorf("job %s: %v", r.Job.Path, r.Err)
-		}
-		count++
+	cfg, err := jpeg.DecodeConfig(bytes.NewReader(blob))
+	if err != nil {
+		t.Fatalf("decode thumb: %v", err)
 	}
-	if count != 5 {
-		t.Fatalf("want 5 results, got %d", count)
+	if cfg.Height <= cfg.Width {
+		t.Fatalf("want a tall thumbnail after 90° rotation, got %dx%d", cfg.Width, cfg.Height)
+	}
+}
+
+func TestGeneratorSaveAllSizes(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", filepath.Join(dir, "data"))
+
+	src := filepath.Join(dir, "big.jpg")
+	writeJPEG(t, src, 800, 400)
+
+	g := New(160)
+	g.SetAllSizes([]int{96, 160, 240})
+	defer g.Close()
+
+	if _, err := g.Get("hashall", src, 0); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	// All three per-size databases should now exist.
+	for _, sz := range []int{96, 160, 240} {
+		g.SetSize(sz)
+		if _, err := g.Get("hashall", src, 0); err != nil {
+			t.Fatalf("get size %d: %v", sz, err)
+		}
 	}
 }

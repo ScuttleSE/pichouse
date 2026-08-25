@@ -13,6 +13,12 @@ Do not speculate in a loop. Do not run in circles.
 
 ---
 
+## RULE ONE — ALWAYS COMMIT AND PUSH
+
+After completing any change, commit and push all changes. Do not leave work uncommitted. Pushing triggers CI.
+
+---
+
 ## Project
 
 **pichouse** — a Picasa-like photo library GUI application for Linux, written in Go.

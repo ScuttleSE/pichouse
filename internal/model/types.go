@@ -33,6 +33,9 @@ type Photo struct {
 	Height     int
 	Hash       string // content hash, used as thumbnail key
 	ThumbReady bool
+	// Orientation is the user-applied rotation in degrees clockwise (0, 90,
+	// 180, 270). It is stored only in the database, never written to disk.
+	Orientation int
 }
 
 // Album is a virtual organisation of folders. Albums do not affect files on

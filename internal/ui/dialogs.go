@@ -11,6 +11,18 @@ func (a *App) selectPhoto(p model.Photo) {
 	a.properties.Show(p)
 }
 
+// OpenViewer opens the full-image viewer over the given photo set, replacing
+// the thumbnail grid.
+func (a *App) OpenViewer(photos []model.Photo, index int) {
+	a.viewer.Open(photos, index)
+	a.centerStack.SetVisibleChildName("viewer")
+}
+
+// CloseViewer returns from the full-image viewer to the thumbnail grid.
+func (a *App) CloseViewer() {
+	a.centerStack.SetVisibleChildName("grid")
+}
+
 // showError displays an error in a modal dialog.
 func (a *App) showError(err error) {
 	a.showMessage(gtk.MessageError, "Error", err.Error())

@@ -56,6 +56,6 @@ func cellParts(box *gtk.Box) (thumbCellParts, bool) {
 	return p, true
 }
 
-func (p thumbCellParts) setCaption(s string)              { p.caption.SetText(s) }
-func (p thumbCellParts) setPixbuf(pb *gdkpixbuf.Pixbuf)   { p.picture.SetPixbuf(pb) }
-func (p thumbCellParts) setPlaceholder()                  { p.picture.SetPaintable(nil) }
+func (p thumbCellParts) setCaption(s string)            { p.caption.SetText(s) }
+func (p thumbCellParts) setPixbuf(pb *gdkpixbuf.Pixbuf) { p.picture.SetPixbuf(pb) }
+func (p thumbCellParts) setPlaceholder()                { p.picture.SetPaintable(nil) }

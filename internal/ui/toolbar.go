@@ -4,14 +4,12 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
 
-// thumbPresets are the snap positions (in px) for the thumbnail-size slider.
-var thumbPresets = []int{96, 160, 240, 320}
-
-// Toolbar is the top toolbar: settings, rescan, search, and a thumbnail-size
-// slider with preset snap positions.
+// Toolbar is the top toolbar: settings, rescan, search, a thumbnail-size slider
+// with preset snap positions, and a button to toggle the properties panel.
 type Toolbar struct {
-	app *App
-	box *gtk.Box
+	app    *App
+	box    *gtk.Box
+	slider *gtk.Scale
 }
 
 func newToolbar(a *App) *Toolbar {
@@ -31,13 +29,16 @@ func newToolbar(a *App) *Toolbar {
 		a.grid.SetFilter(search.Text())
 	})
 
-	// Slider snaps to preset indices; value maps into thumbPresets.
-	slider := gtk.NewScaleWithRange(gtk.OrientationHorizontal, 0, float64(len(thumbPresets)-1), 1)
+	zoom := gtk.NewImageFromIconName("zoom-in-symbolic")
+
+	presets := a.prefs.sizes
+	// Slider snaps to preset indices; value maps into the preset sizes.
+	slider := gtk.NewScaleWithRange(gtk.OrientationHorizontal, 0, float64(len(presets)-1), 1)
 	slider.SetDrawValue(false)
 	slider.SetDigits(0)
 	slider.SetSizeRequest(160, -1)
-	slider.SetValue(float64(presetIndex(thumbGridSize)))
-	for i := range thumbPresets {
+	slider.SetValue(float64(a.prefs.active))
+	for i := range presets {
 		slider.AddMark(float64(i), gtk.PosBottom, "")
 	}
 	slider.ConnectValueChanged(func() {
@@ -45,13 +46,20 @@ func newToolbar(a *App) *Toolbar {
 		if i < 0 {
 			i = 0
 		}
-		if i >= len(thumbPresets) {
-			i = len(thumbPresets) - 1
+		if i >= len(a.prefs.sizes) {
+			i = len(a.prefs.sizes) - 1
 		}
-		a.grid.SetThumbSize(thumbPresets[i])
+		a.prefs.active = i
+		a.lib.SetSetting(keyThumbActive, itoa(i))
+		a.grid.SetThumbSize(a.prefs.sizes[i])
 	})
+	t.slider = slider
 
-	zoom := gtk.NewImageFromIconName("zoom-in-symbolic")
+	// Toggle the properties panel. Placed next to the slider per the design
+	// ("an icon just under the size-slider").
+	propsToggle := gtk.NewButtonFromIconName("sidebar-show-right-symbolic")
+	propsToggle.SetTooltipText("Toggle info panel")
+	propsToggle.ConnectClicked(func() { a.ToggleProperties() })
 
 	box := gtk.NewBox(gtk.OrientationHorizontal, 6)
 	box.SetMarginTop(6)
@@ -63,6 +71,7 @@ func newToolbar(a *App) *Toolbar {
 	box.Append(search)
 	box.Append(zoom)
 	box.Append(slider)
+	box.Append(propsToggle)
 
 	t.box = box
 	return t
@@ -70,18 +79,3 @@ func newToolbar(a *App) *Toolbar {
 
 // Widget returns the toolbar's root widget.
 func (t *Toolbar) Widget() gtk.Widgetter { return t.box }
-
-// presetIndex returns the index of the closest preset to px.
-func presetIndex(px int) int {
-	best, bestDiff := 0, 1<<30
-	for i, p := range thumbPresets {
-		d := p - px
-		if d < 0 {
-			d = -d
-		}
-		if d < bestDiff {
-			best, bestDiff = i, d
-		}
-	}
-	return best
-}

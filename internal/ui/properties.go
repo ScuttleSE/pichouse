@@ -9,9 +9,11 @@ import (
 	"git.hemmalab.se/scuttle/pichouse/internal/model"
 )
 
-// Properties is the right-hand properties panel for the selected photo.
+// Properties is the right-hand properties panel for the selected photo. It is
+// a tabbed panel; the "Pic Info" tab shows file/EXIF details, and more tabs can
+// be added later.
 type Properties struct {
-	box      *gtk.Box
+	root     *gtk.Notebook
 	title    *gtk.Label
 	location *gtk.Label
 	size     *gtk.Label
@@ -32,14 +34,17 @@ func newProperties() *Properties {
 	box.SetMarginBottom(8)
 	box.SetMarginStart(8)
 	box.SetMarginEnd(8)
-	box.SetSizeRequest(240, -1)
 	box.Append(p.title)
 	box.Append(gtk.NewSeparator(gtk.OrientationHorizontal))
 	box.Append(field("Location", p.location))
 	box.Append(field("File Size", p.size))
 	box.Append(field("File Date", p.date))
 	box.Append(field("Dimensions", p.dims))
-	p.box = box
+
+	notebook := gtk.NewNotebook()
+	notebook.SetSizeRequest(240, -1)
+	notebook.AppendPage(box, gtk.NewLabel("Pic Info"))
+	p.root = notebook
 
 	p.Clear()
 	return p
@@ -69,7 +74,10 @@ func field(caption string, value *gtk.Label) *gtk.Box {
 }
 
 // Widget returns the properties panel root widget.
-func (p *Properties) Widget() gtk.Widgetter { return p.box }
+func (p *Properties) Widget() gtk.Widgetter { return p.root }
+
+// SetVisible shows or hides the panel.
+func (p *Properties) SetVisible(v bool) { p.root.SetVisible(v) }
 
 // Clear resets the panel to an empty state.
 func (p *Properties) Clear() {

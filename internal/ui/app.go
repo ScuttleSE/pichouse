@@ -21,15 +21,22 @@ type App struct {
 	gtkApp *gtk.Application
 	win    *gtk.ApplicationWindow
 
-	lib    *db.Library
-	thumbs *db.Thumbs
-	gen    *thumb.Generator
+	lib *db.Library
+	gen *thumb.Generator
+
+	prefs prefs
 
 	sidebar    *Sidebar
 	folderTree *FolderTree
 	grid       *Grid
 	properties *Properties
 	status     *StatusBar
+
+	// propsPaned is the outer paned holding the properties panel; used to
+	// show/hide it.
+	propsPaned  *gtk.Paned
+	centerStack *gtk.Stack
+	viewer      *Viewer
 
 	thumbCache *thumbCache
 	scan       scanController
@@ -42,25 +49,44 @@ func Run() {
 	if err != nil {
 		log.Fatalf("open library database: %v", err)
 	}
-	thumbs, err := db.OpenThumbs()
-	if err != nil {
-		log.Fatalf("open thumbnail database: %v", err)
-	}
 
 	a := &App{
 		lib:        lib,
-		thumbs:     thumbs,
-		gen:        thumb.New(thumbs, thumb.DefaultSize),
+		gen:        thumb.New(0),
 		thumbCache: newThumbCache(512),
 	}
+	a.prefs = loadPrefs(lib)
+	a.applyThumbPrefs()
 
 	a.gtkApp = gtk.NewApplication(appID, gio.ApplicationFlagsNone)
 	a.gtkApp.ConnectActivate(func() { a.activate() })
 
 	code := a.gtkApp.Run(os.Args)
+	a.gen.Close()
 	lib.Close()
-	thumbs.Close()
 	os.Exit(code)
+}
+
+// applyThumbPrefs pushes the current preferences into the generator.
+func (a *App) applyThumbPrefs() {
+	a.gen.SetSize(a.prefs.sizes[a.prefs.active])
+	if a.prefs.saveAllSizes {
+		a.gen.SetAllSizes(a.prefs.sizes)
+	} else {
+		a.gen.SetAllSizes(nil)
+	}
+}
+
+// ToggleProperties shows or hides the right-hand properties panel and persists
+// the choice.
+func (a *App) ToggleProperties() {
+	a.prefs.propsVisible = !a.prefs.propsVisible
+	a.properties.SetVisible(a.prefs.propsVisible)
+	v := "0"
+	if a.prefs.propsVisible {
+		v = "1"
+	}
+	a.lib.SetSetting(keyPropsVisible, v)
 }
 
 // activate builds the window and widgets. Called on the GTK main thread when

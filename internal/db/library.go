@@ -23,26 +23,6 @@ type Library struct {
 	db *sql.DB
 }
 
-// DataDir returns the pichouse data directory (~/.local/share/pichouse),
-// creating it if necessary. It honors XDG_DATA_HOME when set.
-func DataDir() (string, error) {
-	var base string
-	if dir, ok := os.LookupEnv("XDG_DATA_HOME"); ok && dir != "" {
-		base = dir
-	} else {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		base = filepath.Join(home, ".local", "share")
-	}
-	dir := filepath.Join(base, "pichouse")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
-	}
-	return dir, nil
-}
-
 // OpenLibrary opens (and migrates) library.db in the pichouse data directory.
 func OpenLibrary() (*Library, error) {
 	dir, err := DataDir()
@@ -66,7 +46,45 @@ func OpenLibraryAt(path string) (*Library, error) {
 		sqldb.Close()
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
+	if err := migrate(sqldb); err != nil {
+		sqldb.Close()
+		return nil, fmt.Errorf("migrate: %w", err)
+	}
 	return &Library{db: sqldb}, nil
+}
+
+// migrate applies additive schema changes to pre-existing databases where
+// CREATE TABLE IF NOT EXISTS cannot add new columns.
+func migrate(sqldb *sql.DB) error {
+	if !hasColumn(sqldb, "photos", "orientation") {
+		if _, err := sqldb.Exec(
+			`ALTER TABLE photos ADD COLUMN orientation INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// hasColumn reports whether a table already has the named column.
+func hasColumn(sqldb *sql.DB, table, column string) bool {
+	rows, err := sqldb.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return false
+		}
+		if name == column {
+			return true
+		}
+	}
+	return false
 }
 
 // Close closes the underlying database.
@@ -198,8 +216,8 @@ func (l *Library) UpsertPhoto(p model.Photo) (int64, error) {
 		thumb = 1
 	}
 	_, err := l.db.Exec(
-		`INSERT INTO photos(folder_id, path, filename, size, mod_time, taken_at, width, height, hash, thumb_ready)
-		 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO photos(folder_id, path, filename, size, mod_time, taken_at, width, height, hash, thumb_ready, orientation)
+		 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
 		 ON CONFLICT(path) DO UPDATE SET
 		   folder_id=excluded.folder_id, filename=excluded.filename, size=excluded.size,
 		   mod_time=excluded.mod_time, taken_at=excluded.taken_at, width=excluded.width,
@@ -218,7 +236,7 @@ func (l *Library) UpsertPhoto(p model.Photo) (int64, error) {
 // PhotosInFolder returns all photos for a folder ordered by taken date then name.
 func (l *Library) PhotosInFolder(folderID int64) ([]model.Photo, error) {
 	rows, err := l.db.Query(
-		`SELECT id, folder_id, path, filename, size, mod_time, taken_at, width, height, hash, thumb_ready
+		`SELECT id, folder_id, path, filename, size, mod_time, taken_at, width, height, hash, thumb_ready, orientation
 		 FROM photos WHERE folder_id = ? ORDER BY taken_at ASC, filename ASC`, folderID)
 	if err != nil {
 		return nil, err
@@ -260,6 +278,36 @@ func (l *Library) SetThumbReady(photoID int64, ready bool) error {
 	return err
 }
 
+// SetOrientation stores the user-applied rotation (degrees clockwise) for a
+// photo. It is normalized to 0/90/180/270. This value is never written to disk;
+// it lives only in the database.
+func (l *Library) SetOrientation(photoID int64, degrees int) error {
+	degrees = ((degrees % 360) + 360) % 360
+	_, err := l.db.Exec(`UPDATE photos SET orientation = ? WHERE id = ?`, degrees, photoID)
+	return err
+}
+
+// GetSetting returns the stored value for key, or (def, nil) if unset.
+func (l *Library) GetSetting(key, def string) (string, error) {
+	var v string
+	err := l.db.QueryRow(`SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
+	if err == sql.ErrNoRows {
+		return def, nil
+	}
+	if err != nil {
+		return def, err
+	}
+	return v, nil
+}
+
+// SetSetting stores a value for key.
+func (l *Library) SetSetting(key, value string) error {
+	_, err := l.db.Exec(
+		`INSERT INTO settings(key, value) VALUES(?, ?)
+		 ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, value)
+	return err
+}
+
 // SetScanState records the scan status for a folder.
 func (l *Library) SetScanState(folderID int64, status model.ScanStatus) error {
 	_, err := l.db.Exec(
@@ -276,7 +324,7 @@ func scanPhotos(rows *sql.Rows) ([]model.Photo, error) {
 		var modTime, takenAt int64
 		var thumb int
 		if err := rows.Scan(&p.ID, &p.FolderID, &p.Path, &p.Filename, &p.Size,
-			&modTime, &takenAt, &p.Width, &p.Height, &p.Hash, &thumb); err != nil {
+			&modTime, &takenAt, &p.Width, &p.Height, &p.Hash, &thumb, &p.Orientation); err != nil {
 			return nil, err
 		}
 		p.ModTime = time.Unix(modTime, 0)
