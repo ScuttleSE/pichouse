@@ -27,6 +27,31 @@ a thumbnail grid in the center, and a properties panel on the right.
 - Thumbnail grid with a size slider that snaps to preset sizes.
 - Properties panel for the selected photo.
 
+## AI-based tagging (local, optional)
+
+pichouse can generate keyword tags for your photos using a **local** vision
+model. Nothing leaves your machine and no models are downloaded automatically.
+
+- **Backend:** a local [Ollama](https://ollama.com) HTTP server
+  (`127.0.0.1:11434`). Install Ollama and pull a vision model, e.g.
+  `ollama pull moondream` (small/fast) or `ollama pull llava`.
+- **Runs on CPU or GPU** — whichever Ollama is configured to use.
+- **Enable it** in *Settings → AI Tagging*: toggle it on, choose the model, and
+  optionally let pichouse start Ollama automatically. Use *Test Connection* to
+  verify the server and model are available.
+- **Run tagging** from the toolbar AI button: *Tag Current Folder* or *Tag
+  Entire Library*. Progress shows in the status bar and can be stopped. You can
+  also tag a single selected photo from the *Tags* tab of the properties panel.
+- **Tag management:** the *Tags* tab lets you add user tags, confirm or remove
+  AI tags per photo. The *Tag Manager* (toolbar AI menu) renames, merges, and
+  deletes tags across the whole library.
+- **Search:** the toolbar search box matches filenames **and** tags (via a
+  full-text index), so typing `beach` finds every photo tagged `beach`.
+
+All tags are stored in `library.db`. AI and user tags share one table and are
+distinguished by a source flag.
+
+
 ## Tech stack
 
 - **Language:** Go (module `git.hemmalab.se/scuttle/pichouse`)
@@ -36,6 +61,13 @@ a thumbnail grid in the center, and a properties panel on the right.
 - **EXIF:** `github.com/rwcarlsen/goexif`
 
 Databases are stored in `~/.local/share/pichouse/`.
+
+## AI tagging prerequisites (optional)
+
+AI tagging needs a local [Ollama](https://ollama.com) install with a vision
+model pulled (e.g. `ollama pull moondream`). pichouse adds no build-time
+dependencies for this — it talks to Ollama over local HTTP. The feature is off
+by default and the app runs normally without Ollama present.
 
 ## System prerequisites (Debian 13)
 

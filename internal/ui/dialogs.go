@@ -11,6 +11,14 @@ func (a *App) selectPhoto(p model.Photo) {
 	a.properties.Show(p)
 }
 
+// refreshSelectedTags reloads the tag list for the photo currently shown in the
+// properties panel. Safe to call on the GTK thread after tags change.
+func (a *App) refreshSelectedTags() {
+	if a.properties != nil {
+		a.properties.reloadTags()
+	}
+}
+
 // OpenViewer opens the full-image viewer over the given photo set, replacing
 // the thumbnail grid.
 func (a *App) OpenViewer(photos []model.Photo, index int) {

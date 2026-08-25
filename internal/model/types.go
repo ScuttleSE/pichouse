@@ -36,6 +36,36 @@ type Photo struct {
 	// Orientation is the user-applied rotation in degrees clockwise (0, 90,
 	// 180, 270). It is stored only in the database, never written to disk.
 	Orientation int
+	// AIStatus tracks the AI tagging state of this photo.
+	AIStatus int
+}
+
+// AI tagging status values stored in Photo.AIStatus.
+const (
+	AIUntagged = 0
+	AIQueued   = 1
+	AIDone     = 2
+	AIError    = 3
+	AISkipped  = 4
+)
+
+// TagSource identifies who created a photo-tag link.
+const (
+	TagSourceAI   = 0
+	TagSourceUser = 1
+)
+
+// Tag is a keyword associated with a photo.
+type Tag struct {
+	Name      string
+	Source    int // TagSourceAI or TagSourceUser
+	Confirmed bool
+}
+
+// TagCount is a tag together with how many photos carry it.
+type TagCount struct {
+	Name  string
+	Count int
 }
 
 // Album is a virtual organisation of folders. Albums do not affect files on

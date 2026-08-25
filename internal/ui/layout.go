@@ -9,7 +9,7 @@ import (
 // a bottom status bar.
 func (a *App) build() {
 	a.status = newStatusBar(a)
-	a.properties = newProperties()
+	a.properties = newProperties(a)
 	a.grid = newGrid(a)
 	a.sidebar = newSidebar(a)
 	a.folderTree = newFolderTree(a)

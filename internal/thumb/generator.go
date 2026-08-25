@@ -165,6 +165,18 @@ func (g *Generator) Get(hash, srcPath string, rotation int) ([]byte, error) {
 	return activeBlob, nil
 }
 
+// EncodeForAI decodes srcPath, applies the given rotation, downscales it so its
+// longest side is at most maxSide, and returns a JPEG. It prepares a compact
+// image to send to a local AI model.
+func EncodeForAI(srcPath string, rotation, maxSide int) ([]byte, error) {
+	src, err := decode(srcPath)
+	if err != nil {
+		return nil, err
+	}
+	src = rotate(src, rotation)
+	return encode(src, maxSide)
+}
+
 // Invalidate removes cached thumbnails for a hash across all open sizes. Used
 // when a photo's rotation changes.
 func (g *Generator) Invalidate(hash string) error {

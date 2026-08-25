@@ -55,8 +55,9 @@ GTK4 (>= 4.10) must be present at runtime; Debian 13 ships GTK 4.18.
     internal/db/         SQLite schema + access (library.db, thumbs.db)
     internal/scan/       filesystem scanner
     internal/thumb/      thumbnail generation + cache
+    internal/ai/         local AI tagging backend (Ollama HTTP client, tagger)
     internal/model/      shared types
-    internal/ui/         GTK4 UI (app, layout, sidebar, foldertree, grid, properties, toolbar, status, settings)
+    internal/ui/         GTK4 UI (app, layout, sidebar, foldertree, grid, properties, toolbar, status, settings, aitag, tagmanager)
     .gitea/workflows/    CI (build on push to main, rolling pre-release)
 
 ## CI

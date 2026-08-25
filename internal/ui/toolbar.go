@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"github.com/diamondburned/gotk4/pkg/gio/v2"
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
 
@@ -22,6 +24,28 @@ func newToolbar(a *App) *Toolbar {
 	rescan := gtk.NewButtonFromIconName("view-refresh-symbolic")
 	rescan.SetTooltipText("Rescan all library folders")
 	rescan.ConnectClicked(func() { a.RescanAll() })
+
+	aiBtn := gtk.NewButtonFromIconName("insert-image-symbolic")
+	aiBtn.SetTooltipText("AI tag photos")
+	aiMenu := gio.NewMenu()
+	aiMenu.Append("Tag Current Folder", "ai.tagfolder")
+	aiMenu.Append("Tag Entire Library", "ai.taglibrary")
+	aiMenu.Append("Tag Manager…", "ai.manager")
+	aiPopover := gtk.NewPopoverMenuFromModel(aiMenu)
+	aiPopover.SetParent(aiBtn)
+	aiBtn.ConnectClicked(func() { aiPopover.Popup() })
+
+	group := gio.NewSimpleActionGroup()
+	actFolder := gio.NewSimpleAction("tagfolder", nil)
+	actFolder.ConnectActivate(func(*glib.Variant) { a.AITagFolder() })
+	group.AddAction(actFolder)
+	actLibrary := gio.NewSimpleAction("taglibrary", nil)
+	actLibrary.ConnectActivate(func(*glib.Variant) { a.AITagLibrary() })
+	group.AddAction(actLibrary)
+	actManager := gio.NewSimpleAction("manager", nil)
+	actManager.ConnectActivate(func(*glib.Variant) { a.ShowTagManager() })
+	group.AddAction(actManager)
+	aiBtn.InsertActionGroup("ai", group)
 
 	search := gtk.NewSearchEntry()
 	search.SetHExpand(true)
@@ -68,6 +92,7 @@ func newToolbar(a *App) *Toolbar {
 	box.SetMarginEnd(6)
 	box.Append(settings)
 	box.Append(rescan)
+	box.Append(aiBtn)
 	box.Append(search)
 	box.Append(zoom)
 	box.Append(slider)

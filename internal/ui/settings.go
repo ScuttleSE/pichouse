@@ -24,6 +24,7 @@ func (a *App) ShowSettings() {
 	stack.SetVExpand(true)
 	stack.AddTitled(a.buildFolderSettings(win), "folders", "Library Folders")
 	stack.AddTitled(a.buildThumbSettings(win), "thumbs", "Thumbnails")
+	stack.AddTitled(a.buildAISettings(win), "ai", "AI Tagging")
 	stack.AddTitled(a.buildStorageSettings(win), "storage", "Data Location")
 	stack.AddTitled(a.buildShortcutSettings(win), "shortcuts", "Shortcuts")
 

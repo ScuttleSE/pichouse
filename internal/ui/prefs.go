@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	"git.hemmalab.se/scuttle/pichouse/internal/ai"
 	"git.hemmalab.se/scuttle/pichouse/internal/db"
 )
 
@@ -14,6 +15,15 @@ const (
 	keyRegenOnMove  = "thumb.regen"    // "1" to regenerate thumbnails when moving slider
 	keySaveAllSizes = "thumb.save_all" // "1" to cache all sizes on generation
 	keyPropsVisible = "ui.props_visible"
+
+	keyAIEnabled     = "ai.enabled"
+	keyAIHost        = "ai.host"
+	keyAIPort        = "ai.port"
+	keyAIModel       = "ai.model"
+	keyAIConcurrency = "ai.concurrency"
+	keyAIManage      = "ai.manage"
+	keyAIBinary      = "ai.binary"
+	keyAIPrompt      = "ai.prompt"
 )
 
 // defaultThumbSizes are the four slider preset sizes in pixels.
@@ -51,6 +61,37 @@ func loadPrefs(lib *db.Library) prefs {
 	p.saveAllSizes = boolSetting(lib, keySaveAllSizes, false)
 	p.propsVisible = boolSetting(lib, keyPropsVisible, true)
 	return p
+}
+
+// loadAIConfig reads the AI tagging configuration from the library database.
+func loadAIConfig(lib *db.Library) ai.Config {
+	c := ai.DefaultConfig()
+	c.Enabled = boolSetting(lib, keyAIEnabled, false)
+	if v, _ := lib.GetSetting(keyAIHost, ""); v != "" {
+		c.Host = v
+	}
+	if v, _ := lib.GetSetting(keyAIPort, ""); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			c.Port = n
+		}
+	}
+	if v, _ := lib.GetSetting(keyAIModel, ""); v != "" {
+		c.Model = v
+	}
+	if v, _ := lib.GetSetting(keyAIConcurrency, ""); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			c.Concurrency = n
+		}
+	}
+	c.Manage = boolSetting(lib, keyAIManage, false)
+	if v, _ := lib.GetSetting(keyAIBinary, ""); v != "" {
+		c.BinaryPath = v
+	}
+	if v, _ := lib.GetSetting(keyAIPrompt, ""); v != "" {
+		c.Prompt = v
+	}
+	c.Normalize()
+	return c
 }
 
 func boolSetting(lib *db.Library, key string, def bool) bool {

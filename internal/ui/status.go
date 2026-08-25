@@ -27,7 +27,10 @@ func newStatusBar(a *App) *StatusBar {
 	s.stop.SetTooltipText("Stop scanning")
 	s.stop.AddCSSClass("destructive-action")
 	s.stop.SetVisible(false)
-	s.stop.ConnectClicked(func() { a.scan.Stop() })
+	s.stop.ConnectClicked(func() {
+		a.scan.Stop()
+		a.aiJob.Stop()
+	})
 
 	box := gtk.NewBox(gtk.OrientationHorizontal, 6)
 	box.SetMarginTop(4)

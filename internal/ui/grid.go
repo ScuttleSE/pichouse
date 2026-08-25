@@ -39,6 +39,10 @@ type Grid struct {
 	rawMode   bool
 	rawDir    string
 
+	// tagMatches holds photo ids whose tags match the current filter. It is
+	// nil when the filter is empty (meaning "no tag constraint").
+	tagMatches map[int64]bool
+
 	photos []model.Photo // filtered photos currently shown
 
 	// generation counter; async thumbnail results from an older load are
@@ -133,9 +137,16 @@ func (g *Grid) SetThumbSize(px int) {
 	g.reload()
 }
 
-// SetFilter applies a case-insensitive filename filter.
+// SetFilter applies a case-insensitive filter matching filename or tags.
 func (g *Grid) SetFilter(q string) {
 	g.filter = strings.ToLower(strings.TrimSpace(q))
+	if g.filter == "" {
+		g.tagMatches = nil
+	} else if ids, err := g.app.lib.SearchPhotoIDsByTag(g.filter); err == nil {
+		g.tagMatches = ids
+	} else {
+		g.tagMatches = nil
+	}
 	g.reload()
 }
 
@@ -179,7 +190,7 @@ func (g *Grid) reload() {
 		all, err := g.app.lib.PhotosInFolder(g.folder.ID)
 		if err == nil {
 			for _, p := range all {
-				if g.matches(p.Filename) {
+				if g.matches(p) {
 					g.photos = append(g.photos, p)
 				}
 			}
@@ -209,9 +220,6 @@ func (g *Grid) loadRaw() {
 		if e.IsDir() || !scan.IsImage(e.Name()) {
 			continue
 		}
-		if !g.matches(e.Name()) {
-			continue
-		}
 		full := filepath.Join(g.rawDir, e.Name())
 		p := model.Photo{Path: full, Filename: e.Name()}
 		if info, err := e.Info(); err == nil {
@@ -221,13 +229,24 @@ func (g *Grid) loadRaw() {
 		if h, ok := hashes[full]; ok {
 			p.Hash = h
 		}
+		if !g.matches(p) {
+			continue
+		}
 		g.photos = append(g.photos, p)
 	}
 }
 
-// matches reports whether a filename passes the current filter.
-func (g *Grid) matches(name string) bool {
-	return g.filter == "" || strings.Contains(strings.ToLower(name), g.filter)
+// matches reports whether a photo passes the current filter. It matches when
+// the filter is empty, the filename contains the query, or the photo's tags
+// match (via the FTS-backed tagMatches set built in SetFilter).
+func (g *Grid) matches(p model.Photo) bool {
+	if g.filter == "" {
+		return true
+	}
+	if strings.Contains(strings.ToLower(p.Filename), g.filter) {
+		return true
+	}
+	return p.ID != 0 && g.tagMatches[p.ID]
 }
 
 func (g *Grid) updateHeaderCount() {

@@ -9,6 +9,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
+	"git.hemmalab.se/scuttle/pichouse/internal/ai"
 	"git.hemmalab.se/scuttle/pichouse/internal/db"
 	"git.hemmalab.se/scuttle/pichouse/internal/thumb"
 	"git.hemmalab.se/scuttle/pichouse/internal/version"
@@ -42,6 +43,10 @@ type App struct {
 
 	thumbCache *thumbCache
 	scan       scanController
+
+	aiConfig  ai.Config
+	aiManager ai.Manager
+	aiJob     aiController
 }
 
 // Run starts the pichouse GUI application. It is the single entry point called
@@ -58,6 +63,7 @@ func Run() {
 		thumbCache: newThumbCache(512),
 	}
 	a.prefs = loadPrefs(lib)
+	a.aiConfig = loadAIConfig(lib)
 	a.shortcuts = loadShortcuts(lib)
 	a.applyThumbPrefs()
 
@@ -65,6 +71,7 @@ func Run() {
 	a.gtkApp.ConnectActivate(func() { a.activate() })
 
 	code := a.gtkApp.Run(os.Args)
+	a.aiManager.Stop()
 	a.gen.Close()
 	lib.Close()
 	os.Exit(code)

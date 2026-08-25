@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -21,6 +22,10 @@ var librarySchema string
 // Library is a handle to the library.db metadata database.
 type Library struct {
 	db *sql.DB
+	// writeMu serializes writes that span multiple statements (tag updates and
+	// their FTS maintenance). library.db does not set SetMaxOpenConns(1), so
+	// concurrent multi-statement writers could otherwise contend for locks.
+	writeMu sync.Mutex
 }
 
 // OpenLibrary opens (and migrates) library.db in the pichouse data directory.
@@ -59,6 +64,12 @@ func migrate(sqldb *sql.DB) error {
 	if !hasColumn(sqldb, "photos", "orientation") {
 		if _, err := sqldb.Exec(
 			`ALTER TABLE photos ADD COLUMN orientation INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+	}
+	if !hasColumn(sqldb, "photos", "ai_status") {
+		if _, err := sqldb.Exec(
+			`ALTER TABLE photos ADD COLUMN ai_status INTEGER NOT NULL DEFAULT 0`); err != nil {
 			return err
 		}
 	}
@@ -236,7 +247,7 @@ func (l *Library) UpsertPhoto(p model.Photo) (int64, error) {
 // PhotosInFolder returns all photos for a folder ordered by taken date then name.
 func (l *Library) PhotosInFolder(folderID int64) ([]model.Photo, error) {
 	rows, err := l.db.Query(
-		`SELECT id, folder_id, path, filename, size, mod_time, taken_at, width, height, hash, thumb_ready, orientation
+		`SELECT id, folder_id, path, filename, size, mod_time, taken_at, width, height, hash, thumb_ready, orientation, ai_status
 		 FROM photos WHERE folder_id = ? ORDER BY taken_at ASC, filename ASC`, folderID)
 	if err != nil {
 		return nil, err
@@ -324,7 +335,7 @@ func scanPhotos(rows *sql.Rows) ([]model.Photo, error) {
 		var modTime, takenAt int64
 		var thumb int
 		if err := rows.Scan(&p.ID, &p.FolderID, &p.Path, &p.Filename, &p.Size,
-			&modTime, &takenAt, &p.Width, &p.Height, &p.Hash, &thumb, &p.Orientation); err != nil {
+			&modTime, &takenAt, &p.Width, &p.Height, &p.Hash, &thumb, &p.Orientation, &p.AIStatus); err != nil {
 			return nil, err
 		}
 		p.ModTime = time.Unix(modTime, 0)
