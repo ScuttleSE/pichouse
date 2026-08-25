@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
@@ -97,6 +98,19 @@ func (a *App) activate() {
 	a.win.SetDefaultSize(1280, 820)
 
 	a.build()
+
+	// Window-level key handling in the capture phase: while the full-image
+	// viewer is active, arrow keys and R drive navigation/rotation regardless
+	// of which widget currently holds focus.
+	keys := gtk.NewEventControllerKey()
+	keys.SetPropagationPhase(gtk.PhaseCapture)
+	keys.ConnectKeyPressed(func(keyval, keycode uint, state gdk.ModifierType) bool {
+		if a.centerStack != nil && a.centerStack.VisibleChildName() == "viewer" {
+			return a.viewer.HandleKey(keyval)
+		}
+		return false
+	})
+	a.win.AddController(keys)
 
 	a.win.SetVisible(true)
 

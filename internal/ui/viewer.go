@@ -66,29 +66,29 @@ func newViewer(a *App) *Viewer {
 	v.box.Append(gtk.NewSeparator(gtk.OrientationHorizontal))
 	v.box.Append(v.picture)
 
-	// Keyboard navigation and rotation.
-	keys := gtk.NewEventControllerKey()
-	keys.ConnectKeyPressed(func(keyval, keycode uint, state gdk.ModifierType) bool {
-		switch keyval {
-		case gdk.KEY_Left:
-			v.navigate(-1)
-			return true
-		case gdk.KEY_Right:
-			v.navigate(1)
-			return true
-		case gdk.KEY_r, gdk.KEY_R:
-			v.rotate()
-			return true
-		case gdk.KEY_Escape:
-			a.CloseViewer()
-			return true
-		}
-		return false
-	})
-	v.box.AddController(keys)
-	v.box.SetFocusable(true)
-
 	return v
+}
+
+// HandleKey processes a key press while the viewer is the active view. It is
+// driven by a window-level key controller (capture phase) so navigation works
+// without the viewer needing keyboard focus. Returns true if the key was
+// consumed.
+func (v *Viewer) HandleKey(keyval uint) bool {
+	switch keyval {
+	case gdk.KEY_Left:
+		v.navigate(-1)
+		return true
+	case gdk.KEY_Right:
+		v.navigate(1)
+		return true
+	case gdk.KEY_r, gdk.KEY_R:
+		v.rotate()
+		return true
+	case gdk.KEY_Escape:
+		v.app.CloseViewer()
+		return true
+	}
+	return false
 }
 
 // Widget returns the viewer root widget.
@@ -99,7 +99,6 @@ func (v *Viewer) Open(photos []model.Photo, index int) {
 	v.photos = photos
 	v.index = index
 	v.show()
-	v.box.GrabFocus()
 }
 
 func (v *Viewer) navigate(delta int) {
