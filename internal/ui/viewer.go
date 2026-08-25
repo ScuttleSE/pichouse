@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gdkpixbuf/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
@@ -16,6 +15,11 @@ type Viewer struct {
 	picture *gtk.Picture
 	header  *gtk.Label
 
+	prevBtn   *gtk.Button
+	nextBtn   *gtk.Button
+	rotateBtn *gtk.Button
+	closeBtn  *gtk.Button
+
 	photos []model.Photo // the set being navigated (grid's current photos)
 	index  int
 }
@@ -24,20 +28,20 @@ func newViewer(a *App) *Viewer {
 	v := &Viewer{app: a}
 
 	back := gtk.NewButtonFromIconName("go-previous-symbolic")
-	back.SetTooltipText("Back to grid")
 	back.ConnectClicked(func() { a.CloseViewer() })
+	v.closeBtn = back
 
 	prev := gtk.NewButtonFromIconName("media-skip-backward-symbolic")
-	prev.SetTooltipText("Previous (Left)")
 	prev.ConnectClicked(func() { v.navigate(-1) })
+	v.prevBtn = prev
 
 	next := gtk.NewButtonFromIconName("media-skip-forward-symbolic")
-	next.SetTooltipText("Next (Right)")
 	next.ConnectClicked(func() { v.navigate(1) })
+	v.nextBtn = next
 
 	rotate := gtk.NewButtonFromIconName("object-rotate-right-symbolic")
-	rotate.SetTooltipText("Rotate 90° (R)")
 	rotate.ConnectClicked(func() { v.rotate() })
+	v.rotateBtn = rotate
 
 	v.header = gtk.NewLabel("")
 	v.header.SetXAlign(0)
@@ -66,29 +70,42 @@ func newViewer(a *App) *Viewer {
 	v.box.Append(gtk.NewSeparator(gtk.OrientationHorizontal))
 	v.box.Append(v.picture)
 
+	v.RefreshTooltips()
 	return v
+}
+
+// RefreshTooltips updates the toolbar button tooltips to reflect the currently
+// configured keyboard shortcuts. Call after bindings change.
+func (v *Viewer) RefreshTooltips() {
+	sc := v.app.shortcuts
+	v.closeBtn.SetTooltipText("Back to grid (" + keyvalLabel(sc.keyval(actionClose)) + ")")
+	v.prevBtn.SetTooltipText("Previous (" + keyvalLabel(sc.keyval(actionPrev)) + ")")
+	v.nextBtn.SetTooltipText("Next (" + keyvalLabel(sc.keyval(actionNext)) + ")")
+	v.rotateBtn.SetTooltipText("Rotate 90° (" + keyvalLabel(sc.keyval(actionRotate)) + ")")
 }
 
 // HandleKey processes a key press while the viewer is the active view. It is
 // driven by a window-level key controller (capture phase) so navigation works
-// without the viewer needing keyboard focus. Returns true if the key was
-// consumed.
+// without the viewer needing keyboard focus. Bindings are user-configurable.
+// Returns true if the key was consumed.
 func (v *Viewer) HandleKey(keyval uint) bool {
-	switch keyval {
-	case gdk.KEY_Left:
-		v.navigate(-1)
-		return true
-	case gdk.KEY_Right:
-		v.navigate(1)
-		return true
-	case gdk.KEY_r, gdk.KEY_R:
-		v.rotate()
-		return true
-	case gdk.KEY_Escape:
-		v.app.CloseViewer()
-		return true
+	action, ok := v.app.shortcuts.action(keyval)
+	if !ok {
+		return false
 	}
-	return false
+	switch action {
+	case actionPrev:
+		v.navigate(-1)
+	case actionNext:
+		v.navigate(1)
+	case actionRotate:
+		v.rotate()
+	case actionClose:
+		v.app.CloseViewer()
+	default:
+		return false
+	}
+	return true
 }
 
 // Widget returns the viewer root widget.

@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 
+	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -24,6 +25,7 @@ func (a *App) ShowSettings() {
 	stack.AddTitled(a.buildFolderSettings(win), "folders", "Library Folders")
 	stack.AddTitled(a.buildThumbSettings(win), "thumbs", "Thumbnails")
 	stack.AddTitled(a.buildStorageSettings(win), "storage", "Data Location")
+	stack.AddTitled(a.buildShortcutSettings(win), "shortcuts", "Shortcuts")
 
 	switcher := gtk.NewStackSidebar()
 	switcher.SetStack(stack)
@@ -265,4 +267,97 @@ func (a *App) buildStorageSettings(parent *gtk.Window) gtk.Widgetter {
 	box.Append(choose)
 
 	return box
+}
+
+// buildShortcutSettings builds the image-viewer keyboard-shortcut pane. Each
+// action shows its current key and a button that captures a new key press.
+func (a *App) buildShortcutSettings(parent *gtk.Window) gtk.Widgetter {
+	box := gtk.NewBox(gtk.OrientationVertical, 8)
+	box.SetMarginTop(12)
+	box.SetMarginBottom(12)
+	box.SetMarginStart(12)
+	box.SetMarginEnd(12)
+
+	intro := gtk.NewLabel("Keyboard shortcuts used in the image viewer.")
+	intro.SetXAlign(0)
+	intro.SetWrap(true)
+	box.Append(intro)
+
+	grid := gtk.NewGrid()
+	grid.SetRowSpacing(6)
+	grid.SetColumnSpacing(12)
+	box.Append(grid)
+
+	for row, d := range shortcutDefs {
+		def := d // capture
+
+		name := gtk.NewLabel(def.label)
+		name.SetXAlign(0)
+
+		keyLabel := gtk.NewLabel(keyvalLabel(a.shortcuts.keyval(def.action)))
+		keyLabel.SetXAlign(0)
+		keyLabel.SetSizeRequest(120, -1)
+
+		change := gtk.NewButtonWithLabel("Change…")
+		change.ConnectClicked(func() {
+			a.captureShortcut(parent, def, func(keyval uint) {
+				a.shortcuts.set(def.action, keyval)
+				a.lib.SetSetting(shortcutSettingKey(def.action), gdk.KeyvalName(keyval))
+				keyLabel.SetText(keyvalLabel(keyval))
+				a.viewer.RefreshTooltips()
+			})
+		})
+
+		grid.Attach(name, 0, row, 1, 1)
+		grid.Attach(keyLabel, 1, row, 1, 1)
+		grid.Attach(change, 2, row, 1, 1)
+	}
+
+	reset := gtk.NewButtonWithLabel("Reset to Defaults")
+	reset.ConnectClicked(func() {
+		for _, d := range shortcutDefs {
+			a.shortcuts.set(d.action, d.defKey)
+			a.lib.SetSetting(shortcutSettingKey(d.action), gdk.KeyvalName(d.defKey))
+		}
+		a.viewer.RefreshTooltips()
+		// Rebuild the settings window so labels refresh.
+		parent.Destroy()
+		a.ShowSettings()
+	})
+	box.Append(reset)
+
+	return box
+}
+
+// captureShortcut opens a small modal that captures the next key press and
+// reports it via onKey. Escape cancels without changing the binding.
+func (a *App) captureShortcut(parent *gtk.Window, def shortcutDef, onKey func(uint)) {
+	dlg := gtk.NewWindow()
+	dlg.SetTitle("Set shortcut")
+	dlg.SetModal(true)
+	dlg.SetTransientFor(parent)
+	dlg.SetDefaultSize(320, 120)
+
+	msg := gtk.NewLabel("Press a key for \"" + def.label + "\"\n(Escape to cancel)")
+	msg.SetJustify(gtk.JustifyCenter)
+	msg.SetVExpand(true)
+	msg.SetHExpand(true)
+
+	body := gtk.NewBox(gtk.OrientationVertical, 0)
+	body.Append(msg)
+	dlg.SetChild(body)
+
+	keys := gtk.NewEventControllerKey()
+	keys.ConnectKeyPressed(func(keyval, keycode uint, state gdk.ModifierType) bool {
+		if keyval == gdk.KEY_Escape {
+			dlg.Destroy()
+			return true
+		}
+		onKey(keyval)
+		dlg.Destroy()
+		return true
+	})
+	dlg.AddController(keys)
+
+	dlg.SetVisible(true)
 }

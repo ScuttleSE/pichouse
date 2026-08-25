@@ -25,7 +25,8 @@ type App struct {
 	lib *db.Library
 	gen *thumb.Generator
 
-	prefs prefs
+	prefs     prefs
+	shortcuts *shortcuts
 
 	sidebar    *Sidebar
 	folderTree *FolderTree
@@ -57,6 +58,7 @@ func Run() {
 		thumbCache: newThumbCache(512),
 	}
 	a.prefs = loadPrefs(lib)
+	a.shortcuts = loadShortcuts(lib)
 	a.applyThumbPrefs()
 
 	a.gtkApp = gtk.NewApplication(appID, gio.ApplicationFlagsNone)
