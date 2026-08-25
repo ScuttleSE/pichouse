@@ -47,13 +47,13 @@ func (s *Sidebar) buildRowPopover(id string) *gtk.Popover {
 	pop.SetChild(box)
 
 	add := func(label string, fn func()) {
-		b := gtk.NewButtonWithLabel(label)
-		b.SetHasFrame(false)
+		b := gtk.NewButton()
+		lbl := gtk.NewLabel(label)
+		lbl.SetXAlign(0)
+		lbl.SetHExpand(true)
+		b.SetChild(lbl)
+		b.AddCSSClass("flat")
 		b.SetHAlign(gtk.AlignFill)
-		child := b.Child()
-		if lbl, ok := child.(*gtk.Label); ok {
-			lbl.SetXAlign(0)
-		}
 		b.ConnectClicked(func() {
 			pop.Popdown()
 			fn()

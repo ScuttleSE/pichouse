@@ -56,16 +56,23 @@ func newGrid(a *App) *Grid {
 	factory := gtk.NewSignalListItemFactory()
 	factory.ConnectSetup(func(obj *glib.Object) {
 		item := obj.Cast().(*gtk.ListItem)
-		item.SetChild(newThumbCell(g.thumbSize))
+		item.SetChild(newThumbCellWidget(g.thumbSize))
 	})
 	factory.ConnectBind(func(obj *glib.Object) {
 		item := obj.Cast().(*gtk.ListItem)
-		cell, _ := item.Child().(*thumbCell)
-		pos := int(item.Position())
-		if cell == nil || pos < 0 || pos >= len(g.photos) {
+		box, ok := item.Child().(*gtk.Box)
+		if !ok {
 			return
 		}
-		g.bindCell(cell, g.photos[pos])
+		parts, ok := cellParts(box)
+		if !ok {
+			return
+		}
+		pos := int(item.Position())
+		if pos < 0 || pos >= len(g.photos) {
+			return
+		}
+		g.bindCell(parts, g.photos[pos])
 	})
 
 	g.gridView = gtk.NewGridView(g.selection, &factory.ListItemFactory)
@@ -212,19 +219,22 @@ func (g *Grid) updateHeaderCount() {
 }
 
 // bindCell shows a photo in a cell and kicks off async thumbnail loading. The
-// cache key is the content hash, falling back to the file path.
-func (g *Grid) bindCell(cell *thumbCell, p model.Photo) {
-	cell.setCaption(p.Filename)
-	cell.setPlaceholder()
+// cache key is the content hash, falling back to the file path. The key is
+// stored on the picture widget's name so a late async result is discarded if
+// the cell has since been recycled for a different photo.
+func (g *Grid) bindCell(parts thumbCellParts, p model.Photo) {
+	parts.setCaption(p.Filename)
+	parts.setPlaceholder()
 
 	key := p.Hash
 	if key == "" {
 		key = p.Path
 	}
+	parts.picture.SetName(key)
 	gen := g.generation
 
 	if blob, ok := g.app.thumbCache.Get(key); ok {
-		g.applyThumb(cell, blob, gen)
+		g.applyThumb(parts, key, blob, gen)
 		return
 	}
 
@@ -234,15 +244,18 @@ func (g *Grid) bindCell(cell *thumbCell, p model.Photo) {
 			return
 		}
 		g.app.thumbCache.Put(key, blob)
-		onUI(func() { g.applyThumb(cell, blob, gen) })
+		onUI(func() { g.applyThumb(parts, key, blob, gen) })
 	}()
 }
 
 // applyThumb decodes JPEG bytes into a pixbuf and sets it on the cell, unless
-// the grid content changed since the load began.
-func (g *Grid) applyThumb(cell *thumbCell, blob []byte, gen uint64) {
+// the grid content changed or the cell was recycled for a different photo.
+func (g *Grid) applyThumb(parts thumbCellParts, key string, blob []byte, gen uint64) {
 	if gen != g.generation {
 		return
+	}
+	if parts.picture.Name() != key {
+		return // cell recycled for a different photo
 	}
 	loader := gdkpixbuf.NewPixbufLoader()
 	if err := loader.Write(blob); err != nil {
@@ -256,7 +269,7 @@ func (g *Grid) applyThumb(cell *thumbCell, blob []byte, gen uint64) {
 	if pb == nil {
 		return
 	}
-	cell.setPixbuf(pb)
+	parts.setPixbuf(pb)
 }
 
 // itoa is a tiny int-to-string helper avoiding a strconv import churn.

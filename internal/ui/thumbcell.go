@@ -6,25 +6,20 @@ import (
 	"github.com/diamondburned/gotk4/pkg/pango"
 )
 
-// thumbCell is a thumbnail image with a filename caption, used as the recycled
-// child widget of the grid's list-item factory.
-type thumbCell struct {
-	*gtk.Box
-	picture *gtk.Picture
-	caption *gtk.Label
-}
+// newThumbCellWidget builds the recycled child widget for a grid item: a
+// vertical box containing a Picture above an ellipsized caption label. The
+// widgets are retrieved later by walking the box's children (GTK hands back the
+// bare *gtk.Box, not a Go wrapper type).
+func newThumbCellWidget(edge int) *gtk.Box {
+	picture := gtk.NewPicture()
+	picture.SetCanShrink(true)
+	picture.SetContentFit(gtk.ContentFitContain)
+	picture.SetSizeRequest(edge, edge)
 
-func newThumbCell(edge int) *thumbCell {
-	c := &thumbCell{}
-	c.picture = gtk.NewPicture()
-	c.picture.SetCanShrink(true)
-	c.picture.SetContentFit(gtk.ContentFitContain)
-	c.picture.SetSizeRequest(edge, edge)
-
-	c.caption = gtk.NewLabel("")
-	c.caption.SetEllipsize(pango.EllipsizeEnd)
-	c.caption.SetMaxWidthChars(1)
-	c.caption.SetXAlign(0.5)
+	caption := gtk.NewLabel("")
+	caption.SetEllipsize(pango.EllipsizeEnd)
+	caption.SetMaxWidthChars(1)
+	caption.SetXAlign(0.5)
 
 	box := gtk.NewBox(gtk.OrientationVertical, 2)
 	box.SetSizeRequest(edge, -1)
@@ -32,19 +27,35 @@ func newThumbCell(edge int) *thumbCell {
 	box.SetMarginBottom(4)
 	box.SetMarginStart(4)
 	box.SetMarginEnd(4)
-	box.Append(c.picture)
-	box.Append(c.caption)
-	c.Box = box
-	return c
+	box.Append(picture)
+	box.Append(caption)
+	return box
 }
 
-func (c *thumbCell) setCaption(s string) { c.caption.SetText(s) }
-
-func (c *thumbCell) setPixbuf(pb *gdkpixbuf.Pixbuf) {
-	c.picture.SetPixbuf(pb)
+// thumbCellParts holds the Picture and Label extracted from a cell box.
+type thumbCellParts struct {
+	picture *gtk.Picture
+	caption *gtk.Label
 }
 
-// setPlaceholder clears the image while a thumbnail loads.
-func (c *thumbCell) setPlaceholder() {
-	c.picture.SetPaintable(nil)
+// cellParts extracts the Picture and Label from a cell box built by
+// newThumbCellWidget. Returns ok=false if the structure is unexpected.
+func cellParts(box *gtk.Box) (thumbCellParts, bool) {
+	var p thumbCellParts
+	first := box.FirstChild()
+	last := box.LastChild()
+	if pic, ok := first.(*gtk.Picture); ok {
+		p.picture = pic
+	}
+	if lbl, ok := last.(*gtk.Label); ok {
+		p.caption = lbl
+	}
+	if p.picture == nil || p.caption == nil {
+		return p, false
+	}
+	return p, true
 }
+
+func (p thumbCellParts) setCaption(s string)              { p.caption.SetText(s) }
+func (p thumbCellParts) setPixbuf(pb *gdkpixbuf.Pixbuf)   { p.picture.SetPixbuf(pb) }
+func (p thumbCellParts) setPlaceholder()                  { p.picture.SetPaintable(nil) }
