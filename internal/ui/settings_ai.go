@@ -101,6 +101,22 @@ func (a *App) buildAISettings(parent *gtk.Window) gtk.Widgetter {
 	threadRow.Append(threadHint)
 	box.Append(threadRow)
 
+	// Context window (0 = model default). Smaller reduces CPU prefill cost.
+	ctxRow := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	ctxRow.Append(fixedLabel("Context size", 90))
+	ctxSpin := gtk.NewSpinButtonWithRange(0, 32768, 256)
+	ctxSpin.SetValue(float64(a.aiConfig.NumCtx))
+	ctxSpin.SetTooltipText("Model context window (0 = model default). Smaller reduces CPU-side prompt prefill.")
+	ctxSpin.ConnectValueChanged(func() {
+		a.aiConfig.NumCtx = int(ctxSpin.Value())
+		a.lib.SetSetting(keyAINumCtx, strconv.Itoa(a.aiConfig.NumCtx))
+	})
+	ctxRow.Append(ctxSpin)
+	ctxHint := gtk.NewLabel("0 = default")
+	ctxHint.SetXAlign(0)
+	ctxRow.Append(ctxHint)
+	box.Append(ctxRow)
+
 	box.Append(gtk.NewSeparator(gtk.OrientationHorizontal))
 
 	// Managed subprocess.

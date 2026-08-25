@@ -54,16 +54,30 @@ distinguished by a source flag.
 ### Controlling CPU/GPU load
 
 Even when Ollama runs the model on the GPU, vision models do image
-preprocessing (the CLIP/`mmproj` embedding step) on the CPU, which can spike CPU
-usage during a batch. To keep this in check:
+preprocessing (the CLIP/`mmproj` embedding step) and prompt prefill that may run
+on the CPU, which can spike CPU usage during a batch.
 
-- **Concurrency** defaults to **1**. Sending parallel requests to a single local
-  GPU does not improve throughput and makes Ollama spin up extra runners or do
-  parallel CPU prefill — raise it only if you have the headroom.
-- **CPU threads** (Settings → AI Tagging) caps how many CPU threads Ollama may
-  use (`0` = automatic). Lower it if tagging saturates your CPU.
-- pichouse keeps the model resident between images (`keep_alive`) so it is not
-  reloaded mid-batch.
+**Can the vision preprocessing run on the GPU?** Sometimes — it is decided by
+Ollama, not pichouse. It runs on GPU only when Ollama's llama.cpp build supports
+GPU for the vision encoder *and* there is enough free VRAM to offload it. If the
+language model already fills VRAM, Ollama pushes the overflow (encoder/prefill)
+to the CPU. Check with `ollama ps` while tagging: "100% GPU" means only prefill
+is on CPU; a split like "52%/48% CPU/GPU" means the model does not fully fit —
+use a smaller model or quantization (e.g. `moondream` instead of `llava:13b`).
+
+pichouse exposes knobs (Settings → AI Tagging) that reduce CPU load:
+
+- **Concurrency** defaults to **1**. Parallel requests to a single local GPU do
+  not improve throughput and make Ollama spin up extra runners or do parallel
+  CPU prefill.
+- **CPU threads** caps how many CPU threads Ollama may use (`0` = automatic).
+- **Context size** caps the context window (`0` = model default); smaller
+  reduces CPU-side prompt prefill.
+- The model is kept resident between images (`keep_alive`) so it is not reloaded
+  mid-batch.
+
+Per-image timing (`load`, `prompt_eval`, `eval`) is written to the log so you
+can see where time is spent.
 
 
 ## Tech stack

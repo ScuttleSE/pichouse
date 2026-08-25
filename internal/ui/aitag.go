@@ -208,7 +208,11 @@ func (a *App) tagOnePhoto(ctx context.Context, client *ai.Client, cfg ai.Config,
 		_ = a.lib.SetAIStatus(id, model.AIError)
 		return false
 	}
-	resp, err := client.Generate(ctx, cfg.Model, cfg.Prompt, img, cfg.NumThread, cfg.KeepAlive)
+	res, err := client.Generate(ctx, cfg.Model, cfg.Prompt, img, ai.GenOptions{
+		NumThread: cfg.NumThread,
+		NumCtx:    cfg.NumCtx,
+		KeepAlive: cfg.KeepAlive,
+	})
 	if err != nil {
 		if ctx.Err() == nil {
 			log.Printf("[ai] %s: inference failed: %v", p.Filename, err)
@@ -216,6 +220,10 @@ func (a *App) tagOnePhoto(ctx context.Context, client *ai.Client, cfg ai.Config,
 		}
 		return false
 	}
+	ms := func(ns int64) int64 { return ns / 1_000_000 }
+	log.Printf("[ai] %s: timing total=%dms load=%dms prompt_eval=%dms eval=%dms",
+		p.Filename, ms(res.TotalDuration), ms(res.LoadDuration), ms(res.PromptEvalDuration), ms(res.EvalDuration))
+	resp := res.Response
 	tags := ai.ParseTags(resp, cfg.MaxTags)
 	if len(tags) == 0 {
 		log.Printf("[ai] %s: no tags parsed from response", p.Filename)

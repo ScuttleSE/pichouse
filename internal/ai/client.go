@@ -61,14 +61,31 @@ func (c *Client) Detect(ctx context.Context) (ok bool, models []string, err erro
 	return true, models, nil
 }
 
+// GenOptions holds per-request tuning passed to Ollama.
+type GenOptions struct {
+	NumThread int    // options.num_thread; 0 = auto
+	NumCtx    int    // options.num_ctx; 0 = model default. Smaller = less CPU prefill.
+	KeepAlive string // keep_alive, e.g. "10m"; "" = server default
+}
+
+// GenResult is the model text plus Ollama's timing breakdown (nanoseconds).
+type GenResult struct {
+	Response           string
+	TotalDuration      int64
+	LoadDuration       int64
+	PromptEvalDuration int64
+	EvalDuration       int64
+}
+
 // Generate runs a single vision inference: it sends the image bytes and prompt
-// to the model and returns the raw text response. numThread caps the CPU
-// threads Ollama uses (0 = let Ollama decide); keepAlive controls how long the
-// model stays resident between calls (e.g. "5m").
-func (c *Client) Generate(ctx context.Context, model, prompt string, image []byte, numThread int, keepAlive string) (string, error) {
+// to the model and returns the response text plus timing details.
+func (c *Client) Generate(ctx context.Context, model, prompt string, image []byte, opt GenOptions) (GenResult, error) {
 	options := map[string]any{}
-	if numThread > 0 {
-		options["num_thread"] = numThread
+	if opt.NumThread > 0 {
+		options["num_thread"] = opt.NumThread
+	}
+	if opt.NumCtx > 0 {
+		options["num_ctx"] = opt.NumCtx
 	}
 	reqBody := map[string]any{
 		"model":  model,
@@ -79,35 +96,45 @@ func (c *Client) Generate(ctx context.Context, model, prompt string, image []byt
 	if len(options) > 0 {
 		reqBody["options"] = options
 	}
-	if keepAlive != "" {
-		reqBody["keep_alive"] = keepAlive
+	if opt.KeepAlive != "" {
+		reqBody["keep_alive"] = opt.KeepAlive
 	}
 	buf, err := json.Marshal(reqBody)
 	if err != nil {
-		return "", err
+		return GenResult{}, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/generate", bytes.NewReader(buf))
 	if err != nil {
-		return "", err
+		return GenResult{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return "", err
+		return GenResult{}, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("ollama /api/generate: status %d", resp.StatusCode)
+		return GenResult{}, fmt.Errorf("ollama /api/generate: status %d", resp.StatusCode)
 	}
 	var out struct {
-		Response string `json:"response"`
-		Error    string `json:"error"`
+		Response           string `json:"response"`
+		Error              string `json:"error"`
+		TotalDuration      int64  `json:"total_duration"`
+		LoadDuration       int64  `json:"load_duration"`
+		PromptEvalDuration int64  `json:"prompt_eval_duration"`
+		EvalDuration       int64  `json:"eval_duration"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return "", err
+		return GenResult{}, err
 	}
 	if out.Error != "" {
-		return "", fmt.Errorf("ollama: %s", out.Error)
+		return GenResult{}, fmt.Errorf("ollama: %s", out.Error)
 	}
-	return out.Response, nil
+	return GenResult{
+		Response:           out.Response,
+		TotalDuration:      out.TotalDuration,
+		LoadDuration:       out.LoadDuration,
+		PromptEvalDuration: out.PromptEvalDuration,
+		EvalDuration:       out.EvalDuration,
+	}, nil
 }

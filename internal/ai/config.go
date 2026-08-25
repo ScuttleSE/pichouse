@@ -43,6 +43,9 @@ type Config struct {
 	// NumThread caps CPU threads Ollama uses for the parts of inference that
 	// run on CPU (notably vision image-embedding). 0 lets Ollama decide.
 	NumThread int
+	// NumCtx sets the context window (options.num_ctx). Smaller windows reduce
+	// CPU-side prompt prefill cost. 0 uses the model default.
+	NumCtx int
 	// KeepAlive keeps the model resident between requests (e.g. "10m") to avoid
 	// reload CPU spikes mid-batch.
 	KeepAlive string
@@ -65,6 +68,7 @@ func DefaultConfig() Config {
 		MaxTags:     DefaultMaxTags,
 		Concurrency: DefaultConcurrency,
 		NumThread:   0,
+		NumCtx:      0,
 		KeepAlive:   DefaultKeepAlive,
 		Manage:      false,
 	}
@@ -98,6 +102,9 @@ func (c *Config) Normalize() {
 	}
 	if c.NumThread < 0 {
 		c.NumThread = 0
+	}
+	if c.NumCtx < 0 {
+		c.NumCtx = 0
 	}
 }
 
