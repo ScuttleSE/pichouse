@@ -100,9 +100,16 @@ func (a *App) build() {
 	)
 	a.win.SetContent(content)
 
-	// Populate the sidebar from the current DB state.
-	a.sidebar.Reload()
-	a.folderTree.Reload()
+	// Populate the trees from the current DB state once the UI is running.
+	// widget.Tree only builds its visible content after the window is shown and
+	// laid out, so doing this during build() leaves the tree blank. Defer it to
+	// the lifecycle "started" hook, which fires on the UI goroutine after show.
+	a.fyneApp.Lifecycle().SetOnStarted(func() {
+		fyne.Do(func() {
+			a.sidebar.Reload()
+			a.folderTree.Reload()
+		})
+	})
 }
 
 // Window returns the main application window.
