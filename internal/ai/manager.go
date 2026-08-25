@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"errors"
+	"log"
 	"os/exec"
 	"time"
 )
@@ -19,6 +20,7 @@ type Manager struct {
 // readiness. It returns an error only when a server could not be made available.
 func (m *Manager) EnsureRunning(ctx context.Context, cfg Config, c *Client) error {
 	if ok, _, _ := c.Detect(ctx); ok {
+		log.Printf("[ai] detected running server at %s", c.baseURL)
 		return nil
 	}
 	if !cfg.Manage {
@@ -33,6 +35,7 @@ func (m *Manager) EnsureRunning(ctx context.Context, cfg Config, c *Client) erro
 		}
 		bin = p
 	}
+	log.Printf("[ai] no server found; launching %s serve", bin)
 	cmd := exec.Command(bin, "serve")
 	if err := cmd.Start(); err != nil {
 		return err
@@ -46,6 +49,7 @@ func (m *Manager) EnsureRunning(ctx context.Context, cfg Config, c *Client) erro
 			return ctx.Err()
 		}
 		if ok, _, _ := c.Detect(ctx); ok {
+			log.Printf("[ai] managed server is ready")
 			return nil
 		}
 		time.Sleep(500 * time.Millisecond)
