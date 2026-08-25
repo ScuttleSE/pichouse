@@ -65,5 +65,3 @@ have the system prerequisites installed (see above).
 - All major changes are committed and pushed (push triggers CI).
 - Keep AGENTS.md and README.md updated as the build progresses.
 - Do regular handoffs to HANDOFF.md when the working context gets large.
-- **Never commit `build.yaml` (the reference template) or `picasa.png`.** They are gitignored.
-  Delete both once they are no longer needed.
