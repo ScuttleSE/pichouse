@@ -16,8 +16,14 @@ a thumbnail grid in the center, and a properties panel on the right.
   stopped from the status bar.
 - Browsing reflects the cached database state by default.
 - Thumbnails generated on first view and cached separately (`thumbs.db`).
-- Left sidebar tabs: a Library tree grouped by year with item counts, and a
-  Folders tree that drills into each added root's subfolders live from disk.
+- Left sidebar tabs:
+  - **Library** — a virtual organisation of scanned folders. Folders not yet
+    filed appear under "New folders". Right-click to create Albums and
+    Sub-Albums, then move folders into them (multi-select and drag-and-drop
+    supported). Album membership is virtual and never moves files on disk.
+  - **Folders** — a live filesystem tree that drills into each added root's
+    subfolders. Thumbnails already generated during scanning are reused, so
+    reopening a folder is fast.
 - Thumbnail grid with a size slider that snaps to preset sizes.
 - Properties panel for the selected photo.
 

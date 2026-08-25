@@ -35,6 +35,15 @@ type Photo struct {
 	ThumbReady bool
 }
 
+// Album is a virtual organisation of folders. Albums do not affect files on
+// disk and may nest under a parent album.
+type Album struct {
+	ID       int64
+	Name     string
+	ParentID int64 // 0 means top-level
+	Position int
+}
+
 // ScanStatus describes the scan state of a folder.
 type ScanStatus string
 

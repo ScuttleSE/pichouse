@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -13,46 +14,60 @@ import (
 	"git.hemmalab.se/scuttle/pichouse/internal/model"
 )
 
-// rootFoldersID is the tree's top-level "Folders" node id.
-const rootFoldersID = "folders"
+// Node id scheme for the Library tree.
+const (
+	newFoldersID = "newfolders"  // virtual branch holding unassigned folders
+	albumPrefix  = "album:"      // album branch node ids ("album:3")
+	folderPrefix = "folder:"     // folder leaf node ids ("folder:12")
+)
 
-// yearPrefix marks year branch node ids ("year:2019").
-const yearPrefix = "year:"
-
-// folderPrefix marks folder leaf node ids ("folder:12").
-const folderPrefix = "folder:"
-
-// Sidebar is the left-hand collapsible folder tree, grouped by year.
+// Sidebar is the left-hand Library view: a virtual organisation of scanned
+// folders into albums (with sub-albums). Folders not in any album appear under
+// "New folders". Ordering here is virtual and independent of disk order.
 type Sidebar struct {
 	app       *App
 	container *fyne.Container
 	tree      *widget.Tree
 
 	// state rebuilt on Reload
-	years     []int              // sorted descending
-	byYear    map[int][]model.Folder
-	folders   map[int64]model.Folder
-	counts    map[int64]int
+	folders      map[int64]model.Folder
+	counts       map[int64]int
+	albums       map[int64]model.Album
+	albumChildren map[int64][]int64 // parent album id (0=top) -> child album ids
+	albumFolders map[int64][]int64  // album id -> folder ids
+	folderAlbum  map[int64]int64    // folder id -> album id (if any)
+	unassigned   []int64            // folder ids in no album
+
+	// multi-selection of folder nodes (by node id)
+	selected map[string]bool
+
+	// drag-and-drop state
+	dragging  bool           // a folder drag is in progress
+	dragFrom  string         // node id where the drag started
+	hoverNode string         // node id currently under the cursor (drop target)
 }
 
 func newSidebar(a *App) *Sidebar {
 	s := &Sidebar{
-		app:     a,
-		byYear:  map[int][]model.Folder{},
-		folders: map[int64]model.Folder{},
-		counts:  map[int64]int{},
+		app:           a,
+		folders:       map[int64]model.Folder{},
+		counts:        map[int64]int{},
+		albums:        map[int64]model.Album{},
+		albumChildren: map[int64][]int64{},
+		albumFolders:  map[int64][]int64{},
+		folderAlbum:   map[int64]int64{},
+		selected:      map[string]bool{},
 	}
 
-	s.tree = widget.NewTree(
-		s.childUIDs,
-		s.isBranch,
-		s.createNode,
-		s.updateNode,
-	)
+	s.tree = widget.NewTree(s.childUIDs, s.isBranch, s.createNode, s.updateNode)
 	s.tree.OnSelected = s.onSelected
 
 	header := widget.NewLabelWithStyle("Library", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	s.container = container.NewBorder(header, nil, nil, nil, s.tree)
+	newAlbumBtn := widget.NewButtonWithIcon("New Album", theme.ContentAddIcon(), func() {
+		s.promptCreateAlbum(0)
+	})
+	top := container.NewBorder(nil, nil, header, newAlbumBtn)
+	s.container = container.NewBorder(top, nil, nil, nil, s.tree)
 	return s
 }
 
@@ -63,68 +78,119 @@ func (s *Sidebar) Container() *fyne.Container { return s.container }
 func (s *Sidebar) childUIDs(id widget.TreeNodeID) []widget.TreeNodeID {
 	switch {
 	case id == "":
-		return []widget.TreeNodeID{rootFoldersID}
-	case id == rootFoldersID:
-		ids := make([]widget.TreeNodeID, 0, len(s.years))
-		for _, y := range s.years {
-			ids = append(ids, fmt.Sprintf("%s%d", yearPrefix, y))
+		var ids []widget.TreeNodeID
+		for _, aid := range s.albumChildren[0] {
+			ids = append(ids, albumPrefix+strconv.FormatInt(aid, 10))
+		}
+		if len(s.unassigned) > 0 {
+			ids = append(ids, newFoldersID)
 		}
 		return ids
-	case len(id) > len(yearPrefix) && id[:len(yearPrefix)] == yearPrefix:
-		year, _ := strconv.Atoi(id[len(yearPrefix):])
-		folders := s.byYear[year]
-		ids := make([]widget.TreeNodeID, 0, len(folders))
-		for _, f := range folders {
-			ids = append(ids, fmt.Sprintf("%s%d", folderPrefix, f.ID))
+	case id == newFoldersID:
+		return folderNodeIDs(s.unassigned)
+	case strings.HasPrefix(id, albumPrefix):
+		aid, _ := strconv.ParseInt(id[len(albumPrefix):], 10, 64)
+		var ids []widget.TreeNodeID
+		for _, child := range s.albumChildren[aid] {
+			ids = append(ids, albumPrefix+strconv.FormatInt(child, 10))
 		}
+		ids = append(ids, folderNodeIDs(s.albumFolders[aid])...)
 		return ids
 	}
 	return nil
 }
 
-// isBranch reports whether a node can have children.
-func (s *Sidebar) isBranch(id widget.TreeNodeID) bool {
-	if id == rootFoldersID {
-		return true
+func folderNodeIDs(fids []int64) []widget.TreeNodeID {
+	ids := make([]widget.TreeNodeID, 0, len(fids))
+	for _, fid := range fids {
+		ids = append(ids, folderPrefix+strconv.FormatInt(fid, 10))
 	}
-	return len(id) > len(yearPrefix) && id[:len(yearPrefix)] == yearPrefix
+	return ids
+}
+
+// isBranch reports whether a node can have children (albums and New folders).
+func (s *Sidebar) isBranch(id widget.TreeNodeID) bool {
+	return id == newFoldersID || strings.HasPrefix(id, albumPrefix)
 }
 
 // createNode builds a reusable node template.
 func (s *Sidebar) createNode(branch bool) fyne.CanvasObject {
-	return container.NewHBox(widget.NewIcon(theme.FolderIcon()), widget.NewLabel("template"))
+	return newLibNode(s)
 }
 
 // updateNode fills a node template for a specific id.
 func (s *Sidebar) updateNode(id widget.TreeNodeID, branch bool, obj fyne.CanvasObject) {
-	box := obj.(*fyne.Container)
-	icon := box.Objects[0].(*widget.Icon)
-	label := box.Objects[1].(*widget.Label)
-
+	node := obj.(*libNode)
+	node.id = id
 	switch {
-	case id == rootFoldersID:
-		icon.SetResource(theme.StorageIcon())
-		label.SetText(fmt.Sprintf("Folders (%d)", len(s.folders)))
-	case len(id) > len(yearPrefix) && id[:len(yearPrefix)] == yearPrefix:
-		year := id[len(yearPrefix):]
-		icon.SetResource(theme.FolderIcon())
-		label.SetText(year)
-	case len(id) > len(folderPrefix) && id[:len(folderPrefix)] == folderPrefix:
+	case id == newFoldersID:
+		node.set(theme.FolderIcon(), fmt.Sprintf("New folders (%d)", len(s.unassigned)), false)
+	case strings.HasPrefix(id, albumPrefix):
+		aid, _ := strconv.ParseInt(id[len(albumPrefix):], 10, 64)
+		a := s.albums[aid]
+		node.set(theme.FolderNewIcon(), a.Name, s.selected[id])
+	case strings.HasPrefix(id, folderPrefix):
 		fid, _ := strconv.ParseInt(id[len(folderPrefix):], 10, 64)
 		f := s.folders[fid]
-		icon.SetResource(theme.FolderIcon())
-		label.SetText(fmt.Sprintf("%s (%d)", f.Name, s.counts[fid]))
+		node.set(theme.FileImageIcon(), fmt.Sprintf("%s (%d)", f.Name, s.counts[fid]), s.selected[id])
 	}
 }
 
-// onSelected loads a folder into the grid when a folder leaf is selected.
+// onSelected loads a folder into the grid when a folder leaf is selected. It
+// also maintains the multi-selection set for batch operations.
 func (s *Sidebar) onSelected(id widget.TreeNodeID) {
-	if len(id) > len(folderPrefix) && id[:len(folderPrefix)] == folderPrefix {
+	if strings.HasPrefix(id, folderPrefix) {
 		fid, _ := strconv.ParseInt(id[len(folderPrefix):], 10, 64)
 		if f, ok := s.folders[fid]; ok {
 			s.app.grid.ShowFolder(f)
 		}
 	}
+	// Single-click selection replaces the multi-selection unless extended via
+	// the context menu (handled there).
+	s.selected = map[string]bool{id: true}
+	s.tree.UnselectAll()
+	s.tree.Refresh()
+}
+
+// selectedFolderIDs returns folder ids currently in the multi-selection.
+func (s *Sidebar) selectedFolderIDs() []int64 {
+	var out []int64
+	for id := range s.selected {
+		if strings.HasPrefix(id, folderPrefix) {
+			fid, _ := strconv.ParseInt(id[len(folderPrefix):], 10, 64)
+			out = append(out, fid)
+		}
+	}
+	return out
+}
+
+// dropTargetAlbum resolves the node currently under the cursor to an album id
+// for use as a drag-and-drop target. An album node resolves to itself; a folder
+// node resolves to the album containing it (if any). Returns 0 if there is no
+// valid album target.
+func (s *Sidebar) dropTargetAlbum() int64 {
+	id := s.hoverNode
+	switch {
+	case strings.HasPrefix(id, albumPrefix):
+		aid, _ := strconv.ParseInt(id[len(albumPrefix):], 10, 64)
+		return aid
+	case strings.HasPrefix(id, folderPrefix):
+		fid, _ := strconv.ParseInt(id[len(folderPrefix):], 10, 64)
+		if aid, ok := s.folderAlbum[fid]; ok {
+			return aid
+		}
+	}
+	return 0
+}
+
+// toggleSelect adds/removes a node from the multi-selection (Ctrl-style).
+func (s *Sidebar) toggleSelect(id widget.TreeNodeID) {
+	if s.selected[id] {
+		delete(s.selected, id)
+	} else {
+		s.selected[id] = true
+	}
+	s.tree.Refresh()
 }
 
 // Reload rebuilds the tree from the current database state.
@@ -137,33 +203,44 @@ func (s *Sidebar) Reload() {
 	if err != nil {
 		counts = map[int64]int{}
 	}
+	albums, err := s.app.lib.Albums()
+	if err != nil {
+		albums = nil
+	}
+	folderAlbum, err := s.app.lib.FolderAlbums()
+	if err != nil {
+		folderAlbum = map[int64]int64{}
+	}
 
-	s.byYear = map[int][]model.Folder{}
 	s.folders = map[int64]model.Folder{}
 	s.counts = counts
-	yearsSet := map[int]bool{}
+	s.albums = map[int64]model.Album{}
+	s.albumChildren = map[int64][]int64{}
+	s.albumFolders = map[int64][]int64{}
+	s.folderAlbum = folderAlbum
+	s.unassigned = nil
+
+	for _, a := range albums {
+		s.albums[a.ID] = a
+		s.albumChildren[a.ParentID] = append(s.albumChildren[a.ParentID], a.ID)
+	}
+	// Folders sorted by name for a stable virtual order.
+	sort.Slice(folders, func(i, j int) bool { return folders[i].Name < folders[j].Name })
 	for _, f := range folders {
 		s.folders[f.ID] = f
-		s.byYear[f.Year] = append(s.byYear[f.Year], f)
-		yearsSet[f.Year] = true
+		if aid, ok := folderAlbum[f.ID]; ok {
+			s.albumFolders[aid] = append(s.albumFolders[aid], f.ID)
+		} else {
+			s.unassigned = append(s.unassigned, f.ID)
+		}
 	}
-	s.years = s.years[:0]
-	for y := range yearsSet {
-		s.years = append(s.years, y)
-	}
-	sort.Sort(sort.Reverse(sort.IntSlice(s.years)))
 
 	s.tree.Refresh()
-	s.tree.OpenBranch(rootFoldersID)
-
-	// Auto-expand the most recent year and select its first folder so the grid
-	// is populated instead of appearing empty after a scan.
-	if len(s.years) > 0 {
-		yearID := fmt.Sprintf("%s%d", yearPrefix, s.years[0])
-		s.tree.OpenBranch(yearID)
-		if fs := s.byYear[s.years[0]]; len(fs) > 0 {
-			folderID := fmt.Sprintf("%s%d", folderPrefix, fs[0].ID)
-			s.tree.Select(folderID)
-		}
+	for _, aid := range s.albumChildren[0] {
+		s.tree.OpenBranch(albumPrefix + strconv.FormatInt(aid, 10))
+	}
+	if len(s.unassigned) > 0 {
+		s.tree.OpenBranch(newFoldersID)
+		s.tree.Select(folderPrefix + strconv.FormatInt(s.unassigned[0], 10))
 	}
 }

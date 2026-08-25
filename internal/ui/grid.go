@@ -119,12 +119,15 @@ func (g *Grid) reload() {
 	g.updateHeaderCount()
 }
 
-// loadRaw reads image files directly from the raw directory.
+// loadRaw reads image files directly from the raw directory. Where a file was
+// already scanned into the library, its stored content hash is reused so the
+// cached thumbnail is served instead of re-rendering from disk.
 func (g *Grid) loadRaw() {
 	entries, err := os.ReadDir(g.rawDir)
 	if err != nil {
 		return
 	}
+	hashes, _ := g.app.lib.HashesByDir(g.rawDir)
 	for _, e := range entries {
 		if e.IsDir() || !scan.IsImage(e.Name()) {
 			continue
@@ -138,7 +141,10 @@ func (g *Grid) loadRaw() {
 			p.Size = info.Size()
 			p.ModTime = info.ModTime()
 		}
-		// Hash empty in raw mode -> thumbnails render but are not cached.
+		// Reuse the scanned hash when available so the cached thumbnail is used.
+		if h, ok := hashes[full]; ok {
+			p.Hash = h
+		}
 		g.photos = append(g.photos, p)
 	}
 }

@@ -227,6 +227,29 @@ func (l *Library) PhotosInFolder(folderID int64) ([]model.Photo, error) {
 	return scanPhotos(rows)
 }
 
+// HashesByDir returns a map of file path to content hash for all photos whose
+// parent directory is dir. Used by the raw folder view to reuse thumbnails that
+// were already generated during scanning.
+func (l *Library) HashesByDir(dir string) (map[string]string, error) {
+	rows, err := l.db.Query(
+		`SELECT p.path, p.hash FROM photos p
+		 JOIN folders f ON f.id = p.folder_id
+		 WHERE f.path = ?`, dir)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var path, hash string
+		if err := rows.Scan(&path, &hash); err != nil {
+			return nil, err
+		}
+		out[path] = hash
+	}
+	return out, rows.Err()
+}
+
 // SetThumbReady marks whether a photo's thumbnail has been generated.
 func (l *Library) SetThumbReady(photoID int64, ready bool) error {
 	v := 0

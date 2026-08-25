@@ -35,3 +35,23 @@ CREATE TABLE IF NOT EXISTS scan_state (
     last_scanned INTEGER NOT NULL DEFAULT 0,
     status       TEXT NOT NULL DEFAULT 'pending'
 );
+
+-- Albums are a virtual organisation layer over folders. They do not affect
+-- files on disk. An album may nest under a parent album (sub-albums).
+CREATE TABLE IF NOT EXISTS albums (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    name      TEXT NOT NULL,
+    parent_id INTEGER REFERENCES albums(id) ON DELETE CASCADE,
+    position  INTEGER NOT NULL DEFAULT 0
+);
+
+-- Membership of a scanned folder in an album. A folder in no album is shown at
+-- the Library root under "New folders". position gives the virtual order.
+CREATE TABLE IF NOT EXISTS album_folders (
+    album_id  INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
+    folder_id INTEGER NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
+    position  INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (album_id, folder_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_album_folders_folder ON album_folders(folder_id);
