@@ -1,84 +1,50 @@
 package ui
 
 import (
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/canvas"
-	"fyne.io/fyne/v2/theme"
-	"fyne.io/fyne/v2/widget"
+	"github.com/diamondburned/gotk4/pkg/gdkpixbuf/v2"
+	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/diamondburned/gotk4/pkg/pango"
 )
 
-// thumbCell is a tappable thumbnail with a filename caption.
+// thumbCell is a thumbnail image with a filename caption, used as the recycled
+// child widget of the grid's list-item factory.
 type thumbCell struct {
-	widget.BaseWidget
-
-	image    *canvas.Image
-	caption  *widget.Label
-	onTapped func()
-	edge     float32
+	*gtk.Box
+	picture *gtk.Picture
+	caption *gtk.Label
 }
 
-func newThumbCell(edge float32) *thumbCell {
-	c := &thumbCell{edge: edge}
-	c.image = canvas.NewImageFromResource(theme.FileImageIcon())
-	c.image.FillMode = canvas.ImageFillContain
-	c.caption = widget.NewLabel("")
-	c.caption.Alignment = fyne.TextAlignCenter
-	c.caption.Truncation = fyne.TextTruncateEllipsis
-	c.ExtendBaseWidget(c)
+func newThumbCell(edge int) *thumbCell {
+	c := &thumbCell{}
+	c.picture = gtk.NewPicture()
+	c.picture.SetCanShrink(true)
+	c.picture.SetContentFit(gtk.ContentFitContain)
+	c.picture.SetSizeRequest(edge, edge)
+
+	c.caption = gtk.NewLabel("")
+	c.caption.SetEllipsize(pango.EllipsizeEnd)
+	c.caption.SetMaxWidthChars(1)
+	c.caption.SetXAlign(0.5)
+
+	box := gtk.NewBox(gtk.OrientationVertical, 2)
+	box.SetSizeRequest(edge, -1)
+	box.SetMarginTop(4)
+	box.SetMarginBottom(4)
+	box.SetMarginStart(4)
+	box.SetMarginEnd(4)
+	box.Append(c.picture)
+	box.Append(c.caption)
+	c.Box = box
 	return c
-}
-
-// setImage replaces the thumbnail image resource.
-func (c *thumbCell) setImage(res fyne.Resource) {
-	c.image.Resource = res
-	c.image.Refresh()
-}
-
-// setPlaceholder resets the cell to the generic image icon.
-func (c *thumbCell) setPlaceholder() {
-	c.image.Resource = theme.FileImageIcon()
-	c.image.Refresh()
 }
 
 func (c *thumbCell) setCaption(s string) { c.caption.SetText(s) }
 
-// Tapped invokes the tap handler.
-func (c *thumbCell) Tapped(_ *fyne.PointEvent) {
-	if c.onTapped != nil {
-		c.onTapped()
-	}
+func (c *thumbCell) setPixbuf(pb *gdkpixbuf.Pixbuf) {
+	c.picture.SetPixbuf(pb)
 }
 
-// CreateRenderer lays out the image above the caption.
-func (c *thumbCell) CreateRenderer() fyne.WidgetRenderer {
-	img := c.image
-	cap := c.caption
-	edge := c.edge
-	objects := []fyne.CanvasObject{img, cap}
-	return &thumbCellRenderer{cell: c, image: img, caption: cap, edge: edge, objects: objects}
+// setPlaceholder clears the image while a thumbnail loads.
+func (c *thumbCell) setPlaceholder() {
+	c.picture.SetPaintable(nil)
 }
-
-type thumbCellRenderer struct {
-	cell    *thumbCell
-	image   *canvas.Image
-	caption *widget.Label
-	edge    float32
-	objects []fyne.CanvasObject
-}
-
-func (r *thumbCellRenderer) Layout(size fyne.Size) {
-	capH := r.caption.MinSize().Height
-	r.image.Move(fyne.NewPos(0, 0))
-	r.image.Resize(fyne.NewSize(size.Width, size.Height-capH))
-	r.caption.Move(fyne.NewPos(0, size.Height-capH))
-	r.caption.Resize(fyne.NewSize(size.Width, capH))
-}
-
-func (r *thumbCellRenderer) MinSize() fyne.Size {
-	capH := r.caption.MinSize().Height
-	return fyne.NewSize(r.edge, r.edge+capH)
-}
-
-func (r *thumbCellRenderer) Refresh()                        { canvas.Refresh(r.cell) }
-func (r *thumbCellRenderer) Objects() []fyne.CanvasObject    { return r.objects }
-func (r *thumbCellRenderer) Destroy()                        {}

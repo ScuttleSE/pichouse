@@ -30,8 +30,8 @@ a thumbnail grid in the center, and a properties panel on the right.
 ## Tech stack
 
 - **Language:** Go (module `git.hemmalab.se/scuttle/pichouse`)
-- **GUI:** [Fyne](https://fyne.io) v2 (default X11/GLFW driver; runs via
-  XWayland on Wayland sessions)
+- **GUI:** GTK4 via [gotk4](https://github.com/diamondburned/gotk4) v0.3.1
+  (native desktop; requires cgo; targets the system GLib 2.84 on Debian 13)
 - **Database:** `modernc.org/sqlite` (pure-Go)
 - **EXIF:** `github.com/rwcarlsen/goexif`
 
@@ -39,11 +39,9 @@ Databases are stored in `~/.local/share/pichouse/`.
 
 ## System prerequisites (Debian 13)
 
-    sudo apt-get update && sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev libxxf86vm-dev libwayland-dev libxkbcommon-dev
+    sudo apt-get update && sudo apt-get install -y gcc pkg-config libgtk-4-dev libgirepository1.0-dev
 
-On a Wayland session, ensure XWayland is present (default on GNOME/KDE):
-
-    sudo apt-get install -y xwayland
+GTK4 (>= 4.10) must be present at runtime; Debian 13 ships GTK 4.18.
 
 ## Build and run
 

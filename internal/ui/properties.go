@@ -4,60 +4,76 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/widget"
+	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
 	"git.hemmalab.se/scuttle/pichouse/internal/model"
 )
 
 // Properties is the right-hand properties panel for the selected photo.
 type Properties struct {
-	container *fyne.Container
-	title     *widget.Label
-	location  *widget.Label
-	size      *widget.Label
-	date      *widget.Label
-	dims      *widget.Label
+	box      *gtk.Box
+	title    *gtk.Label
+	location *gtk.Label
+	size     *gtk.Label
+	date     *gtk.Label
+	dims     *gtk.Label
 }
 
 func newProperties() *Properties {
-	p := &Properties{
-		title:    widget.NewLabelWithStyle("Properties", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-		location: widget.NewLabel(""),
-		size:     widget.NewLabel(""),
-		date:     widget.NewLabel(""),
-		dims:     widget.NewLabel(""),
-	}
-	p.location.Wrapping = fyne.TextWrapWord
+	p := &Properties{}
+	p.title = boldLabel("Properties")
+	p.location = valueLabel()
+	p.size = valueLabel()
+	p.date = valueLabel()
+	p.dims = valueLabel()
 
-	form := container.NewVBox(
-		p.title,
-		widget.NewSeparator(),
-		field("Location", p.location),
-		field("File Size", p.size),
-		field("File Date", p.date),
-		field("Dimensions", p.dims),
-	)
-	p.container = container.NewPadded(form)
+	box := gtk.NewBox(gtk.OrientationVertical, 4)
+	box.SetMarginTop(8)
+	box.SetMarginBottom(8)
+	box.SetMarginStart(8)
+	box.SetMarginEnd(8)
+	box.SetSizeRequest(240, -1)
+	box.Append(p.title)
+	box.Append(gtk.NewSeparator(gtk.OrientationHorizontal))
+	box.Append(field("Location", p.location))
+	box.Append(field("File Size", p.size))
+	box.Append(field("File Date", p.date))
+	box.Append(field("Dimensions", p.dims))
+	p.box = box
+
 	p.Clear()
 	return p
 }
 
-// field renders a bold caption above a value label.
-func field(caption string, value *widget.Label) *fyne.Container {
-	return container.NewVBox(
-		widget.NewLabelWithStyle(caption, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-		value,
-	)
+func boldLabel(text string) *gtk.Label {
+	l := gtk.NewLabel(text)
+	l.SetXAlign(0)
+	l.SetMarkup("<b>" + text + "</b>")
+	return l
 }
 
-// Container returns the properties panel root widget.
-func (p *Properties) Container() *fyne.Container { return p.container }
+func valueLabel() *gtk.Label {
+	l := gtk.NewLabel("")
+	l.SetXAlign(0)
+	l.SetWrap(true)
+	l.SetSelectable(true)
+	return l
+}
+
+func field(caption string, value *gtk.Label) *gtk.Box {
+	b := gtk.NewBox(gtk.OrientationVertical, 0)
+	b.SetMarginTop(6)
+	b.Append(boldLabel(caption))
+	b.Append(value)
+	return b
+}
+
+// Widget returns the properties panel root widget.
+func (p *Properties) Widget() gtk.Widgetter { return p.box }
 
 // Clear resets the panel to an empty state.
 func (p *Properties) Clear() {
-	p.title.SetText("Properties")
+	p.title.SetMarkup("<b>Properties</b>")
 	p.location.SetText("—")
 	p.size.SetText("—")
 	p.date.SetText("—")
@@ -66,7 +82,7 @@ func (p *Properties) Clear() {
 
 // Show populates the panel from a photo.
 func (p *Properties) Show(photo model.Photo) {
-	p.title.SetText("Properties of " + photo.Filename)
+	p.title.SetMarkup("<b>Properties of " + escapeMarkup(photo.Filename) + "</b>")
 	p.location.SetText(filepath.Dir(photo.Path))
 	p.size.SetText(humanSize(photo.Size))
 	if photo.TakenAt.IsZero() {

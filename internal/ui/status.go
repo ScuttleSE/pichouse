@@ -1,71 +1,61 @@
 package ui
 
 import (
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/theme"
-	"fyne.io/fyne/v2/widget"
+	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
 
-// StatusBar is the bottom status bar showing scan progress and selection info.
+// StatusBar is the bottom status bar showing scan progress and a Stop button.
 type StatusBar struct {
-	container *fyne.Container
-	message   *widget.Label
-	progress  *widget.ProgressBar
-	stop      *widget.Button
-	onStop    func()
+	app      *App
+	box      *gtk.Box
+	message  *gtk.Label
+	progress *gtk.ProgressBar
+	stop     *gtk.Button
 }
 
-func newStatusBar() *StatusBar {
-	s := &StatusBar{
-		message:  widget.NewLabel("Ready"),
-		progress: widget.NewProgressBar(),
-	}
-	s.stop = widget.NewButtonWithIcon("Stop", theme.CancelIcon(), func() {
-		if s.onStop != nil {
-			s.onStop()
-		}
-	})
-	s.stop.Importance = widget.DangerImportance
-	s.progress.Hide()
-	s.stop.Hide()
+func newStatusBar(a *App) *StatusBar {
+	s := &StatusBar{app: a}
+	s.message = gtk.NewLabel("Ready")
+	s.message.SetXAlign(0)
+	s.message.SetHExpand(true)
 
-	right := container.NewHBox(
-		container.NewGridWrap(fyne.NewSize(220, s.progress.MinSize().Height), s.progress),
-		s.stop,
-	)
-	bar := container.NewBorder(nil, nil, s.message, right, nil)
-	s.container = container.NewVBox(widget.NewSeparator(), container.NewPadded(bar))
+	s.progress = gtk.NewProgressBar()
+	s.progress.SetSizeRequest(220, -1)
+	s.progress.SetVisible(false)
+
+	s.stop = gtk.NewButtonWithLabel("Stop")
+	s.stop.SetTooltipText("Stop scanning")
+	s.stop.AddCSSClass("destructive-action")
+	s.stop.SetVisible(false)
+	s.stop.ConnectClicked(func() { a.scan.Stop() })
+
+	box := gtk.NewBox(gtk.OrientationHorizontal, 6)
+	box.SetMarginTop(4)
+	box.SetMarginBottom(4)
+	box.SetMarginStart(6)
+	box.SetMarginEnd(6)
+	box.Append(s.message)
+	box.Append(s.progress)
+	box.Append(s.stop)
+	s.box = box
 	return s
 }
 
-// Container returns the status bar's root widget.
-func (s *StatusBar) Container() *fyne.Container { return s.container }
+// Widget returns the status bar's root widget.
+func (s *StatusBar) Widget() gtk.Widgetter { return s.box }
 
-// SetOnStop sets the handler invoked when the Stop button is pressed.
-func (s *StatusBar) SetOnStop(fn func()) { s.onStop = fn }
+// SetMessage updates the status message. Must be called on the GTK thread.
+func (s *StatusBar) SetMessage(msg string) { s.message.SetText(msg) }
 
-// SetScanning toggles the visibility of the Stop button.
-func (s *StatusBar) SetScanning(scanning bool) {
-	if scanning {
-		s.stop.Show()
-	} else {
-		s.stop.Hide()
-	}
-}
-
-// SetMessage updates the status message. Safe to call from any goroutine via
-// fyne.Do at the call site.
-func (s *StatusBar) SetMessage(msg string) {
-	s.message.SetText(msg)
-}
+// SetScanning toggles the Stop button.
+func (s *StatusBar) SetScanning(scanning bool) { s.stop.SetVisible(scanning) }
 
 // SetProgress shows determinate progress in [0,1]. A value < 0 hides the bar.
 func (s *StatusBar) SetProgress(v float64) {
 	if v < 0 {
-		s.progress.Hide()
+		s.progress.SetVisible(false)
 		return
 	}
-	s.progress.Show()
-	s.progress.SetValue(v)
+	s.progress.SetVisible(true)
+	s.progress.SetFraction(v)
 }

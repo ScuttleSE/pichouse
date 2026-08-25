@@ -26,15 +26,15 @@ Do not speculate in a loop. Do not run in circles.
 ## Tech stack
 
 - **Language:** Go (module `git.hemmalab.se/scuttle/pichouse`)
-- **GUI:** Fyne v2 (default X11/GLFW driver; runs via XWayland on Wayland sessions)
+- **GUI:** GTK4 via [gotk4](https://github.com/diamondburned/gotk4) (`github.com/diamondburned/gotk4/pkg`). Native desktop; requires cgo. **Pinned to v0.3.1**, which targets GLib 2.84 (Debian 13). Newer gotk4 (v0.4.x) requires GLib >= 2.88, which Debian 13 does not ship — do not upgrade this dependency without also upgrading GLib.
 - **DB:** `modernc.org/sqlite` (pure-Go). Two files: `library.db` (metadata), `thumbs.db` (thumbnail blobs), stored in `~/.local/share/pichouse/`.
 - **EXIF:** `github.com/rwcarlsen/goexif`
 
 ## System prerequisites (Debian 13; also required on the Gitea runner)
 
-    sudo apt-get update && sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev libxxf86vm-dev libwayland-dev libxkbcommon-dev
+    sudo apt-get update && sudo apt-get install -y gcc pkg-config libgtk-4-dev libgirepository1.0-dev
 
-On a Wayland session, ensure XWayland is present (default on GNOME/KDE): `sudo apt-get install -y xwayland`.
+GTK4 (>= 4.10) must be present at runtime; Debian 13 ships GTK 4.18.
 
 ## Build / run / test
 
@@ -50,7 +50,7 @@ On a Wayland session, ensure XWayland is present (default on GNOME/KDE): `sudo a
     internal/scan/       filesystem scanner
     internal/thumb/      thumbnail generation + cache
     internal/model/      shared types
-    internal/ui/         Fyne UI (app, sidebar, grid, properties, toolbar, folderview)
+    internal/ui/         GTK4 UI (app, layout, sidebar, foldertree, grid, properties, toolbar, status, settings)
     .gitea/workflows/    CI (build on push to main, rolling pre-release)
 
 ## CI

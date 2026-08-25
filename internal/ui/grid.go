@@ -3,12 +3,11 @@ package ui
 import (
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/widget"
+	"github.com/diamondburned/gotk4/pkg/gdkpixbuf/v2"
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
+	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
 	"git.hemmalab.se/scuttle/pichouse/internal/model"
 	"git.hemmalab.se/scuttle/pichouse/internal/scan"
@@ -19,48 +18,96 @@ const thumbGridSize = 160
 
 // Grid is the center thumbnail grid plus its folder header.
 type Grid struct {
-	app       *App
-	container *fyne.Container
-	header    *widget.Label
-	scroll    *container.Scroll
+	app    *App
+	box    *gtk.Box
+	header *gtk.Label
+
+	gridView  *gtk.GridView
+	model     *gtk.StringList
+	selection *gtk.SingleSelection
 
 	thumbSize int
 	filter    string
 	folder    *model.Folder
-	rawMode   bool   // when true, photos are read live from rawDir
+	rawMode   bool
 	rawDir    string
 
-	photos   []model.Photo // filtered photos currently shown
-	gridWrap *widget.GridWrap
+	photos []model.Photo // filtered photos currently shown
+
+	// generation counter; async thumbnail results from an older load are
+	// discarded when the grid content changes.
+	generation uint64
 }
 
 func newGrid(a *App) *Grid {
-	g := &Grid{
-		app:       a,
-		thumbSize: thumbGridSize,
-		header:    widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-	}
-	g.gridWrap = widget.NewGridWrap(
-		func() int { return len(g.photos) },
-		g.createItem,
-		g.updateItem,
-	)
-	g.scroll = container.NewScroll(g.gridWrap)
-	g.container = container.NewBorder(
-		container.NewVBox(g.header, widget.NewSeparator()),
-		nil, nil, nil,
-		g.scroll,
-	)
+	g := &Grid{app: a, thumbSize: thumbGridSize}
+
+	g.header = gtk.NewLabel("")
+	g.header.SetXAlign(0)
+	g.header.SetMarginStart(8)
+	g.header.SetMarginTop(6)
+	g.header.SetMarginBottom(6)
+
+	g.model = gtk.NewStringList(nil)
+	g.selection = gtk.NewSingleSelection(g.model)
+	g.selection.SetAutoselect(false)
+	g.selection.SetCanUnselect(true)
+
+	factory := gtk.NewSignalListItemFactory()
+	factory.ConnectSetup(func(obj *glib.Object) {
+		item := obj.Cast().(*gtk.ListItem)
+		item.SetChild(newThumbCell(g.thumbSize))
+	})
+	factory.ConnectBind(func(obj *glib.Object) {
+		item := obj.Cast().(*gtk.ListItem)
+		cell, _ := item.Child().(*thumbCell)
+		pos := int(item.Position())
+		if cell == nil || pos < 0 || pos >= len(g.photos) {
+			return
+		}
+		g.bindCell(cell, g.photos[pos])
+	})
+
+	g.gridView = gtk.NewGridView(g.selection, &factory.ListItemFactory)
+	g.gridView.SetMaxColumns(20)
+	g.gridView.SetMinColumns(1)
+	g.gridView.ConnectActivate(func(pos uint) {
+		if int(pos) < len(g.photos) {
+			g.app.selectPhoto(g.photos[pos])
+		}
+	})
+	g.selection.ConnectSelectionChanged(func(uint, uint) {
+		pos := int(g.selection.Selected())
+		if pos >= 0 && pos < len(g.photos) {
+			g.app.selectPhoto(g.photos[pos])
+		}
+	})
+
+	scroll := gtk.NewScrolledWindow()
+	scroll.SetVExpand(true)
+	scroll.SetHExpand(true)
+	scroll.SetChild(g.gridView)
+
+	g.box = gtk.NewBox(gtk.OrientationVertical, 0)
+	g.box.Append(g.header)
+	g.box.Append(gtk.NewSeparator(gtk.OrientationHorizontal))
+	g.box.Append(scroll)
 	return g
 }
 
-// Container returns the grid root widget.
-func (g *Grid) Container() *fyne.Container { return g.container }
+// Widget returns the grid root widget.
+func (g *Grid) Widget() gtk.Widgetter { return g.box }
 
-// SetThumbSize updates the thumbnail edge length and refreshes the grid.
+// SetThumbSize updates the thumbnail edge length and rebuilds the grid.
 func (g *Grid) SetThumbSize(px int) {
 	g.thumbSize = px
-	g.rebuild()
+	g.reload()
+}
+
+// SetFilter applies a case-insensitive filename filter.
+func (g *Grid) SetFilter(q string) {
+	g.filter = strings.ToLower(strings.TrimSpace(q))
+	g.reload()
 }
 
 // RefreshVisible reloads the current source so newly scanned photos appear.
@@ -70,13 +117,7 @@ func (g *Grid) RefreshVisible() {
 	}
 }
 
-// SetFilter applies a case-insensitive filename filter.
-func (g *Grid) SetFilter(q string) {
-	g.filter = strings.ToLower(strings.TrimSpace(q))
-	g.reload()
-}
-
-// ShowFolder loads and displays the photos of a folder.
+// ShowFolder loads and displays the photos of a library folder.
 func (g *Grid) ShowFolder(f model.Folder) {
 	g.rawMode = false
 	g.folder = &f
@@ -88,8 +129,7 @@ func (g *Grid) ShowFolder(f model.Folder) {
 	g.reload()
 }
 
-// ShowRawFolder displays images read live from a filesystem directory, bypassing
-// the library database.
+// ShowRawFolder displays images read live from a filesystem directory.
 func (g *Grid) ShowRawFolder(dir string) {
 	g.rawMode = true
 	g.rawDir = dir
@@ -98,9 +138,10 @@ func (g *Grid) ShowRawFolder(dir string) {
 	g.reload()
 }
 
-// reload rebuilds photos for the current source (DB folder or raw dir), applies
-// the filter, and refreshes the grid.
+// reload rebuilds photos for the current source, applies the filter, and
+// refreshes the grid model.
 func (g *Grid) reload() {
+	g.generation++
 	g.photos = nil
 	switch {
 	case g.rawMode:
@@ -115,13 +156,20 @@ func (g *Grid) reload() {
 			}
 		}
 	}
-	g.gridWrap.Refresh()
+	g.resetModel()
 	g.updateHeaderCount()
 }
 
-// loadRaw reads image files directly from the raw directory. Where a file was
-// already scanned into the library, its stored content hash is reused so the
-// cached thumbnail is served instead of re-rendering from disk.
+// resetModel resizes the StringList model to match len(photos). The strings
+// themselves are unused; binding indexes g.photos by ListItem position.
+func (g *Grid) resetModel() {
+	n := g.model.NItems()
+	adds := make([]string, len(g.photos))
+	g.model.Splice(0, n, adds)
+}
+
+// loadRaw reads image files directly from the raw directory, reusing scanned
+// content hashes so cached thumbnails are served instead of re-rendering.
 func (g *Grid) loadRaw() {
 	entries, err := os.ReadDir(g.rawDir)
 	if err != nil {
@@ -141,7 +189,6 @@ func (g *Grid) loadRaw() {
 			p.Size = info.Size()
 			p.ModTime = info.ModTime()
 		}
-		// Reuse the scanned hash when available so the cached thumbnail is used.
 		if h, ok := hashes[full]; ok {
 			p.Hash = h
 		}
@@ -154,62 +201,83 @@ func (g *Grid) matches(name string) bool {
 	return g.filter == "" || strings.Contains(strings.ToLower(name), g.filter)
 }
 
-// rebuild recreates the grid template when the thumbnail size changes.
-func (g *Grid) rebuild() {
-	// GridWrap sizes items from the template's MinSize; recreate to resize.
-	g.gridWrap = widget.NewGridWrap(
-		func() int { return len(g.photos) },
-		g.createItem,
-		g.updateItem,
-	)
-	g.scroll.Content = g.gridWrap
-	g.scroll.Refresh()
-}
-
 func (g *Grid) updateHeaderCount() {
-	count := " (" + strconv.Itoa(len(g.photos)) + ")"
-	if g.rawMode {
-		g.header.SetText("Folder view: " + g.rawDir + count)
-		return
-	}
-	if g.folder == nil {
-		return
-	}
-	base := g.folder.Name
-	if !g.folder.MTime.IsZero() {
-		base += "   " + g.folder.MTime.Format("Jan 2, 2006")
+	count := " (" + itoa(len(g.photos)) + ")"
+	base := g.header.Text()
+	// Strip any previous count suffix.
+	if i := strings.LastIndex(base, " ("); i >= 0 {
+		base = base[:i]
 	}
 	g.header.SetText(base + count)
 }
 
-// createItem builds a reusable thumbnail cell.
-func (g *Grid) createItem() fyne.CanvasObject {
-	return newThumbCell(float32(g.thumbSize))
-}
-
-// updateItem binds a photo to a cell and kicks off async thumbnail loading.
-func (g *Grid) updateItem(id widget.GridWrapItemID, obj fyne.CanvasObject) {
-	cell := obj.(*thumbCell)
-	if id < 0 || id >= len(g.photos) {
-		return
-	}
-	p := g.photos[id]
+// bindCell shows a photo in a cell and kicks off async thumbnail loading. The
+// cache key is the content hash, falling back to the file path.
+func (g *Grid) bindCell(cell *thumbCell, p model.Photo) {
 	cell.setCaption(p.Filename)
 	cell.setPlaceholder()
-	cell.onTapped = func() { g.app.selectPhoto(p) }
 
-	// Load the thumbnail asynchronously; swap it in on the UI thread.
-	go func(photo model.Photo, c *thumbCell) {
-		blob, err := g.app.gen.Get(photo.Hash, photo.Path)
+	key := p.Hash
+	if key == "" {
+		key = p.Path
+	}
+	gen := g.generation
+
+	if blob, ok := g.app.thumbCache.Get(key); ok {
+		g.applyThumb(cell, blob, gen)
+		return
+	}
+
+	go func() {
+		blob, err := g.app.gen.Get(p.Hash, p.Path)
 		if err != nil || len(blob) == 0 {
 			return
 		}
-		res := fyne.NewStaticResource(photo.Hash+".jpg", blob)
-		fyne.Do(func() {
-			// Only apply if the cell still shows this photo.
-			if c.caption.Text == photo.Filename {
-				c.setImage(res)
-			}
-		})
-	}(p, cell)
+		g.app.thumbCache.Put(key, blob)
+		onUI(func() { g.applyThumb(cell, blob, gen) })
+	}()
+}
+
+// applyThumb decodes JPEG bytes into a pixbuf and sets it on the cell, unless
+// the grid content changed since the load began.
+func (g *Grid) applyThumb(cell *thumbCell, blob []byte, gen uint64) {
+	if gen != g.generation {
+		return
+	}
+	loader := gdkpixbuf.NewPixbufLoader()
+	if err := loader.Write(blob); err != nil {
+		loader.Close()
+		return
+	}
+	if err := loader.Close(); err != nil {
+		return
+	}
+	pb := loader.Pixbuf()
+	if pb == nil {
+		return
+	}
+	cell.setPixbuf(pb)
+}
+
+// itoa is a tiny int-to-string helper avoiding a strconv import churn.
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	var b [20]byte
+	i := len(b)
+	for n > 0 {
+		i--
+		b[i] = byte('0' + n%10)
+		n /= 10
+	}
+	if neg {
+		i--
+		b[i] = '-'
+	}
+	return string(b[i:])
 }

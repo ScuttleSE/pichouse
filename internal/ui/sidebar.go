@@ -1,50 +1,43 @@
 package ui
 
 import (
-	"fmt"
 	"sort"
 	"strconv"
 	"strings"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/theme"
-	"fyne.io/fyne/v2/widget"
+	"github.com/diamondburned/gotk4/pkg/gio/v2"
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
+	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
 	"git.hemmalab.se/scuttle/pichouse/internal/model"
 )
 
 // Node id scheme for the Library tree.
 const (
-	newFoldersID = "newfolders"  // virtual branch holding unassigned folders
-	albumPrefix  = "album:"      // album branch node ids ("album:3")
-	folderPrefix = "folder:"     // folder leaf node ids ("folder:12")
+	newFoldersID = "newfolders"
+	albumPrefix  = "album:"
+	folderPrefix = "folder:"
 )
 
 // Sidebar is the left-hand Library view: a virtual organisation of scanned
 // folders into albums (with sub-albums). Folders not in any album appear under
 // "New folders". Ordering here is virtual and independent of disk order.
 type Sidebar struct {
-	app       *App
-	container *fyne.Container
-	tree      *widget.Tree
+	app  *App
+	box  *gtk.Box
+	root *gtk.StringList
+
+	selection *gtk.MultiSelection
+	listView  *gtk.ListView
 
 	// state rebuilt on Reload
-	folders      map[int64]model.Folder
-	counts       map[int64]int
-	albums       map[int64]model.Album
-	albumChildren map[int64][]int64 // parent album id (0=top) -> child album ids
-	albumFolders map[int64][]int64  // album id -> folder ids
-	folderAlbum  map[int64]int64    // folder id -> album id (if any)
-	unassigned   []int64            // folder ids in no album
-
-	// multi-selection of folder nodes (by node id)
-	selected map[string]bool
-
-	// drag-and-drop state
-	dragging  bool           // a folder drag is in progress
-	dragFrom  string         // node id where the drag started
-	hoverNode string         // node id currently under the cursor (drop target)
+	folders       map[int64]model.Folder
+	counts        map[int64]int
+	albums        map[int64]model.Album
+	albumChildren map[int64][]int64
+	albumFolders  map[int64][]int64
+	folderAlbum   map[int64]int64
+	unassigned    []int64
 }
 
 func newSidebar(a *App) *Sidebar {
@@ -56,141 +49,190 @@ func newSidebar(a *App) *Sidebar {
 		albumChildren: map[int64][]int64{},
 		albumFolders:  map[int64][]int64{},
 		folderAlbum:   map[int64]int64{},
-		selected:      map[string]bool{},
 	}
 
-	s.tree = widget.NewTree(s.childUIDs, s.isBranch, s.createNode, s.updateNode)
-	s.tree.OnSelected = s.onSelected
+	s.root = gtk.NewStringList(nil)
 
-	header := widget.NewLabelWithStyle("Library", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	newAlbumBtn := widget.NewButtonWithIcon("New Album", theme.ContentAddIcon(), func() {
-		s.promptCreateAlbum(0)
+	treeModel := gtk.NewTreeListModel(s.root, false, false, func(item *glib.Object) *gio.ListModel {
+		so, ok := item.Cast().(*gtk.StringObject)
+		if !ok {
+			return nil
+		}
+		kids := s.childIDs(so.String())
+		if len(kids) == 0 {
+			return nil
+		}
+		cl := gtk.NewStringList(kids)
+		lm := cl.ListModel
+		return &lm
 	})
-	top := container.NewBorder(nil, nil, header, newAlbumBtn)
-	s.container = container.NewBorder(top, nil, nil, nil, s.tree)
+
+	s.selection = gtk.NewMultiSelection(&treeModel.ListModel)
+
+	factory := gtk.NewSignalListItemFactory()
+	factory.ConnectSetup(func(obj *glib.Object) {
+		item := obj.Cast().(*gtk.ListItem)
+		expander := gtk.NewTreeExpander()
+		row := gtk.NewBox(gtk.OrientationHorizontal, 4)
+		icon := gtk.NewImageFromIconName("folder-symbolic")
+		label := gtk.NewLabel("")
+		label.SetXAlign(0)
+		row.Append(icon)
+		row.Append(label)
+		expander.SetChild(row)
+		item.SetChild(expander)
+		s.attachRowMenu(expander)
+		s.attachRowDrag(expander)
+	})
+	factory.ConnectBind(func(obj *glib.Object) {
+		item := obj.Cast().(*gtk.ListItem)
+		s.bindRow(item)
+	})
+
+	s.listView = gtk.NewListView(s.selection, &factory.ListItemFactory)
+	s.selection.ConnectSelectionChanged(func(uint, uint) { s.onSelectionChanged() })
+
+	// Right-click anywhere in the list opens a context menu for the row under
+	// the pointer.
+	s.installContextMenu()
+	s.installDragDrop()
+
+	newAlbumBtn := gtk.NewButtonWithLabel("New Album")
+	newAlbumBtn.SetHAlign(gtk.AlignStart)
+	newAlbumBtn.SetMarginTop(4)
+	newAlbumBtn.SetMarginStart(4)
+	newAlbumBtn.SetMarginBottom(4)
+	newAlbumBtn.ConnectClicked(func() { s.promptCreateAlbum(0) })
+
+	scroll := gtk.NewScrolledWindow()
+	scroll.SetVExpand(true)
+	scroll.SetChild(s.listView)
+
+	s.box = gtk.NewBox(gtk.OrientationVertical, 0)
+	s.box.Append(newAlbumBtn)
+	s.box.Append(scroll)
 	return s
 }
 
-// Container returns the sidebar root widget.
-func (s *Sidebar) Container() *fyne.Container { return s.container }
+// Widget returns the sidebar root widget.
+func (s *Sidebar) Widget() gtk.Widgetter { return s.box }
 
-// childUIDs returns child node ids for a given node.
-func (s *Sidebar) childUIDs(id widget.TreeNodeID) []widget.TreeNodeID {
+// childIDs returns the child node-id strings for a node id.
+func (s *Sidebar) childIDs(id string) []string {
 	switch {
-	case id == "":
-		var ids []widget.TreeNodeID
-		for _, aid := range s.albumChildren[0] {
-			ids = append(ids, albumPrefix+strconv.FormatInt(aid, 10))
-		}
-		if len(s.unassigned) > 0 {
-			ids = append(ids, newFoldersID)
-		}
-		return ids
-	case id == newFoldersID:
-		return folderNodeIDs(s.unassigned)
 	case strings.HasPrefix(id, albumPrefix):
 		aid, _ := strconv.ParseInt(id[len(albumPrefix):], 10, 64)
-		var ids []widget.TreeNodeID
+		var out []string
 		for _, child := range s.albumChildren[aid] {
-			ids = append(ids, albumPrefix+strconv.FormatInt(child, 10))
+			out = append(out, albumPrefix+strconv.FormatInt(child, 10))
 		}
-		ids = append(ids, folderNodeIDs(s.albumFolders[aid])...)
-		return ids
+		for _, fid := range s.albumFolders[aid] {
+			out = append(out, folderPrefix+strconv.FormatInt(fid, 10))
+		}
+		return out
+	case id == newFoldersID:
+		var out []string
+		for _, fid := range s.unassigned {
+			out = append(out, folderPrefix+strconv.FormatInt(fid, 10))
+		}
+		return out
 	}
 	return nil
 }
 
-func folderNodeIDs(fids []int64) []widget.TreeNodeID {
-	ids := make([]widget.TreeNodeID, 0, len(fids))
-	for _, fid := range fids {
-		ids = append(ids, folderPrefix+strconv.FormatInt(fid, 10))
+// bindRow fills a list row for the tree item at the given list position.
+func (s *Sidebar) bindRow(item *gtk.ListItem) {
+	row, ok := item.Item().Cast().(*gtk.TreeListRow)
+	if !ok {
+		return
 	}
-	return ids
+	expander, _ := item.Child().(*gtk.TreeExpander)
+	if expander == nil {
+		return
+	}
+	expander.SetListRow(row)
+	so, _ := row.Item().Cast().(*gtk.StringObject)
+	if so == nil {
+		return
+	}
+	expander.SetName(so.String())
+	box, _ := expander.Child().(*gtk.Box)
+	if box == nil {
+		return
+	}
+	icon, _ := box.FirstChild().(*gtk.Image)
+	label, _ := box.LastChild().(*gtk.Label)
+	id := so.String()
+	name, iconName := s.nodeLabel(id)
+	if icon != nil {
+		icon.SetFromIconName(iconName)
+	}
+	if label != nil {
+		label.SetText(name)
+	}
 }
 
-// isBranch reports whether a node can have children (albums and New folders).
-func (s *Sidebar) isBranch(id widget.TreeNodeID) bool {
-	return id == newFoldersID || strings.HasPrefix(id, albumPrefix)
-}
-
-// createNode builds a reusable node template.
-func (s *Sidebar) createNode(branch bool) fyne.CanvasObject {
-	return newLibNode(s)
-}
-
-// updateNode fills a node template for a specific id.
-func (s *Sidebar) updateNode(id widget.TreeNodeID, branch bool, obj fyne.CanvasObject) {
-	node := obj.(*libNode)
-	node.id = id
+// nodeLabel returns the display text and icon name for a node id.
+func (s *Sidebar) nodeLabel(id string) (string, string) {
 	switch {
 	case id == newFoldersID:
-		node.set(theme.FolderIcon(), fmt.Sprintf("New folders (%d)", len(s.unassigned)), false)
+		return "New folders (" + itoa(len(s.unassigned)) + ")", "folder-symbolic"
 	case strings.HasPrefix(id, albumPrefix):
 		aid, _ := strconv.ParseInt(id[len(albumPrefix):], 10, 64)
-		a := s.albums[aid]
-		node.set(theme.FolderNewIcon(), a.Name, s.selected[id])
+		return s.albums[aid].Name, "folder-new-symbolic"
 	case strings.HasPrefix(id, folderPrefix):
 		fid, _ := strconv.ParseInt(id[len(folderPrefix):], 10, 64)
 		f := s.folders[fid]
-		node.set(theme.FileImageIcon(), fmt.Sprintf("%s (%d)", f.Name, s.counts[fid]), s.selected[id])
+		return f.Name + " (" + itoa(s.counts[fid]) + ")", "image-x-generic-symbolic"
 	}
+	return id, "folder-symbolic"
 }
 
-// onSelected loads a folder into the grid when a folder leaf is selected. It
-// also maintains the multi-selection set for batch operations.
-func (s *Sidebar) onSelected(id widget.TreeNodeID) {
-	if strings.HasPrefix(id, folderPrefix) {
-		fid, _ := strconv.ParseInt(id[len(folderPrefix):], 10, 64)
-		if f, ok := s.folders[fid]; ok {
-			s.app.grid.ShowFolder(f)
+// onSelectionChanged loads the (first) selected folder into the grid.
+func (s *Sidebar) onSelectionChanged() {
+	for _, id := range s.selectedIDs() {
+		if strings.HasPrefix(id, folderPrefix) {
+			fid, _ := strconv.ParseInt(id[len(folderPrefix):], 10, 64)
+			if f, ok := s.folders[fid]; ok {
+				s.app.grid.ShowFolder(f)
+				return
+			}
 		}
 	}
-	// Single-click selection replaces the multi-selection unless extended via
-	// the context menu (handled there).
-	s.selected = map[string]bool{id: true}
-	s.tree.UnselectAll()
-	s.tree.Refresh()
 }
 
-// selectedFolderIDs returns folder ids currently in the multi-selection.
+// selectedIDs returns the node-id strings of all selected rows.
+func (s *Sidebar) selectedIDs() []string {
+	var out []string
+	bs := s.selection.Selection()
+	n := bs.Size()
+	for i := uint64(0); i < n; i++ {
+		pos := bs.Nth(uint(i))
+		obj := s.selection.Item(pos)
+		if obj == nil {
+			continue
+		}
+		row, ok := obj.Cast().(*gtk.TreeListRow)
+		if !ok {
+			continue
+		}
+		if so, ok := row.Item().Cast().(*gtk.StringObject); ok {
+			out = append(out, so.String())
+		}
+	}
+	return out
+}
+
+// selectedFolderIDs returns folder ids among the current selection.
 func (s *Sidebar) selectedFolderIDs() []int64 {
 	var out []int64
-	for id := range s.selected {
+	for _, id := range s.selectedIDs() {
 		if strings.HasPrefix(id, folderPrefix) {
 			fid, _ := strconv.ParseInt(id[len(folderPrefix):], 10, 64)
 			out = append(out, fid)
 		}
 	}
 	return out
-}
-
-// dropTargetAlbum resolves the node currently under the cursor to an album id
-// for use as a drag-and-drop target. An album node resolves to itself; a folder
-// node resolves to the album containing it (if any). Returns 0 if there is no
-// valid album target.
-func (s *Sidebar) dropTargetAlbum() int64 {
-	id := s.hoverNode
-	switch {
-	case strings.HasPrefix(id, albumPrefix):
-		aid, _ := strconv.ParseInt(id[len(albumPrefix):], 10, 64)
-		return aid
-	case strings.HasPrefix(id, folderPrefix):
-		fid, _ := strconv.ParseInt(id[len(folderPrefix):], 10, 64)
-		if aid, ok := s.folderAlbum[fid]; ok {
-			return aid
-		}
-	}
-	return 0
-}
-
-// toggleSelect adds/removes a node from the multi-selection (Ctrl-style).
-func (s *Sidebar) toggleSelect(id widget.TreeNodeID) {
-	if s.selected[id] {
-		delete(s.selected, id)
-	} else {
-		s.selected[id] = true
-	}
-	s.tree.Refresh()
 }
 
 // Reload rebuilds the tree from the current database state.
@@ -224,7 +266,6 @@ func (s *Sidebar) Reload() {
 		s.albums[a.ID] = a
 		s.albumChildren[a.ParentID] = append(s.albumChildren[a.ParentID], a.ID)
 	}
-	// Folders sorted by name for a stable virtual order.
 	sort.Slice(folders, func(i, j int) bool { return folders[i].Name < folders[j].Name })
 	for _, f := range folders {
 		s.folders[f.ID] = f
@@ -235,12 +276,14 @@ func (s *Sidebar) Reload() {
 		}
 	}
 
-	s.tree.Refresh()
+	// Rebuild the root node list: top-level albums, then New folders.
+	var roots []string
 	for _, aid := range s.albumChildren[0] {
-		s.tree.OpenBranch(albumPrefix + strconv.FormatInt(aid, 10))
+		roots = append(roots, albumPrefix+strconv.FormatInt(aid, 10))
 	}
 	if len(s.unassigned) > 0 {
-		s.tree.OpenBranch(newFoldersID)
-		s.tree.Select(folderPrefix + strconv.FormatInt(s.unassigned[0], 10))
+		roots = append(roots, newFoldersID)
 	}
+	n := s.root.NItems()
+	s.root.Splice(0, n, roots)
 }

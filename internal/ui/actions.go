@@ -6,9 +6,6 @@ import (
 	"fmt"
 	"sync"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/dialog"
-
 	"git.hemmalab.se/scuttle/pichouse/internal/scan"
 )
 
@@ -17,7 +14,6 @@ import (
 type scanController struct {
 	mu     sync.Mutex
 	cancel context.CancelFunc
-	active bool
 }
 
 func (sc *scanController) begin() context.Context {
@@ -28,14 +24,12 @@ func (sc *scanController) begin() context.Context {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	sc.cancel = cancel
-	sc.active = true
 	return ctx
 }
 
 func (sc *scanController) finish() {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
-	sc.active = false
 	sc.cancel = nil
 }
 
@@ -51,10 +45,11 @@ func (sc *scanController) Stop() {
 // AddLibraryFolder records a folder and scans it in the background.
 func (a *App) AddLibraryFolder(path string) {
 	if _, err := a.lib.AddLibraryFolder(path); err != nil {
-		dialog.ShowError(err, a.win)
+		a.showError(err)
 		return
 	}
 	a.sidebar.Reload()
+	a.folderTree.Reload()
 	a.scanPaths([]string{path})
 }
 
@@ -62,11 +57,11 @@ func (a *App) AddLibraryFolder(path string) {
 func (a *App) RescanAll() {
 	folders, err := a.lib.LibraryFolders()
 	if err != nil {
-		dialog.ShowError(err, a.win)
+		a.showError(err)
 		return
 	}
 	if len(folders) == 0 {
-		dialog.ShowInformation("Rescan", "No library folders to rescan.", a.win)
+		a.showInfo("Rescan", "No library folders to rescan.")
 		return
 	}
 	paths := make([]string, 0, len(folders))
@@ -80,7 +75,7 @@ func (a *App) RescanAll() {
 // scan session, updating the status bar and refreshing the UI when done.
 func (a *App) scanPaths(paths []string) {
 	ctx := a.scan.begin()
-	fyne.Do(func() { a.status.SetScanning(true) })
+	a.status.SetScanning(true)
 	go func() {
 		defer a.scan.finish()
 		s := scan.New(a.lib)
@@ -91,7 +86,7 @@ func (a *App) scanPaths(paths []string) {
 				break
 			}
 		}
-		fyne.Do(func() {
+		onUI(func() {
 			a.status.SetScanning(false)
 			a.status.SetProgress(-1)
 			a.sidebar.Reload()
@@ -101,7 +96,7 @@ func (a *App) scanPaths(paths []string) {
 				a.status.SetMessage("Scan stopped")
 			case scanErr != nil:
 				a.status.SetMessage("Scan failed")
-				dialog.ShowError(scanErr, a.win)
+				a.showError(scanErr)
 			default:
 				a.status.SetMessage("Scan complete")
 			}
@@ -112,7 +107,7 @@ func (a *App) scanPaths(paths []string) {
 // runScan performs one folder scan, updating the status bar. It must be called
 // off the UI goroutine. It returns ctx.Err() if cancelled.
 func (a *App) runScan(ctx context.Context, s *scan.Scanner, path string) error {
-	fyne.Do(func() {
+	onUI(func() {
 		a.status.SetMessage("Scanning " + path)
 		a.status.SetProgress(0)
 	})
@@ -122,7 +117,7 @@ func (a *App) runScan(ctx context.Context, s *scan.Scanner, path string) error {
 			frac = float64(p.Done) / float64(p.Total)
 		}
 		msg := fmt.Sprintf("Scanning %s (%d/%d)", p.Folder, p.Done, p.Total)
-		fyne.Do(func() {
+		onUI(func() {
 			a.status.SetProgress(frac)
 			a.status.SetMessage(msg)
 		})

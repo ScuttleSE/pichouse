@@ -1,10 +1,7 @@
 package ui
 
 import (
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/theme"
-	"fyne.io/fyne/v2/widget"
+	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
 
 // thumbPresets are the snap positions (in px) for the thumbnail-size slider.
@@ -13,32 +10,38 @@ var thumbPresets = []int{96, 160, 240, 320}
 // Toolbar is the top toolbar: settings, rescan, search, and a thumbnail-size
 // slider with preset snap positions.
 type Toolbar struct {
-	app       *App
-	container *fyne.Container
+	app *App
+	box *gtk.Box
 }
 
 func newToolbar(a *App) *Toolbar {
 	t := &Toolbar{app: a}
 
-	settings := widget.NewButtonWithIcon("Settings", theme.SettingsIcon(), func() {
-		a.ShowSettings()
-	})
-	rescan := widget.NewButtonWithIcon("Rescan", theme.ViewRefreshIcon(), func() {
-		a.RescanAll()
+	settings := gtk.NewButtonFromIconName("emblem-system-symbolic")
+	settings.SetTooltipText("Settings")
+	settings.ConnectClicked(func() { a.ShowSettings() })
+
+	rescan := gtk.NewButtonFromIconName("view-refresh-symbolic")
+	rescan.SetTooltipText("Rescan all library folders")
+	rescan.ConnectClicked(func() { a.RescanAll() })
+
+	search := gtk.NewSearchEntry()
+	search.SetHExpand(true)
+	search.ConnectSearchChanged(func() {
+		a.grid.SetFilter(search.Text())
 	})
 
-	search := widget.NewEntry()
-	search.SetPlaceHolder("Search")
-	search.OnChanged = func(q string) {
-		a.grid.SetFilter(q)
+	// Slider snaps to preset indices; value maps into thumbPresets.
+	slider := gtk.NewScaleWithRange(gtk.OrientationHorizontal, 0, float64(len(thumbPresets)-1), 1)
+	slider.SetDrawValue(false)
+	slider.SetDigits(0)
+	slider.SetSizeRequest(160, -1)
+	slider.SetValue(float64(presetIndex(thumbGridSize)))
+	for i := range thumbPresets {
+		slider.AddMark(float64(i), gtk.PosBottom, "")
 	}
-
-	// Slider indexes into thumbPresets so it snaps to preset positions only.
-	sizeSlider := widget.NewSlider(0, float64(len(thumbPresets)-1))
-	sizeSlider.Step = 1
-	sizeSlider.Value = float64(presetIndex(thumbGridSize))
-	sizeSlider.OnChanged = func(v float64) {
-		i := int(v)
+	slider.ConnectValueChanged(func() {
+		i := int(slider.Value() + 0.5)
 		if i < 0 {
 			i = 0
 		}
@@ -46,18 +49,27 @@ func newToolbar(a *App) *Toolbar {
 			i = len(thumbPresets) - 1
 		}
 		a.grid.SetThumbSize(thumbPresets[i])
-	}
+	})
 
-	left := container.NewHBox(settings, rescan)
-	right := container.NewHBox(
-		widget.NewIcon(theme.ZoomInIcon()),
-		container.NewGridWrap(fyne.NewSize(160, sizeSlider.MinSize().Height), sizeSlider),
-	)
+	zoom := gtk.NewImageFromIconName("zoom-in-symbolic")
 
-	bar := container.NewBorder(nil, nil, left, right, search)
-	t.container = container.NewVBox(container.NewPadded(bar), widget.NewSeparator())
+	box := gtk.NewBox(gtk.OrientationHorizontal, 6)
+	box.SetMarginTop(6)
+	box.SetMarginBottom(6)
+	box.SetMarginStart(6)
+	box.SetMarginEnd(6)
+	box.Append(settings)
+	box.Append(rescan)
+	box.Append(search)
+	box.Append(zoom)
+	box.Append(slider)
+
+	t.box = box
 	return t
 }
+
+// Widget returns the toolbar's root widget.
+func (t *Toolbar) Widget() gtk.Widgetter { return t.box }
 
 // presetIndex returns the index of the closest preset to px.
 func presetIndex(px int) int {
@@ -73,6 +85,3 @@ func presetIndex(px int) int {
 	}
 	return best
 }
-
-// Container returns the toolbar's root widget.
-func (t *Toolbar) Container() *fyne.Container { return t.container }
