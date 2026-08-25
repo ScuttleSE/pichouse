@@ -53,10 +53,9 @@ func (s *Sidebar) installContextMenu() {
 	s.actions = group
 
 	// The list view hosts the action group so the menu's actions resolve under
-	// the "sidebar" prefix.
+	// the "sidebar" prefix. The popover itself is created per right-click in
+	// showRowMenu so it sizes to each menu's content.
 	s.listView.InsertActionGroup("sidebar", group)
-	s.menuPop = gtk.NewPopoverMenuFromModel(nil)
-	s.menuPop.SetHasArrow(false)
 }
 
 // attachRowMenu attaches a right-click gesture to a row's expander. On press it
@@ -83,14 +82,24 @@ func (s *Sidebar) showRowMenu(id string, expander *gtk.TreeExpander, x, y float6
 		return
 	}
 	s.menuNode = id
-	s.menuPop.SetMenuModel(menu)
+
+	// Build a fresh popover each time. A reused GtkPopoverMenu keeps the size it
+	// first measured, so a later, taller menu would gain a scrollbar instead of
+	// growing. Creating a new one lets it size to its content.
+	if s.menuPop != nil {
+		s.menuPop.Unparent()
+	}
+	pop := gtk.NewPopoverMenuFromModel(menu)
+	pop.SetHasArrow(false)
+	pop.SetParent(s.listView)
+	s.menuPop = pop
 
 	// Translate the click point from the expander to the list view's coords.
 	if px, py, ok := expander.TranslateCoordinates(s.listView, x, y); ok {
 		rect := gdk.NewRectangle(int(px), int(py), 1, 1)
-		s.menuPop.SetPointingTo(&rect)
+		pop.SetPointingTo(&rect)
 	}
-	s.menuPop.Popup()
+	pop.Popup()
 }
 
 // buildRowMenu returns the GMenu model for a node id, or nil if none applies.

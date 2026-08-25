@@ -125,10 +125,6 @@ func newSidebar(a *App) *Sidebar {
 	scroll.SetVExpand(true)
 	scroll.SetChild(s.listView)
 
-	// The reusable popover is parented to the list view so it participates in
-	// the normal widget/style hierarchy.
-	s.menuPop.SetParent(s.listView)
-
 	s.box = gtk.NewBox(gtk.OrientationVertical, 0)
 	s.box.Append(newAlbumBtn)
 	s.box.Append(scroll)
