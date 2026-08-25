@@ -1,12 +1,9 @@
 package ui
 
 import (
-	"sort"
 	"strconv"
 
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-
-	"git.hemmalab.se/scuttle/pichouse/internal/model"
 )
 
 // promptText shows a modal dialog with a single text entry and calls onOK with
@@ -148,35 +145,4 @@ func (s *Sidebar) removeSelectedFromAlbum() {
 		}
 	}
 	s.Reload()
-}
-
-// albumsSorted returns all albums ordered by their qualified path name.
-func (s *Sidebar) albumsSorted() []model.Album {
-	out := make([]model.Album, 0, len(s.albums))
-	for _, a := range s.albums {
-		out = append(out, a)
-	}
-	sort.Slice(out, func(i, j int) bool {
-		return s.albumPathName(out[i].ID) < s.albumPathName(out[j].ID)
-	})
-	return out
-}
-
-// albumPathName returns an album's name qualified by its ancestors, e.g.
-// "Trips / 2019".
-func (s *Sidebar) albumPathName(id int64) string {
-	a, ok := s.albums[id]
-	if !ok {
-		return ""
-	}
-	name := a.Name
-	for a.ParentID != 0 {
-		p, ok := s.albums[a.ParentID]
-		if !ok {
-			break
-		}
-		name = p.Name + " / " + name
-		a = p
-	}
-	return name
 }

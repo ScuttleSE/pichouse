@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 
@@ -8,6 +9,8 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+
+	"git.hemmalab.se/scuttle/pichouse/internal/model"
 )
 
 // Action names in the "sidebar" group. Each takes a single string target: the
@@ -102,17 +105,11 @@ func (s *Sidebar) buildRowMenu(id string) *gio.Menu {
 			menu.Append("Move selected here", detailed(actMoveToAlbum, id))
 		}
 	case strings.HasPrefix(id, folderPrefix):
-		albums := s.albumsSorted()
-		if len(albums) == 0 {
-			// A disabled hint is awkward with GMenu; offer album creation.
+		if len(s.albums) == 0 {
+			// No albums yet: offer creation instead of an empty submenu.
 			menu.Append("New Album…", detailed(actNewAlbum, id))
 		} else {
-			moveSection := gio.NewMenu()
-			for _, al := range albums {
-				aid := albumPrefix + strconv.FormatInt(al.ID, 10)
-				moveSection.Append("Move to: "+s.albumPathName(al.ID), detailed(actMoveToAlbum, aid))
-			}
-			menu.AppendSection("", moveSection)
+			menu.AppendSubmenu("Move to Album", s.buildMoveSubmenu(0))
 		}
 		menu.Append("Remove from Album", detailed(actRemoveAlbum, id))
 	case id == newFoldersID:
@@ -128,6 +125,33 @@ func (s *Sidebar) buildRowMenu(id string) *gio.Menu {
 func detailed(action, target string) string {
 	// Use printf-style detailed action with a quoted string target.
 	return "sidebar." + action + "::" + target
+}
+
+// buildMoveSubmenu builds a "Move to Album" submenu mirroring the album
+// hierarchy under parentID. Albums with sub-albums become nested submenus whose
+// first entry moves into that album itself.
+func (s *Sidebar) buildMoveSubmenu(parentID int64) *gio.Menu {
+	m := gio.NewMenu()
+	children := append([]int64(nil), s.albumChildren[parentID]...)
+	// Sort children by name for stable ordering.
+	sortAlbumIDsByName(children, s.albums)
+	for _, aid := range children {
+		target := albumPrefix + strconv.FormatInt(aid, 10)
+		if len(s.albumChildren[aid]) == 0 {
+			// Leaf album: a single actionable item.
+			m.Append(s.albums[aid].Name, detailed(actMoveToAlbum, target))
+			continue
+		}
+		// Album with sub-albums: a submenu with a "Move here" entry plus nested
+		// sub-albums.
+		sub := gio.NewMenu()
+		here := gio.NewMenu()
+		here.Append("Move here", detailed(actMoveToAlbum, target))
+		sub.AppendSection("", here)
+		sub.AppendSection("", s.buildMoveSubmenu(aid))
+		m.AppendSubmenu(s.albums[aid].Name, sub)
+	}
+	return m
 }
 
 // moveSelectedOrOne moves the current folder selection (or, if empty, the folder
@@ -174,4 +198,11 @@ func folderIDOf(id string) int64 {
 	}
 	n, _ := strconv.ParseInt(id[len(folderPrefix):], 10, 64)
 	return n
+}
+
+// sortAlbumIDsByName sorts album ids in place by their display name.
+func sortAlbumIDsByName(ids []int64, albums map[int64]model.Album) {
+	sort.Slice(ids, func(i, j int) bool {
+		return albums[ids[i]].Name < albums[ids[j]].Name
+	})
 }
