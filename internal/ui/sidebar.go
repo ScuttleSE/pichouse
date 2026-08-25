@@ -29,6 +29,11 @@ type Sidebar struct {
 
 	selection *gtk.MultiSelection
 	listView  *gtk.ListView
+	treeModel *gtk.TreeListModel
+
+	// expandedByDefault records album node-ids the user has expanded, so the
+	// tree stays open across Reload (e.g. after moving a folder into an album).
+	expanded map[string]bool
 
 	// state rebuilt on Reload
 	folders       map[int64]model.Folder
@@ -49,6 +54,7 @@ func newSidebar(a *App) *Sidebar {
 		albumChildren: map[int64][]int64{},
 		albumFolders:  map[int64][]int64{},
 		folderAlbum:   map[int64]int64{},
+		expanded:      map[string]bool{},
 	}
 
 	s.root = gtk.NewStringList(nil)
@@ -66,6 +72,7 @@ func newSidebar(a *App) *Sidebar {
 		lm := cl.ListModel
 		return &lm
 	})
+	s.treeModel = treeModel
 
 	s.selection = gtk.NewMultiSelection(&treeModel.ListModel)
 
@@ -276,6 +283,10 @@ func (s *Sidebar) Reload() {
 		}
 	}
 
+	// Capture which branches are currently expanded so we can restore them
+	// after the model is rebuilt (moving a folder must not collapse the tree).
+	s.saveExpansion()
+
 	// Rebuild the root node list: top-level albums, then New folders.
 	var roots []string
 	for _, aid := range s.albumChildren[0] {
@@ -286,4 +297,59 @@ func (s *Sidebar) Reload() {
 	}
 	n := s.root.NItems()
 	s.root.Splice(0, n, roots)
+
+	s.restoreExpansion()
 }
+
+// saveExpansion records the node-ids of all currently expanded branch rows.
+func (s *Sidebar) saveExpansion() {
+	if s.treeModel == nil {
+		return
+	}
+	n := s.treeModel.NItems()
+	for i := uint(0); i < n; i++ {
+		row := s.treeModel.Row(i)
+		if row == nil {
+			continue
+		}
+		if !row.Expanded() {
+			continue
+		}
+		if so, ok := row.Item().Cast().(*gtk.StringObject); ok {
+			s.expanded[so.String()] = true
+		}
+	}
+}
+
+// restoreExpansion re-expands branches previously recorded as expanded. Because
+// child models are built lazily, expanding a parent materialises its children,
+// so we iterate until no further rows can be expanded.
+func (s *Sidebar) restoreExpansion() {
+	if s.treeModel == nil {
+		return
+	}
+	for pass := 0; pass < 32; pass++ {
+		changed := false
+		n := s.treeModel.NItems()
+		for i := uint(0); i < n; i++ {
+			row := s.treeModel.Row(i)
+			if row == nil {
+				continue
+			}
+			so, ok := row.Item().Cast().(*gtk.StringObject)
+			if !ok {
+				continue
+			}
+			if s.expanded[so.String()] && !row.Expanded() {
+				row.SetExpanded(true)
+				changed = true
+			}
+		}
+		if !changed {
+			break
+		}
+	}
+}
+
+// markExpanded records that a node should be shown expanded across reloads.
+func (s *Sidebar) markExpanded(id string) { s.expanded[id] = true }

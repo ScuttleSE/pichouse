@@ -2,6 +2,7 @@ package ui
 
 import (
 	"sort"
+	"strconv"
 
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
@@ -86,6 +87,10 @@ func (s *Sidebar) promptCreateAlbum(parentID int64) {
 			s.app.showError(err)
 			return
 		}
+		// Keep the parent album open so the new sub-album is visible.
+		if parentID != 0 {
+			s.markExpanded(albumPrefix + strconv.FormatInt(parentID, 10))
+		}
 		s.Reload()
 	})
 }
@@ -123,6 +128,8 @@ func (s *Sidebar) moveFoldersToAlbum(fids []int64, target int64) {
 			return
 		}
 	}
+	// Keep the destination album open so the moved folders remain visible.
+	s.markExpanded(albumPrefix + strconv.FormatInt(target, 10))
 	s.Reload()
 }
 
