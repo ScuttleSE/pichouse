@@ -1,0 +1,15 @@
+# Build artifacts
+/dist/
+
+# Local databases and app data
+*.db
+*.db-shm
+*.db-wal
+
+# Template/reference files — never commit (see AGENTS.md)
+build.yaml
+picasa.png
+
+# Editor/OS cruft
+*.swp
+.DS_Store
