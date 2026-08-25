@@ -91,14 +91,18 @@ func (s *Sidebar) showRowMenu(id string, expander *gtk.TreeExpander, x, y float6
 	}
 	pop := gtk.NewPopoverMenuFromModel(menu)
 	pop.SetHasArrow(false)
-	pop.SetParent(s.listView)
+	// Nested submenus open as separate flyouts; the default "sliding" mode keeps
+	// one fixed-size popover and scrolls, which looked cramped for deep menus.
+	pop.SetFlags(gtk.PopoverMenuNested)
+	// Parent to the clicked row's expander (not the list view, which lives
+	// inside a GtkScrolledWindow and would clip/constrain the popover).
+	pop.SetParent(expander)
+	pop.SetPosition(gtk.PosRight)
 	s.menuPop = pop
 
-	// Translate the click point from the expander to the list view's coords.
-	if px, py, ok := expander.TranslateCoordinates(s.listView, x, y); ok {
-		rect := gdk.NewRectangle(int(px), int(py), 1, 1)
-		pop.SetPointingTo(&rect)
-	}
+	// Point at the click location within the expander's own coordinate space.
+	rect := gdk.NewRectangle(int(x), int(y), 1, 1)
+	pop.SetPointingTo(&rect)
 	pop.Popup()
 }
 
