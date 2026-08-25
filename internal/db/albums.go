@@ -46,6 +46,33 @@ func (l *Library) DeleteAlbum(id int64) error {
 	return err
 }
 
+// SetAlbumParent re-parents an album. parentID of 0 makes it top-level. It
+// refuses to create a cycle (making an album a descendant of itself).
+func (l *Library) SetAlbumParent(id, parentID int64) error {
+	if id == parentID {
+		return nil
+	}
+	// Walk up from the proposed parent; if we reach id, this would create a
+	// cycle, so refuse.
+	cur := parentID
+	for cur != 0 {
+		if cur == id {
+			return nil // would create a cycle; ignore
+		}
+		var next sql.NullInt64
+		if err := l.db.QueryRow(`SELECT parent_id FROM albums WHERE id = ?`, cur).Scan(&next); err != nil {
+			break
+		}
+		cur = next.Int64
+	}
+	var parent any
+	if parentID != 0 {
+		parent = parentID
+	}
+	_, err := l.db.Exec(`UPDATE albums SET parent_id = ? WHERE id = ?`, parent, id)
+	return err
+}
+
 // Albums returns all albums ordered by parent then position then name.
 func (l *Library) Albums() ([]model.Album, error) {
 	rows, err := l.db.Query(

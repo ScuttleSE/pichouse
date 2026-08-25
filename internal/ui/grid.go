@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/diamondburned/gotk4/pkg/gdkpixbuf/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
@@ -15,6 +17,14 @@ import (
 
 // thumbGridSize is the default thumbnail edge in the grid, in pixels.
 const thumbGridSize = 160
+
+// thumbWorkers bounds how many thumbnails are generated concurrently. The
+// thumbnail cache is SQLite-backed; too many concurrent writers cause
+// "database is locked" errors, so keep this modest.
+const thumbWorkers = 4
+
+// debugThumbs enables verbose thumbnail load logging when true.
+var debugThumbs = true
 
 // Grid is the center thumbnail grid plus its folder header.
 type Grid struct {
@@ -37,6 +47,19 @@ type Grid struct {
 	// generation counter; async thumbnail results from an older load are
 	// discarded when the grid content changes.
 	generation uint64
+
+	// thumbnail worker pool
+	jobs     chan thumbJob
+	poolOnce sync.Once
+}
+
+// thumbJob is a request to generate/fetch a thumbnail for one photo and apply
+// it to a specific cell.
+type thumbJob struct {
+	parts thumbCellParts
+	photo model.Photo
+	key   string
+	gen   uint64
 }
 
 func newGrid(a *App) *Grid {
@@ -218,7 +241,7 @@ func (g *Grid) updateHeaderCount() {
 	g.header.SetText(base + count)
 }
 
-// bindCell shows a photo in a cell and kicks off async thumbnail loading. The
+// bindCell shows a photo in a cell and enqueues async thumbnail loading. The
 // cache key is the content hash, falling back to the file path. The key is
 // stored on the picture widget's name so a late async result is discarded if
 // the cell has since been recycled for a different photo.
@@ -238,14 +261,44 @@ func (g *Grid) bindCell(parts thumbCellParts, p model.Photo) {
 		return
 	}
 
-	go func() {
-		blob, err := g.app.gen.Get(p.Hash, p.Path)
-		if err != nil || len(blob) == 0 {
-			return
+	g.ensurePool()
+	g.jobs <- thumbJob{parts: parts, photo: p, key: key, gen: gen}
+}
+
+// ensurePool lazily starts the thumbnail worker pool.
+func (g *Grid) ensurePool() {
+	g.poolOnce.Do(func() {
+		g.jobs = make(chan thumbJob, 256)
+		for i := 0; i < thumbWorkers; i++ {
+			go g.thumbWorker()
 		}
-		g.app.thumbCache.Put(key, blob)
-		onUI(func() { g.applyThumb(parts, key, blob, gen) })
-	}()
+	})
+}
+
+// thumbWorker processes thumbnail jobs, bounding concurrent SQLite writes.
+func (g *Grid) thumbWorker() {
+	for job := range g.jobs {
+		// Skip stale jobs cheaply before doing any work.
+		if job.gen != g.generation {
+			continue
+		}
+		blob, err := g.app.gen.Get(job.photo.Hash, job.photo.Path)
+		if err != nil {
+			if debugThumbs {
+				log.Printf("[thumb] generate FAILED %s (hash=%q): %v", job.photo.Path, job.photo.Hash, err)
+			}
+			continue
+		}
+		if len(blob) == 0 {
+			if debugThumbs {
+				log.Printf("[thumb] empty blob for %s (hash=%q)", job.photo.Path, job.photo.Hash)
+			}
+			continue
+		}
+		g.app.thumbCache.Put(job.key, blob)
+		j := job
+		onUI(func() { g.applyThumb(j.parts, j.key, blob, j.gen) })
+	}
 }
 
 // applyThumb decodes JPEG bytes into a pixbuf and sets it on the cell, unless
@@ -259,17 +312,29 @@ func (g *Grid) applyThumb(parts thumbCellParts, key string, blob []byte, gen uin
 	}
 	loader := gdkpixbuf.NewPixbufLoader()
 	if err := loader.Write(blob); err != nil {
+		if debugThumbs {
+			log.Printf("[thumb] loader.Write failed for key=%q: %v", key, err)
+		}
 		loader.Close()
 		return
 	}
 	if err := loader.Close(); err != nil {
+		if debugThumbs {
+			log.Printf("[thumb] loader.Close failed for key=%q: %v", key, err)
+		}
 		return
 	}
 	pb := loader.Pixbuf()
 	if pb == nil {
+		if debugThumbs {
+			log.Printf("[thumb] nil pixbuf after decode for key=%q", key)
+		}
 		return
 	}
 	parts.setPixbuf(pb)
+	if debugThumbs {
+		log.Printf("[thumb] OK key=%q size=%dx%d", key, pb.Width(), pb.Height())
+	}
 }
 
 // itoa is a tiny int-to-string helper avoiding a strconv import churn.

@@ -36,10 +36,14 @@ func OpenThumbsAt(path string) (*Thumbs, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := sqldb.Exec("PRAGMA journal_mode=WAL;"); err != nil {
+	if _, err := sqldb.Exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;"); err != nil {
 		sqldb.Close()
 		return nil, err
 	}
+	// Serialize writers: modernc sqlite allows one writer at a time, and the UI
+	// generates thumbnails from several workers concurrently. A single pooled
+	// connection plus busy_timeout avoids "database is locked" errors.
+	sqldb.SetMaxOpenConns(1)
 	if _, err := sqldb.Exec(thumbsSchema); err != nil {
 		sqldb.Close()
 		return nil, err

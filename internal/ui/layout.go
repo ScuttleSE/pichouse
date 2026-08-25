@@ -28,14 +28,14 @@ func (a *App) build() {
 	leftBox := gtk.NewBox(gtk.OrientationVertical, 0)
 	leftBox.Append(switcher)
 	leftBox.Append(stack)
-	leftBox.SetSizeRequest(240, -1)
+	leftBox.SetSizeRequest(300, -1)
 
 	// Center-left split: sidebar | grid.
 	leftPaned := gtk.NewPaned(gtk.OrientationHorizontal)
 	leftPaned.SetStartChild(leftBox)
 	leftPaned.SetEndChild(a.grid.Widget())
 	leftPaned.SetResizeStartChild(false)
-	leftPaned.SetPosition(240)
+	leftPaned.SetPosition(300)
 
 	// Main split: (sidebar|grid) | properties.
 	mainPaned := gtk.NewPaned(gtk.OrientationHorizontal)

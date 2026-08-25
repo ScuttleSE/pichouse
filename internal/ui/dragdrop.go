@@ -14,45 +14,62 @@ import (
 // in the factory setup.
 func (s *Sidebar) installDragDrop() {}
 
-// attachRowDrag makes a row both a drag source (when it is a folder) and a drop
-// target (when it is an album). The node id travels as a string GValue; the
-// drop resolves it to the folders to move.
+// attachRowDrag makes folder and album rows draggable, and makes album rows drop
+// targets. Dropping folders onto an album moves them into it; dropping an album
+// onto an album makes it a sub-album. The dragged node id travels as a string.
 func (s *Sidebar) attachRowDrag(expander *gtk.TreeExpander) {
-	// Drag source: dragging a folder row carries the current selection.
+	// Drag source: folders and albums can be dragged.
 	src := gtk.NewDragSource()
 	src.SetActions(gdk.ActionMove)
 	src.ConnectPrepare(func(_, _ float64) *gdk.ContentProvider {
 		id := expander.Name()
-		if !strings.HasPrefix(id, folderPrefix) {
+		if !strings.HasPrefix(id, folderPrefix) && !strings.HasPrefix(id, albumPrefix) {
 			return nil
 		}
-		// If the dragged folder is not part of the selection, drag it alone.
-		payload := id
-		val := coreglib.NewValue(payload)
+		val := coreglib.NewValue(id)
 		return gdk.NewContentProviderForValue(val)
 	})
 	expander.AddController(src)
 
-	// Drop target: album rows accept dropped folders.
+	// Drop target: album rows accept folders (move into album) and other albums
+	// (make sub-album).
 	tgt := gtk.NewDropTarget(glib.TypeString, gdk.ActionMove)
 	tgt.ConnectDrop(func(value *coreglib.Value, _, _ float64) bool {
-		id := expander.Name()
-		if !strings.HasPrefix(id, albumPrefix) {
+		targetID := expander.Name()
+		if !strings.HasPrefix(targetID, albumPrefix) {
 			return false
 		}
-		aid, _ := strconv.ParseInt(id[len(albumPrefix):], 10, 64)
+		targetAlbum, _ := strconv.ParseInt(targetID[len(albumPrefix):], 10, 64)
+		dragged := value.String()
 
-		dragged := value.String() // the source node id string
-		fids := s.selectedFolderIDs()
-		if len(fids) == 0 && strings.HasPrefix(dragged, folderPrefix) {
-			fid, _ := strconv.ParseInt(dragged[len(folderPrefix):], 10, 64)
-			fids = []int64{fid}
+		switch {
+		case strings.HasPrefix(dragged, albumPrefix):
+			// Re-parent the dragged album under the target album.
+			srcAlbum, _ := strconv.ParseInt(dragged[len(albumPrefix):], 10, 64)
+			if srcAlbum == targetAlbum {
+				return false
+			}
+			if err := s.app.lib.SetAlbumParent(srcAlbum, targetAlbum); err != nil {
+				s.app.showError(err)
+				return false
+			}
+			s.markExpanded(targetID)
+			s.Reload()
+			return true
+
+		case strings.HasPrefix(dragged, folderPrefix):
+			fids := s.selectedFolderIDs()
+			if len(fids) == 0 {
+				fid, _ := strconv.ParseInt(dragged[len(folderPrefix):], 10, 64)
+				fids = []int64{fid}
+			}
+			if len(fids) == 0 {
+				return false
+			}
+			s.moveFoldersToAlbum(fids, targetAlbum)
+			return true
 		}
-		if len(fids) == 0 {
-			return false
-		}
-		s.moveFoldersToAlbum(fids, aid)
-		return true
+		return false
 	})
 	expander.AddController(tgt)
 }

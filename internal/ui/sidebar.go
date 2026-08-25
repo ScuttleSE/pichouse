@@ -80,6 +80,10 @@ func newSidebar(a *App) *Sidebar {
 	factory.ConnectSetup(func(obj *glib.Object) {
 		item := obj.Cast().(*gtk.ListItem)
 		expander := gtk.NewTreeExpander()
+		// Reserve space for the expander arrow on every row so leaf rows
+		// (folders) line up with branch rows (albums) that show an arrow.
+		expander.SetIndentForIcon(true)
+		expander.SetIndentForDepth(true)
 		row := gtk.NewBox(gtk.OrientationHorizontal, 4)
 		icon := gtk.NewImageFromIconName("folder-symbolic")
 		label := gtk.NewLabel("")

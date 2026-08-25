@@ -122,3 +122,37 @@ func TestHashesByDir(t *testing.T) {
 		t.Fatalf("HashesByDir wrong: %+v", m)
 	}
 }
+
+func TestSetAlbumParent(t *testing.T) {
+	dir := t.TempDir()
+	lib, err := OpenLibraryAt(filepath.Join(dir, "library.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lib.Close()
+
+	a, _ := lib.CreateAlbum("A", 0)
+	b, _ := lib.CreateAlbum("B", 0)
+
+	// Make B a sub-album of A.
+	if err := lib.SetAlbumParent(b, a); err != nil {
+		t.Fatal(err)
+	}
+	albums, _ := lib.Albums()
+	for _, al := range albums {
+		if al.ID == b && al.ParentID != a {
+			t.Fatalf("B parent = %d want %d", al.ParentID, a)
+		}
+	}
+
+	// Attempting to make A a child of B (its descendant) must be a no-op.
+	if err := lib.SetAlbumParent(a, b); err != nil {
+		t.Fatal(err)
+	}
+	albums, _ = lib.Albums()
+	for _, al := range albums {
+		if al.ID == a && al.ParentID != 0 {
+			t.Fatalf("cycle created: A parent = %d, want 0", al.ParentID)
+		}
+	}
+}
