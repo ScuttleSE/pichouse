@@ -62,13 +62,25 @@ func (c *Client) Detect(ctx context.Context) (ok bool, models []string, err erro
 }
 
 // Generate runs a single vision inference: it sends the image bytes and prompt
-// to the model and returns the raw text response.
-func (c *Client) Generate(ctx context.Context, model, prompt string, image []byte) (string, error) {
+// to the model and returns the raw text response. numThread caps the CPU
+// threads Ollama uses (0 = let Ollama decide); keepAlive controls how long the
+// model stays resident between calls (e.g. "5m").
+func (c *Client) Generate(ctx context.Context, model, prompt string, image []byte, numThread int, keepAlive string) (string, error) {
+	options := map[string]any{}
+	if numThread > 0 {
+		options["num_thread"] = numThread
+	}
 	reqBody := map[string]any{
 		"model":  model,
 		"prompt": prompt,
 		"images": []string{base64.StdEncoding.EncodeToString(image)},
 		"stream": false,
+	}
+	if len(options) > 0 {
+		reqBody["options"] = options
+	}
+	if keepAlive != "" {
+		reqBody["keep_alive"] = keepAlive
 	}
 	buf, err := json.Marshal(reqBody)
 	if err != nil {

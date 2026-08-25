@@ -13,11 +13,16 @@ const (
 	// DefaultMaxSide is the longest image side (px) sent to the model. Vision
 	// models downscale internally; a compact image keeps requests fast.
 	DefaultMaxSide = 768
-	// DefaultConcurrency bounds parallel inference. Vision inference is heavy,
-	// so keep this low by default.
-	DefaultConcurrency = 2
+	// DefaultConcurrency bounds parallel inference. For a single local GPU,
+	// serial requests are best: parallel vision requests make Ollama spin up a
+	// second model runner or do CPU-side prefill/image-embedding in parallel,
+	// which pins the CPU without improving throughput. Default to 1.
+	DefaultConcurrency = 1
 	// DefaultMaxTags caps how many keywords are kept per image.
 	DefaultMaxTags = 25
+	// DefaultKeepAlive keeps the model resident between requests so it is not
+	// reloaded (which causes CPU spikes) during a batch.
+	DefaultKeepAlive = "10m"
 )
 
 // DefaultPrompt asks the model for a plain comma-separated keyword list.
@@ -35,6 +40,12 @@ type Config struct {
 	MaxSide     int
 	MaxTags     int
 	Concurrency int
+	// NumThread caps CPU threads Ollama uses for the parts of inference that
+	// run on CPU (notably vision image-embedding). 0 lets Ollama decide.
+	NumThread int
+	// KeepAlive keeps the model resident between requests (e.g. "10m") to avoid
+	// reload CPU spikes mid-batch.
+	KeepAlive string
 	// Manage tells pichouse to launch a local `ollama serve` subprocess when no
 	// server is already running.
 	Manage bool
@@ -53,6 +64,8 @@ func DefaultConfig() Config {
 		MaxSide:     DefaultMaxSide,
 		MaxTags:     DefaultMaxTags,
 		Concurrency: DefaultConcurrency,
+		NumThread:   0,
+		KeepAlive:   DefaultKeepAlive,
 		Manage:      false,
 	}
 }
@@ -79,6 +92,12 @@ func (c *Config) Normalize() {
 	}
 	if c.Concurrency <= 0 {
 		c.Concurrency = DefaultConcurrency
+	}
+	if c.KeepAlive == "" {
+		c.KeepAlive = DefaultKeepAlive
+	}
+	if c.NumThread < 0 {
+		c.NumThread = 0
 	}
 }
 

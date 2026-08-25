@@ -24,6 +24,7 @@ const (
 	keyAIManage      = "ai.manage"
 	keyAIBinary      = "ai.binary"
 	keyAIPrompt      = "ai.prompt"
+	keyAINumThread   = "ai.num_thread"
 )
 
 // defaultThumbSizes are the four slider preset sizes in pixels.
@@ -89,6 +90,11 @@ func loadAIConfig(lib *db.Library) ai.Config {
 	}
 	if v, _ := lib.GetSetting(keyAIPrompt, ""); v != "" {
 		c.Prompt = v
+	}
+	if v, _ := lib.GetSetting(keyAINumThread, ""); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			c.NumThread = n
+		}
 	}
 	c.Normalize()
 	return c

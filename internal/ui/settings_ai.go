@@ -84,6 +84,23 @@ func (a *App) buildAISettings(parent *gtk.Window) gtk.Widgetter {
 	concRow.Append(concSpin)
 	box.Append(concRow)
 
+	// CPU thread cap (0 = auto). Limits the CPU-side vision image-embedding
+	// work that can otherwise pin every core mid-batch.
+	threadRow := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	threadRow.Append(fixedLabel("CPU threads", 90))
+	threadSpin := gtk.NewSpinButtonWithRange(0, 128, 1)
+	threadSpin.SetValue(float64(a.aiConfig.NumThread))
+	threadSpin.SetTooltipText("Max CPU threads Ollama may use (0 = automatic). Lower this if tagging pins your CPU.")
+	threadSpin.ConnectValueChanged(func() {
+		a.aiConfig.NumThread = int(threadSpin.Value())
+		a.lib.SetSetting(keyAINumThread, strconv.Itoa(a.aiConfig.NumThread))
+	})
+	threadRow.Append(threadSpin)
+	threadHint := gtk.NewLabel("0 = auto")
+	threadHint.SetXAlign(0)
+	threadRow.Append(threadHint)
+	box.Append(threadRow)
+
 	box.Append(gtk.NewSeparator(gtk.OrientationHorizontal))
 
 	// Managed subprocess.

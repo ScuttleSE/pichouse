@@ -208,7 +208,7 @@ func (a *App) tagOnePhoto(ctx context.Context, client *ai.Client, cfg ai.Config,
 		_ = a.lib.SetAIStatus(id, model.AIError)
 		return false
 	}
-	resp, err := client.Generate(ctx, cfg.Model, cfg.Prompt, img)
+	resp, err := client.Generate(ctx, cfg.Model, cfg.Prompt, img, cfg.NumThread, cfg.KeepAlive)
 	if err != nil {
 		if ctx.Err() == nil {
 			log.Printf("[ai] %s: inference failed: %v", p.Filename, err)

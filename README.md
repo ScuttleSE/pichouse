@@ -51,6 +51,20 @@ model. Nothing leaves your machine and no models are downloaded automatically.
 All tags are stored in `library.db`. AI and user tags share one table and are
 distinguished by a source flag.
 
+### Controlling CPU/GPU load
+
+Even when Ollama runs the model on the GPU, vision models do image
+preprocessing (the CLIP/`mmproj` embedding step) on the CPU, which can spike CPU
+usage during a batch. To keep this in check:
+
+- **Concurrency** defaults to **1**. Sending parallel requests to a single local
+  GPU does not improve throughput and makes Ollama spin up extra runners or do
+  parallel CPU prefill — raise it only if you have the headroom.
+- **CPU threads** (Settings → AI Tagging) caps how many CPU threads Ollama may
+  use (`0` = automatic). Lower it if tagging saturates your CPU.
+- pichouse keeps the model resident between images (`keep_alive`) so it is not
+  reloaded mid-batch.
+
 
 ## Tech stack
 
