@@ -9,6 +9,7 @@ import (
 	"fyne.io/fyne/v2/container"
 
 	"git.hemmalab.se/scuttle/pichouse/internal/db"
+	"git.hemmalab.se/scuttle/pichouse/internal/model"
 	"git.hemmalab.se/scuttle/pichouse/internal/thumb"
 	"git.hemmalab.se/scuttle/pichouse/internal/version"
 )
@@ -94,3 +95,8 @@ func (a *App) build() {
 
 // Window returns the main application window.
 func (a *App) Window() fyne.Window { return a.win }
+
+// selectPhoto shows a photo's details in the properties panel.
+func (a *App) selectPhoto(p model.Photo) {
+	a.properties.Show(p)
+}
