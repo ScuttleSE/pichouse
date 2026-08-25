@@ -23,6 +23,9 @@ const (
 	// DefaultKeepAlive keeps the model resident between requests so it is not
 	// reloaded (which causes CPU spikes) during a batch.
 	DefaultKeepAlive = "10m"
+	// DefaultNumPredict caps how many tokens the model may generate per image.
+	// Tag lists are short; a cap guarantees runaway models (e.g. llava) stop.
+	DefaultNumPredict = 128
 )
 
 // DefaultPrompt asks the model for a plain comma-separated keyword list.
@@ -46,6 +49,9 @@ type Config struct {
 	// NumCtx sets the context window (options.num_ctx). Smaller windows reduce
 	// CPU-side prompt prefill cost. 0 uses the model default.
 	NumCtx int
+	// NumPredict caps generated tokens per image (options.num_predict). Always
+	// positive after Normalize so generation is bounded.
+	NumPredict int
 	// KeepAlive keeps the model resident between requests (e.g. "10m") to avoid
 	// reload CPU spikes mid-batch.
 	KeepAlive string
@@ -69,6 +75,7 @@ func DefaultConfig() Config {
 		Concurrency: DefaultConcurrency,
 		NumThread:   0,
 		NumCtx:      0,
+		NumPredict:  DefaultNumPredict,
 		KeepAlive:   DefaultKeepAlive,
 		Manage:      false,
 	}
@@ -105,6 +112,9 @@ func (c *Config) Normalize() {
 	}
 	if c.NumCtx < 0 {
 		c.NumCtx = 0
+	}
+	if c.NumPredict <= 0 {
+		c.NumPredict = DefaultNumPredict
 	}
 }
 

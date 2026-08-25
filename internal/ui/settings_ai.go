@@ -117,6 +117,19 @@ func (a *App) buildAISettings(parent *gtk.Window) gtk.Widgetter {
 	ctxRow.Append(ctxHint)
 	box.Append(ctxRow)
 
+	// Max generated tokens per image. Caps runaway models like llava.
+	predRow := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	predRow.Append(fixedLabel("Max tokens", 90))
+	predSpin := gtk.NewSpinButtonWithRange(16, 4096, 16)
+	predSpin.SetValue(float64(a.aiConfig.NumPredict))
+	predSpin.SetTooltipText("Maximum tokens the model may generate per image. Caps runaway models (e.g. llava) so tagging always finishes.")
+	predSpin.ConnectValueChanged(func() {
+		a.aiConfig.NumPredict = int(predSpin.Value())
+		a.lib.SetSetting(keyAINumPredict, strconv.Itoa(a.aiConfig.NumPredict))
+	})
+	predRow.Append(predSpin)
+	box.Append(predRow)
+
 	box.Append(gtk.NewSeparator(gtk.OrientationHorizontal))
 
 	// Managed subprocess.

@@ -63,9 +63,10 @@ func (c *Client) Detect(ctx context.Context) (ok bool, models []string, err erro
 
 // GenOptions holds per-request tuning passed to Ollama.
 type GenOptions struct {
-	NumThread int    // options.num_thread; 0 = auto
-	NumCtx    int    // options.num_ctx; 0 = model default. Smaller = less CPU prefill.
-	KeepAlive string // keep_alive, e.g. "10m"; "" = server default
+	NumThread  int    // options.num_thread; 0 = auto
+	NumCtx     int    // options.num_ctx; 0 = model default. Smaller = less CPU prefill.
+	NumPredict int    // options.num_predict; 0 = unbounded (avoid). Caps generation.
+	KeepAlive  string // keep_alive, e.g. "10m"; "" = server default
 }
 
 // GenResult is the model text plus Ollama's timing breakdown (nanoseconds).
@@ -86,6 +87,9 @@ func (c *Client) Generate(ctx context.Context, model, prompt string, image []byt
 	}
 	if opt.NumCtx > 0 {
 		options["num_ctx"] = opt.NumCtx
+	}
+	if opt.NumPredict > 0 {
+		options["num_predict"] = opt.NumPredict
 	}
 	reqBody := map[string]any{
 		"model":  model,

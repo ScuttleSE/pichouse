@@ -209,9 +209,10 @@ func (a *App) tagOnePhoto(ctx context.Context, client *ai.Client, cfg ai.Config,
 		return false
 	}
 	res, err := client.Generate(ctx, cfg.Model, cfg.Prompt, img, ai.GenOptions{
-		NumThread: cfg.NumThread,
-		NumCtx:    cfg.NumCtx,
-		KeepAlive: cfg.KeepAlive,
+		NumThread:  cfg.NumThread,
+		NumCtx:     cfg.NumCtx,
+		NumPredict: cfg.NumPredict,
+		KeepAlive:  cfg.KeepAlive,
 	})
 	if err != nil {
 		if ctx.Err() == nil {

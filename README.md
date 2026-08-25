@@ -73,6 +73,9 @@ pichouse exposes knobs (Settings → AI Tagging) that reduce CPU load:
 - **CPU threads** caps how many CPU threads Ollama may use (`0` = automatic).
 - **Context size** caps the context window (`0` = model default); smaller
   reduces CPU-side prompt prefill.
+- **Max tokens** caps generated tokens per image (default `128`). Some models
+  (notably `llava`) can generate without stopping and never return; this cap
+  guarantees tagging finishes.
 - The model is kept resident between images (`keep_alive`) so it is not reloaded
   mid-batch.
 
