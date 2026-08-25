@@ -151,6 +151,25 @@ func (l *Library) Folders() ([]model.Folder, error) {
 	return out, rows.Err()
 }
 
+// FolderPhotoCounts returns a map of folder id to its photo count.
+func (l *Library) FolderPhotoCounts() (map[int64]int, error) {
+	rows, err := l.db.Query(`SELECT folder_id, COUNT(*) FROM photos GROUP BY folder_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]int{}
+	for rows.Next() {
+		var fid int64
+		var n int
+		if err := rows.Scan(&fid, &n); err != nil {
+			return nil, err
+		}
+		out[fid] = n
+	}
+	return out, rows.Err()
+}
+
 // UpsertPhoto inserts or updates a photo by path and returns its id.
 func (l *Library) UpsertPhoto(p model.Photo) (int64, error) {
 	thumb := 0

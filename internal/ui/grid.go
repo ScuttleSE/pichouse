@@ -75,6 +75,3 @@ func (g *Grid) reload() {
 	}
 	g.body.SetText(g.folder.Name + ": " + strconv.Itoa(len(photos)) + " photos")
 }
-
-// itoa is a small helper for label text.
-func itoa(n int) string { return strconv.Itoa(n) }
