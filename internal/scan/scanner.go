@@ -3,6 +3,7 @@
 package scan
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"image"
@@ -56,12 +57,22 @@ func New(lib *db.Library) *Scanner {
 // ScanFolder walks root recursively, recording folders and photos. progress may
 // be nil. It returns the number of photos recorded.
 func (s *Scanner) ScanFolder(root string, progress func(Progress)) (int, error) {
+	return s.ScanFolderContext(context.Background(), root, progress)
+}
+
+// ScanFolderContext is ScanFolder with cancellation. When ctx is cancelled the
+// walk stops promptly and the count recorded so far is returned along with
+// ctx.Err().
+func (s *Scanner) ScanFolderContext(ctx context.Context, root string, progress func(Progress)) (int, error) {
 	// First pass: collect image files grouped by directory.
 	byDir := map[string][]string{}
 	total := 0
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil // skip unreadable entries
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
 		if d.IsDir() {
 			return nil
@@ -79,6 +90,9 @@ func (s *Scanner) ScanFolder(root string, progress func(Progress)) (int, error) 
 
 	done := 0
 	for dir, files := range byDir {
+		if ctx.Err() != nil {
+			return done, ctx.Err()
+		}
 		fid, err := s.upsertFolderFor(dir, files)
 		if err != nil {
 			return done, err
@@ -87,6 +101,9 @@ func (s *Scanner) ScanFolder(root string, progress func(Progress)) (int, error) 
 			return done, err
 		}
 		for _, path := range files {
+			if ctx.Err() != nil {
+				return done, ctx.Err()
+			}
 			if err := s.recordPhoto(fid, path); err != nil {
 				return done, err
 			}

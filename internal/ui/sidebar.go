@@ -155,4 +155,15 @@ func (s *Sidebar) Reload() {
 
 	s.tree.Refresh()
 	s.tree.OpenBranch(rootFoldersID)
+
+	// Auto-expand the most recent year and select its first folder so the grid
+	// is populated instead of appearing empty after a scan.
+	if len(s.years) > 0 {
+		yearID := fmt.Sprintf("%s%d", yearPrefix, s.years[0])
+		s.tree.OpenBranch(yearID)
+		if fs := s.byYear[s.years[0]]; len(fs) > 0 {
+			folderID := fmt.Sprintf("%s%d", folderPrefix, fs[0].ID)
+			s.tree.Select(folderID)
+		}
+	}
 }

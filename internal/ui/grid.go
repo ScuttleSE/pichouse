@@ -63,6 +63,13 @@ func (g *Grid) SetThumbSize(px int) {
 	g.rebuild()
 }
 
+// RefreshVisible reloads the current source so newly scanned photos appear.
+func (g *Grid) RefreshVisible() {
+	if g.folder != nil || g.rawMode {
+		g.reload()
+	}
+}
+
 // SetFilter applies a case-insensitive filename filter.
 func (g *Grid) SetFilter(q string) {
 	g.filter = strings.ToLower(strings.TrimSpace(q))

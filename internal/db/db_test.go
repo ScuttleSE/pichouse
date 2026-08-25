@@ -58,6 +58,50 @@ func TestLibraryRoundTrip(t *testing.T) {
 	}
 }
 
+func TestRemoveLibraryFolder(t *testing.T) {
+	dir := t.TempDir()
+	lib, err := OpenLibraryAt(filepath.Join(dir, "library.db"))
+	if err != nil {
+		t.Fatalf("open library: %v", err)
+	}
+	defer lib.Close()
+
+	if _, err := lib.AddLibraryFolder("/photos"); err != nil {
+		t.Fatalf("add library folder: %v", err)
+	}
+	fid, err := lib.UpsertFolder(model.Folder{
+		Path: "/photos/2019", Name: "2019", MTime: time.Now(), Year: 2019,
+	})
+	if err != nil {
+		t.Fatalf("upsert folder: %v", err)
+	}
+	if _, err := lib.UpsertPhoto(model.Photo{
+		FolderID: fid, Path: "/photos/2019/a.jpg", Filename: "a.jpg",
+		Size: 1, ModTime: time.Now(), Hash: "h",
+	}); err != nil {
+		t.Fatalf("upsert photo: %v", err)
+	}
+
+	if err := lib.RemoveLibraryFolder("/photos"); err != nil {
+		t.Fatalf("remove library folder: %v", err)
+	}
+
+	lfs, err := lib.LibraryFolders()
+	if err != nil {
+		t.Fatalf("list library folders: %v", err)
+	}
+	if len(lfs) != 0 {
+		t.Fatalf("want 0 library folders after remove, got %d", len(lfs))
+	}
+	folders, err := lib.Folders()
+	if err != nil {
+		t.Fatalf("list folders: %v", err)
+	}
+	if len(folders) != 0 {
+		t.Fatalf("want 0 scanned folders after remove, got %d", len(folders))
+	}
+}
+
 func TestThumbsRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	th, err := OpenThumbsAt(filepath.Join(dir, "thumbs.db"))

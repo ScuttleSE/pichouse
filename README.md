@@ -2,22 +2,24 @@
 
 A Picasa-like photo library application for Linux, written in Go.
 
-pichouse lets you add one or more library folders, scans them into a local
-SQLite database, generates cached thumbnails, and lets you browse your photos
-through a Picasa-style interface: a collapsible folder tree on the left, a
-thumbnail grid in the center, and a properties panel on the right. A separate
-raw filesystem folder view is also available.
+pichouse lets you add one or more library folders through a Settings dialog,
+scans them into a local SQLite database, generates cached thumbnails, and lets
+you browse your photos through a Picasa-style interface: a collapsible sidebar
+on the left (with a year-grouped Library tab and a raw filesystem Folders tab),
+a thumbnail grid in the center, and a properties panel on the right.
 
 ## Features (milestone 1)
 
-- Add one or more library folders.
-- Folders scanned into a local SQLite database (`library.db`).
+- Add or remove library folders via a Settings dialog (extensible for more
+  settings later).
+- Folders scanned into a local SQLite database (`library.db`); scans can be
+  stopped from the status bar.
 - Browsing reflects the cached database state by default.
 - Thumbnails generated on first view and cached separately (`thumbs.db`).
-- Folder tree grouped by year with item counts.
-- Thumbnail grid with adjustable thumbnail size.
+- Left sidebar tabs: a Library tree grouped by year with item counts, and a
+  Folders tree that drills into each added root's subfolders live from disk.
+- Thumbnail grid with a size slider that snaps to preset sizes.
 - Properties panel for the selected photo.
-- Separate raw filesystem folder view.
 
 ## Tech stack
 

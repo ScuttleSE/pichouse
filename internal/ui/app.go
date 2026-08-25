@@ -24,9 +24,12 @@ type App struct {
 	gen    *thumb.Generator
 
 	sidebar    *Sidebar
-	grid       *Grid
+	folderTree *FolderTree
 	properties *Properties
+	grid       *Grid
 	status     *StatusBar
+
+	scan scanController
 }
 
 // Run starts the pichouse GUI application. It is the single entry point called
@@ -65,17 +68,25 @@ func Run() {
 // bar.
 func (a *App) build() {
 	a.status = newStatusBar()
+	a.status.SetOnStop(func() { a.scan.Stop() })
 	a.properties = newProperties()
 	a.grid = newGrid(a)
 	a.sidebar = newSidebar(a)
+	a.folderTree = newFolderTree(a)
 
 	toolbar := newToolbar(a)
 
 	// Center: folder header + grid handled inside Grid.
 	center := a.grid.Container()
 
+	// Left sidebar: tabs for the year-grouped Library and the raw Folders tree.
+	leftTabs := container.NewAppTabs(
+		container.NewTabItem("Library", a.sidebar.Container()),
+		container.NewTabItem("Folders", a.folderTree.Container()),
+	)
+
 	// Left sidebar and right properties are collapsible split containers.
-	leftSplit := container.NewHSplit(a.sidebar.Container(), center)
+	leftSplit := container.NewHSplit(leftTabs, center)
 	leftSplit.SetOffset(0.2)
 
 	mainSplit := container.NewHSplit(leftSplit, a.properties.Container())
@@ -91,6 +102,7 @@ func (a *App) build() {
 
 	// Populate the sidebar from the current DB state.
 	a.sidebar.Reload()
+	a.folderTree.Reload()
 }
 
 // Window returns the main application window.

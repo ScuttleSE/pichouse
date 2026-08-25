@@ -1,6 +1,8 @@
 package scan
 
 import (
+	"context"
+	"errors"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -78,6 +80,26 @@ func TestScanFolder(t *testing.T) {
 		if p.Hash == "" {
 			t.Errorf("photo %s missing hash", p.Filename)
 		}
+	}
+}
+
+func TestScanFolderContextCancel(t *testing.T) {
+	root := t.TempDir()
+	for i := 0; i < 5; i++ {
+		writeJPEG(t, filepath.Join(root, image.Pt(i, 0).String()+".jpg"), 16, 16)
+	}
+	lib, err := db.OpenLibraryAt(filepath.Join(root, "library.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lib.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel before scanning starts
+	s := New(lib)
+	_, err = s.ScanFolderContext(ctx, root, nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("want context.Canceled, got %v", err)
 	}
 }
 

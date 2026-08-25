@@ -95,6 +95,27 @@ func (l *Library) AddLibraryFolder(path string) (model.LibraryFolder, error) {
 	return lf, nil
 }
 
+// RemoveLibraryFolder deletes a user-added root folder and all folders/photos
+// scanned beneath it (matched by path prefix).
+func (l *Library) RemoveLibraryFolder(path string) error {
+	tx, err := l.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	// Delete scanned folders under this root (cascade removes their photos).
+	if _, err := tx.Exec(
+		`DELETE FROM folders WHERE path = ? OR path LIKE ?`,
+		path, path+string(os.PathSeparator)+"%",
+	); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM library_folders WHERE path = ?`, path); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // LibraryFolders returns all user-added root folders.
 func (l *Library) LibraryFolders() ([]model.LibraryFolder, error) {
 	rows, err := l.db.Query(`SELECT id, path, added_at FROM library_folders ORDER BY path`)
