@@ -49,6 +49,17 @@ func (a *App) RescanAll() {
 	}()
 }
 
+// OpenFolderView prompts for a directory and shows its images live from disk,
+// bypassing the library database.
+func (a *App) OpenFolderView() {
+	dialog.ShowFolderOpen(func(uri fyne.ListableURI, err error) {
+		if err != nil || uri == nil {
+			return
+		}
+		a.grid.ShowRawFolder(uri.Path())
+	}, a.win)
+}
+
 // scanPath scans a single path in the background.
 func (a *App) scanPath(path string) {
 	go func() {

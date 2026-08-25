@@ -23,6 +23,9 @@ func newToolbar(a *App) *Toolbar {
 	rescan := widget.NewButtonWithIcon("Rescan", theme.ViewRefreshIcon(), func() {
 		a.RescanAll()
 	})
+	folderView := widget.NewButtonWithIcon("Folder View", theme.FolderOpenIcon(), func() {
+		a.OpenFolderView()
+	})
 
 	search := widget.NewEntry()
 	search.SetPlaceHolder("Search")
@@ -38,7 +41,7 @@ func newToolbar(a *App) *Toolbar {
 	}
 	sizeSlider.Resize(fyne.NewSize(160, sizeSlider.MinSize().Height))
 
-	left := container.NewHBox(addFolder, rescan)
+	left := container.NewHBox(addFolder, rescan, folderView)
 	right := container.NewHBox(
 		widget.NewIcon(theme.ZoomInIcon()),
 		container.NewGridWrap(fyne.NewSize(160, sizeSlider.MinSize().Height), sizeSlider),

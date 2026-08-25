@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -9,6 +11,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"git.hemmalab.se/scuttle/pichouse/internal/model"
+	"git.hemmalab.se/scuttle/pichouse/internal/scan"
 )
 
 // thumbGridSize is the default thumbnail edge in the grid, in pixels.
@@ -24,6 +27,8 @@ type Grid struct {
 	thumbSize int
 	filter    string
 	folder    *model.Folder
+	rawMode   bool   // when true, photos are read live from rawDir
+	rawDir    string
 
 	photos   []model.Photo // filtered photos currently shown
 	gridWrap *widget.GridWrap
@@ -66,6 +71,7 @@ func (g *Grid) SetFilter(q string) {
 
 // ShowFolder loads and displays the photos of a folder.
 func (g *Grid) ShowFolder(f model.Folder) {
+	g.rawMode = false
 	g.folder = &f
 	dateStr := ""
 	if !f.MTime.IsZero() {
@@ -75,15 +81,28 @@ func (g *Grid) ShowFolder(f model.Folder) {
 	g.reload()
 }
 
-// reload re-queries photos for the current folder, applies the filter, and
-// refreshes the grid.
+// ShowRawFolder displays images read live from a filesystem directory, bypassing
+// the library database.
+func (g *Grid) ShowRawFolder(dir string) {
+	g.rawMode = true
+	g.rawDir = dir
+	g.folder = nil
+	g.header.SetText("Folder view: " + dir)
+	g.reload()
+}
+
+// reload rebuilds photos for the current source (DB folder or raw dir), applies
+// the filter, and refreshes the grid.
 func (g *Grid) reload() {
 	g.photos = nil
-	if g.folder != nil {
+	switch {
+	case g.rawMode:
+		g.loadRaw()
+	case g.folder != nil:
 		all, err := g.app.lib.PhotosInFolder(g.folder.ID)
 		if err == nil {
 			for _, p := range all {
-				if g.filter == "" || strings.Contains(strings.ToLower(p.Filename), g.filter) {
+				if g.matches(p.Filename) {
 					g.photos = append(g.photos, p)
 				}
 			}
@@ -91,6 +110,35 @@ func (g *Grid) reload() {
 	}
 	g.gridWrap.Refresh()
 	g.updateHeaderCount()
+}
+
+// loadRaw reads image files directly from the raw directory.
+func (g *Grid) loadRaw() {
+	entries, err := os.ReadDir(g.rawDir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() || !scan.IsImage(e.Name()) {
+			continue
+		}
+		if !g.matches(e.Name()) {
+			continue
+		}
+		full := filepath.Join(g.rawDir, e.Name())
+		p := model.Photo{Path: full, Filename: e.Name()}
+		if info, err := e.Info(); err == nil {
+			p.Size = info.Size()
+			p.ModTime = info.ModTime()
+		}
+		// Hash empty in raw mode -> thumbnails render but are not cached.
+		g.photos = append(g.photos, p)
+	}
+}
+
+// matches reports whether a filename passes the current filter.
+func (g *Grid) matches(name string) bool {
+	return g.filter == "" || strings.Contains(strings.ToLower(name), g.filter)
 }
 
 // rebuild recreates the grid template when the thumbnail size changes.
@@ -106,6 +154,11 @@ func (g *Grid) rebuild() {
 }
 
 func (g *Grid) updateHeaderCount() {
+	count := " (" + strconv.Itoa(len(g.photos)) + ")"
+	if g.rawMode {
+		g.header.SetText("Folder view: " + g.rawDir + count)
+		return
+	}
 	if g.folder == nil {
 		return
 	}
@@ -113,7 +166,7 @@ func (g *Grid) updateHeaderCount() {
 	if !g.folder.MTime.IsZero() {
 		base += "   " + g.folder.MTime.Format("Jan 2, 2006")
 	}
-	g.header.SetText(base + "   (" + strconv.Itoa(len(g.photos)) + ")")
+	g.header.SetText(base + count)
 }
 
 // createItem builds a reusable thumbnail cell.
