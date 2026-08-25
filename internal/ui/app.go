@@ -2,21 +2,95 @@
 package ui
 
 import (
+	"log"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/widget"
 
+	"git.hemmalab.se/scuttle/pichouse/internal/db"
+	"git.hemmalab.se/scuttle/pichouse/internal/thumb"
 	"git.hemmalab.se/scuttle/pichouse/internal/version"
 )
 
-// Run starts the pichouse GUI application.
+// App holds the top-level application state and widgets.
+type App struct {
+	fyneApp fyne.App
+	win     fyne.Window
+
+	lib    *db.Library
+	thumbs *db.Thumbs
+	gen    *thumb.Generator
+
+	sidebar    *Sidebar
+	grid       *Grid
+	properties *Properties
+	status     *StatusBar
+}
+
+// Run starts the pichouse GUI application. It is the single entry point called
+// from main.
 func Run() {
 	a := app.NewWithID("se.hemmalab.pichouse")
 	w := a.NewWindow("pichouse " + version.Version)
 
-	placeholder := widget.NewLabel("pichouse — photo library (scaffold)")
-	w.SetContent(container.NewCenter(placeholder))
-	w.Resize(fyne.NewSize(1200, 800))
+	lib, err := db.OpenLibrary()
+	if err != nil {
+		log.Fatalf("open library database: %v", err)
+	}
+	thumbs, err := db.OpenThumbs()
+	if err != nil {
+		log.Fatalf("open thumbnail database: %v", err)
+	}
+
+	ap := &App{
+		fyneApp: a,
+		win:     w,
+		lib:     lib,
+		thumbs:  thumbs,
+		gen:     thumb.New(thumbs, thumb.DefaultSize),
+	}
+	ap.build()
+
+	w.SetOnClosed(func() {
+		lib.Close()
+		thumbs.Close()
+	})
+	w.Resize(fyne.NewSize(1280, 820))
 	w.ShowAndRun()
 }
+
+// build assembles the three-pane Picasa-style layout with toolbar and status
+// bar.
+func (a *App) build() {
+	a.status = newStatusBar()
+	a.properties = newProperties()
+	a.grid = newGrid(a)
+	a.sidebar = newSidebar(a)
+
+	toolbar := newToolbar(a)
+
+	// Center: folder header + grid handled inside Grid.
+	center := a.grid.Container()
+
+	// Left sidebar and right properties are collapsible split containers.
+	leftSplit := container.NewHSplit(a.sidebar.Container(), center)
+	leftSplit.SetOffset(0.2)
+
+	mainSplit := container.NewHSplit(leftSplit, a.properties.Container())
+	mainSplit.SetOffset(0.8)
+
+	content := container.NewBorder(
+		toolbar.Container(), // top
+		a.status.Container(), // bottom
+		nil, nil,
+		mainSplit,
+	)
+	a.win.SetContent(content)
+
+	// Populate the sidebar from the current DB state.
+	a.sidebar.Reload()
+}
+
+// Window returns the main application window.
+func (a *App) Window() fyne.Window { return a.win }
