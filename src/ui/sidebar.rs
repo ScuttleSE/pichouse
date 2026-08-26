@@ -280,6 +280,17 @@ impl Sidebar {
             .collect()
     }
 
+    /// Schedule a tree rebuild on the next idle tick. Use this from a
+    /// context-menu action so the popover finishes closing and its row widget
+    /// is not recycled/destroyed while the action is still being dispatched
+    /// (which crashes GTK).
+    pub fn reload_deferred(self: &Rc<Self>) {
+        let this = self.clone();
+        gtk4::glib::idle_add_local_once(move || {
+            this.reload();
+        });
+    }
+
     /// Rebuild the tree from the current database state.
     pub fn reload(self: &Rc<Self>) {
         let Some(state) = self.state() else { return };
@@ -457,7 +468,7 @@ impl Sidebar {
             }
         }
         self.mark_expanded(&format!("{ALBUM_PREFIX}{target}"));
-        self.reload();
+        self.reload_deferred();
     }
 
     fn remove_folders_from_album(self: &Rc<Self>, fids: &[i64]) {
@@ -468,7 +479,7 @@ impl Sidebar {
                 return;
             }
         }
-        self.reload();
+        self.reload_deferred();
     }
 
     /// Re-parent `src_album` under `target_album` (drag an album onto an album).
@@ -482,7 +493,7 @@ impl Sidebar {
             return;
         }
         self.mark_expanded(&format!("{ALBUM_PREFIX}{target_album}"));
-        self.reload();
+        self.reload_deferred();
     }
 
     // --- context menu ---
@@ -641,26 +652,10 @@ impl Sidebar {
         }
         let pop = PopoverMenu::from_model_full(&menu, gtk4::PopoverMenuFlags::NESTED);
         pop.set_has_arrow(false);
-        // Parent the popover on the stable ListView, not the recycled row
-        // expander. A menu action (e.g. Delete Album) rebuilds the tree and
-        // recycles/destroys the row; a popover still parented to that row would
-        // crash. Translate the click point into ListView coordinates.
-        let (px, py) = expander
-            .translate_coordinates(&self.list_view, x, y)
-            .unwrap_or((x, y));
-        pop.set_parent(&self.list_view);
+        pop.set_parent(expander);
         pop.set_position(gtk4::PositionType::Right);
-        let rect = gdk::Rectangle::new(px as i32, py as i32, 1, 1);
+        let rect = gdk::Rectangle::new(x as i32, y as i32, 1, 1);
         pop.set_pointing_to(Some(&rect));
-        // Unparent when dismissed so it never outlives its parent.
-        {
-            let pop_weak = pop.downgrade();
-            pop.connect_closed(move |_| {
-                if let Some(pop) = pop_weak.upgrade() {
-                    pop.unparent();
-                }
-            });
-        }
         pop.popup();
         *self.menu_pop.borrow_mut() = Some(pop);
     }
