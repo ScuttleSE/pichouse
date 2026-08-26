@@ -26,6 +26,9 @@ pub struct Viewer {
     photos: RefCell<Vec<Photo>>,
     index: RefCell<usize>,
     state: RefCell<Option<Rc<AppState>>>,
+    /// Bumped on every `show()` so a late async image load for a previous photo
+    /// is discarded instead of flashing on screen.
+    generation: std::cell::Cell<u64>,
 }
 
 impl Viewer {
@@ -74,6 +77,7 @@ impl Viewer {
             photos: RefCell::new(Vec::new()),
             index: RefCell::new(0),
             state: RefCell::new(None),
+            generation: std::cell::Cell::new(0),
         })
     }
 
@@ -210,6 +214,15 @@ impl Viewer {
             state.properties().show(&photo);
         }
 
+        // Clear the previous image immediately so it is not left on screen while
+        // the new file is read and decoded.
+        self.picture.set_paintable(gtk4::gdk::Paintable::NONE);
+
+        // Bump the generation so a late result for a previously shown photo is
+        // ignored (e.g. opening a second photo before the first finished loading).
+        let generation = self.generation.get().wrapping_add(1);
+        self.generation.set(generation);
+
         // Read the file bytes off-thread (I/O), then decode + rotate on the UI
         // thread (Pixbuf is not Send).
         let (tx, rx) = glib::MainContext::channel::<Option<Vec<u8>>>(glib::Priority::DEFAULT);
@@ -220,7 +233,12 @@ impl Viewer {
         });
         let picture = self.picture.clone();
         let rot = photo.orientation;
+        let this = self.clone();
         rx.attach(None, move |bytes| {
+            // Drop stale results from an earlier show().
+            if this.generation.get() != generation {
+                return glib::ControlFlow::Break;
+            }
             match bytes.and_then(|b| decode_rotated(&b, rot)) {
                 Some(pb) => picture.set_pixbuf(Some(&pb)),
                 None => picture.set_paintable(gtk4::gdk::Paintable::NONE),
