@@ -115,6 +115,8 @@ fn start_scan_worker(state: &Rc<AppState>) {
 
             let _ = tx.send(Msg::Message(format!("Scanning {path}")));
             let tx_progress = tx.clone();
+            let lib_cb = lib.clone();
+            let path_cb = path.clone();
             // Per-folder running counts, read back after the folder completes.
             let this_done = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
             let this_total = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -140,9 +142,11 @@ fn start_scan_worker(state: &Rc<AppState>) {
                         "Scanning {} ({}/{})",
                         p.folder, done, total
                     )));
-                    // Periodically refresh the sidebars so newly discovered
-                    // folders appear during a long scan, not only at the end.
+                    // Periodically mirror the discovered folders into the album
+                    // tree and refresh the sidebar, so the Library tree builds up
+                    // live during the scan rather than only at the end.
                     if p.done % 200 == 0 {
+                        super::albumtree::sync_disk_tree(&lib_cb, &path_cb);
                         let _ = tx_progress.send(Msg::Reload);
                     }
                 },
