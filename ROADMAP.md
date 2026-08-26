@@ -226,6 +226,52 @@ Play an album (or any photo set) as a full-screen slideshow.
 - Optional Ken Burns / pan-zoom effect (nice-to-have).
 - Behaviour on the last image when repeat is off (stop vs. exit).
 
+## Duplicate image finder
+
+Find duplicate (and near-duplicate) images within the library and help the user
+clean them up by auto-selecting the "worse" copy for potential deletion.
+
+### Scope (where to search)
+- Run the finder at different scope levels:
+  - the **current album** only;
+  - a **selected set of albums** (multi-select);
+  - an **album and all its sub-albums** (recursive).
+
+### Similarity
+- Adjustable **similarity level** — from exact/near-exact duplicates to looser
+  visual matches (e.g. same shot, different size/compression/crop).
+- Detection should catch not just byte-identical files but visually similar
+  images (resized, re-compressed, minor edits).
+
+### Auto-selection for deletion
+- When duplicates are found, **auto-select the "worse" copy** of each group as
+  the candidate for deletion, leaving the "better" one kept.
+- "Worse" is decided by quality/size heuristics, e.g.:
+  - smaller pixel dimensions / lower resolution;
+  - lossy vs. lossless format (prefer the lossless/original);
+  - smaller file size / higher compression;
+  - (potentially) lower bit depth, stripped metadata, etc.
+- The user can review and adjust the selection before anything is deleted.
+
+### Open questions / to decide
+- Similarity method: exact hash (SHA-256, already stored) for identical files vs.
+  a perceptual hash (pHash/dHash/aHash) for near-duplicates; whether to store the
+  perceptual hash in library.db for fast repeat runs.
+- How the adjustable similarity level maps to a threshold (e.g. Hamming distance
+  on a perceptual hash) and its default.
+- "Worse" ranking rules: exact ordering of the heuristics and how ties break;
+  whether the rules are user-configurable.
+- Interaction with RAW+JPEG pairing (a RAW/JPEG pair is not a duplicate) and with
+  non-destructive edits (compare originals, not edited views).
+- Cross-album duplicates: how a group spanning multiple albums is presented, and
+  whether deleting removes the file or just an album membership/virtual entry.
+- Deletion semantics: hard delete vs. trash vs. "missing" mark (see Library
+  freshness), and required user confirmation.
+- Performance: comparing large libraries efficiently (bucketing by hash/size
+  first, then perceptual compare within buckets).
+- UI: how duplicate groups are shown (side-by-side, grouped grid) and the
+  review/confirm flow before deletion.
+
 ## Adult / mature content tagging
 
 Some libraries contain adult (NSFW) images. Support tagging and organising this
