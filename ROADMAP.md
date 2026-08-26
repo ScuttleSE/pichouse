@@ -4,6 +4,42 @@ Running list of features to add down the road. This is a capture document for
 ideas as they come up, not a committed plan or schedule. Items here are
 unordered by priority unless noted.
 
+## Picasa-style sidebar tree
+
+Restructure the left tree view to match Picasa 3 (see `picasa.jpg`): a single
+tree split into distinct, collapsible **sections** with headers, each showing a
+count, with per-item counts and tiny thumbnail icons.
+
+### Sections (headers)
+- Separate the tree into headed sections, in this order:
+  - **Albums** — pichouse albums (folder-backed and, later, virtual).
+  - **People** — named people from facial recognition (ties into Facial
+    detection & recognition).
+  - **Folders** — the raw filesystem folder view.
+- Each section header shows a **count** of items in that section, e.g.
+  `Albums (4)`, `People (1)`, `Folders (253)`.
+- Each section is **collapsible** (expand/collapse via the header triangle).
+
+### Per-item display
+- Each album/folder/person row shows the **number of images** it contains, in
+  parentheses after the name, e.g. `Recently Updated (250)`.
+- Each album row shows a **tiny thumbnail icon** — a small thumbnail of the
+  **first image** in that album — in place of a generic folder icon.
+
+### Open questions / to decide
+- Which image is "first" for the album thumbnail (sort order: filename, date
+  taken, manual) and how it updates when the album changes.
+- Thumbnail icon size and where the small icon comes from (reuse the thumb
+  cache at a smaller size vs. a dedicated tiny thumb).
+- How the image count is computed and kept fresh (live query vs. cached count on
+  the album/folder row; recursive count for folders with sub-folders?).
+- Whether counts are recursive for nested folders or count direct children only
+  (Picasa shows a per-folder count).
+- How this maps onto the current sidebar/foldertree UI code and the albums vs.
+  folder-view split already in pichouse.
+- Section order, default collapsed/expanded state, and persistence of that
+  state across restarts.
+
 ## Immich integration
 
 Interface with an [Immich](https://immich.app/) server so the library can work
