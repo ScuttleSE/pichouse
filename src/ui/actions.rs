@@ -98,6 +98,13 @@ fn start_scan_worker(state: &Rc<AppState>) {
         let mut scan_err: Option<String> = None;
         let mut cancelled = false;
 
+        // Cumulative progress across every folder drained in this session, so
+        // the counter and bar reflect the whole job, not just the current
+        // folder. `base_done` is the number of photos finished in prior
+        // folders; `prior_total` is the sum of prior folders' image counts.
+        let mut base_done: usize = 0;
+        let mut prior_total: usize = 0;
+
         // Drain the queue, including paths appended while scanning.
         loop {
             let path = {
@@ -107,21 +114,31 @@ fn start_scan_worker(state: &Rc<AppState>) {
             let Some(path) = path else { break };
 
             let _ = tx.send(Msg::Message(format!("Scanning {path}")));
-            let _ = tx.send(Msg::Progress(0.0));
             let tx_progress = tx.clone();
+            // Per-folder running counts, read back after the folder completes.
+            let this_done = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let this_total = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let this_done_cb = this_done.clone();
+            let this_total_cb = this_total.clone();
             let result = scanner.scan_folder(
                 std::path::Path::new(&path),
                 &cancel,
                 move |p| {
-                    let frac = if p.total > 0 {
-                        p.done as f64 / p.total as f64
+                    use std::sync::atomic::Ordering;
+                    this_done_cb.store(p.done, Ordering::Relaxed);
+                    this_total_cb.store(p.total, Ordering::Relaxed);
+                    // Cumulative across the whole session.
+                    let done = base_done + p.done;
+                    let total = prior_total + p.total;
+                    let frac = if total > 0 {
+                        done as f64 / total as f64
                     } else {
                         0.0
                     };
                     let _ = tx_progress.send(Msg::Progress(frac));
                     let _ = tx_progress.send(Msg::Message(format!(
                         "Scanning {} ({}/{})",
-                        p.folder, p.done, p.total
+                        p.folder, done, total
                     )));
                     // Periodically refresh the sidebars so newly discovered
                     // folders appear during a long scan, not only at the end.
@@ -130,6 +147,12 @@ fn start_scan_worker(state: &Rc<AppState>) {
                     }
                 },
             );
+            // Fold this folder's counts into the cumulative totals.
+            {
+                use std::sync::atomic::Ordering;
+                base_done += this_done.load(Ordering::Relaxed);
+                prior_total += this_total.load(Ordering::Relaxed);
+            }
             match result {
                 Ok(_) => {
                     // Record that this root's first scan is complete, so files

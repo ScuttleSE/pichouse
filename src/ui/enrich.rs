@@ -160,7 +160,6 @@ fn start_workers(state: &Rc<AppState>) {
     let lib = state.lib.clone();
     let gen = state.gen.clone();
     let queue = state.enrich_queue.clone();
-    let total_hint = queue.lock().unwrap().len();
 
     std::thread::spawn(move || {
         let done = Arc::new(Mutex::new(0usize));
@@ -182,9 +181,10 @@ fn start_workers(state: &Rc<AppState>) {
                 if cancel.load(Ordering::Relaxed) {
                     return;
                 }
-                let id = {
+                let (id, remaining_in_queue) = {
                     let mut q = queue.lock().unwrap();
-                    q.pop_front()
+                    let id = q.pop_front();
+                    (id, q.len())
                 };
                 let Some(id) = id else { return };
 
@@ -195,10 +195,13 @@ fn start_workers(state: &Rc<AppState>) {
                     *g += 1;
                     *g
                 };
+                // Total is computed live so appending a second folder's photos
+                // grows it rather than showing a stale first-folder count.
+                let total = d + remaining_in_queue;
                 let _ = tx.send(Msg::Progress {
                     folder_id,
                     done: d,
-                    total: total_hint,
+                    total,
                 });
 
                 // If this folder now has no more photos needing enrichment,
