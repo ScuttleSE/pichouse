@@ -14,6 +14,20 @@ a thumbnail grid in the center, and a properties panel on the right.
   settings later).
 - Folders scanned into a local SQLite database (`library.db`); scans can be
   stopped from the status bar.
+- **Fast two-phase import.** For large imports the folder tree and grid appear
+  almost immediately: Phase 1 records only the file/folder structure, and a
+  background Phase 2 fills in EXIF date, dimensions, the content hash, and the
+  thumbnail per photo. Un-enriched photos show a filename placeholder until
+  their thumbnail lands. Opening a folder moves its photos to the front of the
+  enrichment queue, and an interrupted import resumes on the next launch.
+- **Library freshness.** pichouse keeps the library in step with disk. It
+  reconciles disk against the database on startup, on demand (the Refresh
+  Library toolbar button), and on a periodic timer: files added on disk appear,
+  and files removed are marked "missing" (shown dimmed) so their tags survive a
+  temporary unmount or move. A file that reappears — including under a new name
+  (a move) — reuses its existing row. On local folders an inotify watcher reacts
+  quickly; on network drives (NFS/SMB), where inotify cannot see remote changes,
+  the periodic reconcile keeps things fresh.
 - Browsing reflects the cached database state by default.
 - Thumbnails generated on first view and cached separately (`thumbs.db`).
 - Left sidebar tabs:

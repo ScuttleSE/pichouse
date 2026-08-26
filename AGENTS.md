@@ -95,13 +95,15 @@ GTK4 (>= 4.10) must be present at runtime; Debian 13 ships GTK 4.18.
     src/version.rs       Version constant (mirrors Cargo.toml, read by CI)
     src/model.rs         shared types
     src/db/              SQLite schema + access (library.db, thumbs-<N>.db)
-    src/scan.rs          filesystem scanner
+    src/scan.rs          filesystem scanner (Phase 1 structure walk + Phase 2
+                         per-file enrich helper)
+    src/reconcile.rs     library freshness: diff disk against the DB per folder
     src/thumb.rs         thumbnail generation + cache
     src/ai/              local AI tagging backend (Ollama HTTP client, tagger)
     src/ui/              GTK4 UI (app, state, grid, sidebar, viewer, properties,
                          toolbar, status, settings, settings_ai, aitag,
                          tagmanager, shortcuts, dialogs, actions, controller,
-                         prefs, photo_object, util)
+                         prefs, photo_object, util, enrich, freshness, watcher)
     .gitea/workflows/    CI (build/test/release on push to main)
 
 ## CI

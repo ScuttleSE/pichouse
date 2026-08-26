@@ -13,6 +13,65 @@ application. The Go code is deleted. All work is on `main`. The temporary
 The application builds, tests pass, and the UI runs on the target machine
 (Debian 13, GTK 4.18).
 
+Two roadmap features are now implemented: fast two-phase import and library
+freshness. Section 10 describes them.
+
+## 10. Fast two-phase import and library freshness
+
+### Two-phase import
+- Phase 1 (`scan::Scanner::scan_folder`) records photo structure only: path,
+  filename, folder id, size, mod time. It does no EXIF decode, no dimension
+  decode, and no hashing. The folder tree and grid populate almost at once.
+- Phase 2 (`ui::enrich`) is a background worker pool. It drains a shared
+  worklist of photo ids (`AppState::enrich_queue`), computes EXIF `taken_at`,
+  dimensions, and the SHA-256 hash per photo (`scan::enrich_file`), writes them
+  (`Library::enrich_photo`), then generates the thumbnail. The grid re-queries
+  periodically, so placeholders become thumbnails as data lands.
+- A photo carries a `scan_state` column: 0=structured, 1=enriching, 2=done.
+  `photos_needing_enrichment` selects `scan_state <> 2 AND missing = 0`.
+- Opening a folder calls `enrich::prioritize_folder`, which moves that folder's
+  un-enriched ids to the front of the worklist. The queue follows the view.
+- On startup, `enrich::ensure_running` reseeds the worklist from the database,
+  so an interrupted import resumes without a manual rescan.
+- The folder `year` starts from the folder mtime and is refined from the
+  earliest known `taken_at` after a folder finishes enriching.
+- Thumbnails need the hash (the cache key), so an un-enriched cell shows the
+  filename-label placeholder until Phase 2 hashes it. No temporary key is used.
+
+### Library freshness
+- `reconcile.rs` diffs disk against the database per folder. New files are
+  inserted (Phase 1) and queued for enrichment. Removed files are soft-marked
+  `missing` (a `missing` column); the row and its tags/edits are kept. A
+  reappeared file clears the flag. A new file whose size matches a missing row
+  in the same root is treated as a move and re-points the existing row
+  (`move_photo_path`), then is re-hashed to confirm identity.
+- Reconciliation is the reliable path. It runs on startup, on demand (the
+  Refresh Library toolbar button, `emblem-synchronizing-symbolic`), and on a
+  periodic timer (`ui::freshness`, `PERIODIC` = 180 s). It works on network
+  drives (NFS/SMB) and very large trees.
+- `ui::watcher` adds an inotify fast path for local folders. It debounces event
+  bursts (`DEBOUNCE` = 1500 ms) and reconciles only the affected directories.
+  It degrades gracefully: if a watch cannot be added (e.g. the inotify watch
+  limit), it logs and relies on the periodic reconcile. It is never required
+  for correctness.
+- IMPORTANT network-drive caveat: inotify does NOT see changes made by other
+  machines on NFS/SMB mounts. The watcher may be silent there. The periodic
+  reconcile is what catches remote changes. Do not remove the periodic
+  reconcile in favor of inotify.
+- Missing photos are shown dimmed in the grid (a `missing` property on
+  `PhotoObject`).
+
+### Schema migration
+- `library.db` gained `photos.scan_state` and `photos.missing`. `Library::open_at`
+  runs an additive `migrate` that adds the columns to an older database and marks
+  already-hashed rows `scan_state = 2`, so no rebuild is forced.
+
+### Open follow-ups (not done; noted in code)
+- Full hash-based move detection beyond the size heuristic.
+- A "new" badge for freshly added photos, and a "clean up missing" action to
+  hard-delete missing rows on user confirmation.
+- Interaction with future RAW+JPEG pairing (pair during Phase 1 or Phase 2).
+
 ## 2. What is ported
 
 All Go modules are ported to Rust:
