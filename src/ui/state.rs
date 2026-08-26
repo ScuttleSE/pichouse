@@ -47,6 +47,7 @@ pub struct AppState {
 
     pub status: RefCell<Option<Rc<StatusBar>>>,
     pub grid: RefCell<Option<Rc<Grid>>>,
+    pub new_files: RefCell<Option<Rc<super::newfiles::NewFilesView>>>,
     pub properties: RefCell<Option<Rc<Properties>>>,
     pub viewer: RefCell<Option<Rc<Viewer>>>,
     pub sidebar: RefCell<Option<Rc<super::sidebar::Sidebar>>>,
@@ -65,6 +66,9 @@ impl AppState {
     }
     pub fn grid(&self) -> Rc<Grid> {
         self.grid.borrow().clone().expect("grid set")
+    }
+    pub fn new_files(&self) -> Rc<super::newfiles::NewFilesView> {
+        self.new_files.borrow().clone().expect("new_files set")
     }
     pub fn properties(&self) -> Rc<Properties> {
         self.properties.borrow().clone().expect("properties set")
@@ -109,6 +113,30 @@ impl AppState {
         }
     }
 
+    /// Show the grouped "New Files" view in the center, rebuilding it from the
+    /// current database state.
+    pub fn show_new_files(self: &Rc<Self>) {
+        *self.current_folder.borrow_mut() = 0;
+        let groups = self
+            .lib
+            .new_photos_grouped(super::newfiles::NEW_MAX_AGE_SECS)
+            .unwrap_or_default();
+        let count: usize = groups.iter().map(|(_, ps)| ps.len()).sum();
+        self.new_files().show_groups(groups);
+        if let Some(stack) = self.center_stack.borrow().as_ref() {
+            stack.set_visible_child_name("newfiles");
+        }
+        self.status()
+            .set_message(&format!("New Files — {count} recently added"));
+    }
+
+    /// Show the normal thumbnail grid in the center.
+    pub fn show_grid(&self) {
+        if let Some(stack) = self.center_stack.borrow().as_ref() {
+            stack.set_visible_child_name("grid");
+        }
+    }
+
     /// Whether the viewer is the visible center child.
     pub fn viewer_active(&self) -> bool {
         self.center_stack
@@ -116,6 +144,27 @@ impl AppState {
             .as_ref()
             .map(|s| s.visible_child_name().map(|n| n == "viewer").unwrap_or(false))
             .unwrap_or(false)
+    }
+
+    /// Whether the New Files view is the visible center child.
+    pub fn new_files_active(&self) -> bool {
+        self.center_stack
+            .borrow()
+            .as_ref()
+            .map(|s| s.visible_child_name().map(|n| n == "newfiles").unwrap_or(false))
+            .unwrap_or(false)
+    }
+
+    /// If the New Files view is showing, rebuild it from the database (used
+    /// after a reconcile/enrichment lands new files).
+    pub fn refresh_new_files_if_active(self: &Rc<Self>) {
+        if self.new_files_active() {
+            let groups = self
+                .lib
+                .new_photos_grouped(super::newfiles::NEW_MAX_AGE_SECS)
+                .unwrap_or_default();
+            self.new_files().show_groups(groups);
+        }
     }
 }
 

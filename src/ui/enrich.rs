@@ -127,6 +127,7 @@ fn start_workers(state: &Rc<AppState>) {
                     if since_refresh >= REFRESH_EVERY {
                         since_refresh = 0;
                         state.grid().reload_from_source();
+                        state.refresh_new_files_if_active();
                     }
                     state
                         .status()
@@ -143,6 +144,7 @@ fn start_workers(state: &Rc<AppState>) {
                 Msg::Finished => {
                     state.enrich_job.finish();
                     state.grid().reload_from_source();
+                    state.refresh_new_files_if_active();
                     // If new work arrived while finishing, restart.
                     if !state.enrich_queue.lock().unwrap().is_empty() {
                         start_workers(&state);

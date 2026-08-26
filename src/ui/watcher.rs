@@ -137,6 +137,7 @@ pub fn start(state: &Rc<AppState>) {
             if changed {
                 super::app::reload_folders(&state);
                 state.grid().reload_from_source();
+                state.refresh_new_files_if_active();
                 if !added.is_empty() {
                     super::enrich::enqueue(&state, added);
                 }

@@ -55,8 +55,38 @@ fn migrate(conn: &Connection) -> Result<()> {
             "ALTER TABLE photos ADD COLUMN missing INTEGER NOT NULL DEFAULT 0;",
         )?;
     }
+    if !have.contains("added_at") {
+        conn.execute_batch(
+            "ALTER TABLE photos ADD COLUMN added_at INTEGER NOT NULL DEFAULT 0;",
+        )?;
+    }
+    // library_folders.first_scan_done_at (freshness "new files" boundary).
+    {
+        let mut lf: std::collections::HashSet<String> = std::collections::HashSet::new();
+        {
+            let mut stmt = conn.prepare("PRAGMA table_info(library_folders)")?;
+            let rows = stmt.query_map([], |r| r.get::<_, String>(1))?;
+            for name in rows {
+                lf.insert(name?);
+            }
+        }
+        if !lf.contains("first_scan_done_at") {
+            conn.execute_batch(
+                "ALTER TABLE library_folders ADD COLUMN first_scan_done_at INTEGER NOT NULL DEFAULT 0;",
+            )?;
+            // Existing libraries already finished their first scan; stamp now so
+            // their photos are not treated as new (nothing recorded before this
+            // moment counts as new).
+            conn.execute_batch(
+                "UPDATE library_folders SET first_scan_done_at = strftime('%s','now') WHERE first_scan_done_at = 0;",
+            )?;
+        }
+    }
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_photos_scan_state ON photos(scan_state);",
+    )?;
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_photos_added_at ON photos(added_at);",
     )?;
     Ok(())
 }
@@ -88,13 +118,14 @@ impl Library {
             params![path, now()],
         )?;
         let lf = conn.query_row(
-            "SELECT id, path, added_at FROM library_folders WHERE path = ?1",
+            "SELECT id, path, added_at, first_scan_done_at FROM library_folders WHERE path = ?1",
             params![path],
             |r| {
                 Ok(LibraryFolder {
                     id: r.get(0)?,
                     path: r.get(1)?,
                     added_at: r.get(2)?,
+                    first_scan_done_at: r.get(3)?,
                 })
             },
         )?;
@@ -119,16 +150,31 @@ impl Library {
     /// All user-added root folders.
     pub fn library_folders(&self) -> Result<Vec<LibraryFolder>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt =
-            conn.prepare("SELECT id, path, added_at FROM library_folders ORDER BY path")?;
+        let mut stmt = conn.prepare(
+            "SELECT id, path, added_at, first_scan_done_at FROM library_folders ORDER BY path",
+        )?;
         let rows = stmt.query_map([], |r| {
             Ok(LibraryFolder {
                 id: r.get(0)?,
                 path: r.get(1)?,
                 added_at: r.get(2)?,
+                first_scan_done_at: r.get(3)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Mark a root's first full scan as complete (records the boundary after
+    /// which added files count as "new"). No-op if already stamped, so a rescan
+    /// does not move the boundary forward.
+    pub fn mark_first_scan_done(&self, root_path: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE library_folders SET first_scan_done_at = ?1
+             WHERE path = ?2 AND first_scan_done_at = 0",
+            params![now(), root_path],
+        )?;
+        Ok(())
     }
 
     /// Insert or update a scanned folder and return its id.
@@ -183,8 +229,8 @@ impl Library {
     pub fn upsert_photo(&self, p: &Photo) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO photos(folder_id, path, filename, size, mod_time, taken_at, width, height, hash, thumb_ready, orientation, scan_state, missing)
-             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 0, ?11, 0)
+            "INSERT INTO photos(folder_id, path, filename, size, mod_time, taken_at, width, height, hash, thumb_ready, orientation, scan_state, missing, added_at)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 0, ?11, 0, ?12)
              ON CONFLICT(path) DO UPDATE SET
                folder_id=excluded.folder_id, filename=excluded.filename, size=excluded.size,
                mod_time=excluded.mod_time, taken_at=excluded.taken_at, width=excluded.width,
@@ -192,7 +238,7 @@ impl Library {
                missing=0",
             params![
                 p.folder_id, p.path, p.filename, p.size, p.mod_time, p.taken_at,
-                p.width, p.height, p.hash, p.thumb_ready as i64, p.scan_state.as_i64()
+                p.width, p.height, p.hash, p.thumb_ready as i64, p.scan_state.as_i64(), now()
             ],
         )?;
         let id =
@@ -211,12 +257,12 @@ impl Library {
     pub fn upsert_photo_structure(&self, p: &Photo) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO photos(folder_id, path, filename, size, mod_time, scan_state, missing)
-             VALUES(?1, ?2, ?3, ?4, ?5, 0, 0)
+            "INSERT INTO photos(folder_id, path, filename, size, mod_time, scan_state, missing, added_at)
+             VALUES(?1, ?2, ?3, ?4, ?5, 0, 0, ?6)
              ON CONFLICT(path) DO UPDATE SET
                folder_id=excluded.folder_id, filename=excluded.filename,
                size=excluded.size, mod_time=excluded.mod_time, missing=0",
-            params![p.folder_id, p.path, p.filename, p.size, p.mod_time],
+            params![p.folder_id, p.path, p.filename, p.size, p.mod_time, now()],
         )?;
         let id =
             conn.query_row("SELECT id FROM photos WHERE path = ?1", params![p.path], |r| {
@@ -318,11 +364,103 @@ impl Library {
         Ok(v)
     }
 
+    /// "New files" grouped by folder: photos added to the library after their
+    /// owning root's first scan completed, within the last `max_age_secs`, and
+    /// still present on disk. Returned as `(Folder, photos)` pairs, folders
+    /// ordered by their most-recent addition first, photos newest first.
+    pub fn new_photos_grouped(
+        &self,
+        max_age_secs: i64,
+    ) -> Result<Vec<(Folder, Vec<Photo>)>> {
+        // Per-root boundary: a photo is new only if added after the root that
+        // owns it finished its first scan. Roots are matched by path prefix.
+        let roots = self.library_folders()?;
+        let now_ts = now();
+        let age_threshold = now_ts - max_age_secs;
+
+        let conn = self.conn.lock().unwrap();
+        // Candidate photos: recent, not missing. Join the folder for its path.
+        let mut stmt = conn.prepare(
+            "SELECT p.id, p.folder_id, p.path, p.filename, p.size, p.mod_time, p.taken_at,
+                    p.width, p.height, p.hash, p.thumb_ready, p.orientation, p.ai_status,
+                    p.scan_state, p.missing, p.added_at,
+                    f.id, f.path, f.name, f.mtime, f.year
+             FROM photos p JOIN folders f ON f.id = p.folder_id
+             WHERE p.missing = 0 AND p.added_at >= ?1
+             ORDER BY p.added_at DESC, p.filename ASC",
+        )?;
+        let rows = stmt.query_map(params![age_threshold], |r| {
+            let photo = map_photo(r)?;
+            let folder = Folder {
+                id: r.get(16)?,
+                path: r.get(17)?,
+                name: r.get(18)?,
+                mtime: r.get(19)?,
+                year: r.get(20)?,
+            };
+            Ok((photo, folder))
+        })?;
+
+        // Group, applying the per-root first-scan boundary.
+        let mut order: Vec<i64> = Vec::new();
+        let mut folders: std::collections::HashMap<i64, Folder> =
+            std::collections::HashMap::new();
+        let mut grouped: std::collections::HashMap<i64, Vec<Photo>> =
+            std::collections::HashMap::new();
+        for row in rows {
+            let (photo, folder) = row?;
+            // Find the owning root by matching path prefix; use its boundary.
+            let boundary = roots
+                .iter()
+                .filter(|root| {
+                    folder.path == root.path
+                        || folder.path.starts_with(&format!(
+                            "{}{}",
+                            root.path,
+                            std::path::MAIN_SEPARATOR
+                        ))
+                })
+                .map(|root| root.first_scan_done_at)
+                .max()
+                .unwrap_or(0);
+            // Boundary 0 means the first scan has not completed yet: nothing is
+            // "new" until the initial scan finishes. Strictly-after comparison
+            // avoids counting photos inserted in the same second the scan
+            // completed (which belong to the initial import).
+            if boundary == 0 || photo.added_at <= boundary {
+                continue;
+            }
+            if !grouped.contains_key(&folder.id) {
+                order.push(folder.id);
+                folders.insert(folder.id, folder);
+            }
+            grouped.entry(photo.folder_id).or_default().push(photo);
+        }
+
+        let mut out = Vec::new();
+        for fid in order {
+            if let (Some(folder), Some(photos)) =
+                (folders.remove(&fid), grouped.remove(&fid))
+            {
+                out.push((folder, photos));
+            }
+        }
+        Ok(out)
+    }
+
+    /// The number of "new files" across the whole library (see
+    /// `new_photos_grouped`). Used for the sidebar count.
+    pub fn new_photos_count(&self, max_age_secs: i64) -> Result<i64> {
+        let grouped = self.new_photos_grouped(max_age_secs)?;
+        Ok(grouped.iter().map(|(_, ps)| ps.len() as i64).sum())
+    }
+
+
     /// All photos for a folder ordered by taken date then name.
     pub fn photos_in_folder(&self, folder_id: i64) -> Result<Vec<Photo>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, folder_id, path, filename, size, mod_time, taken_at, width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing
+            "SELECT id, folder_id, path, filename, size, mod_time, taken_at, width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing, added_at
              FROM photos WHERE folder_id = ?1 ORDER BY taken_at ASC, filename ASC",
         )?;
         let rows = stmt.query_map(params![folder_id], map_photo)?;
@@ -334,7 +472,7 @@ impl Library {
         let conn = self.conn.lock().unwrap();
         let p = conn
             .query_row(
-                "SELECT id, folder_id, path, filename, size, mod_time, taken_at, width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing
+                "SELECT id, folder_id, path, filename, size, mod_time, taken_at, width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing, added_at
                  FROM photos WHERE id = ?1",
                 params![id],
                 map_photo,
@@ -457,7 +595,7 @@ impl Library {
     }
 }
 
-/// Map a photo row (15 columns, in schema order) to a `Photo`.
+/// Map a photo row (16 columns, in schema order) to a `Photo`.
 pub(super) fn map_photo(r: &rusqlite::Row) -> rusqlite::Result<Photo> {
     Ok(Photo {
         id: r.get(0)?,
@@ -475,5 +613,87 @@ pub(super) fn map_photo(r: &rusqlite::Row) -> rusqlite::Result<Photo> {
         ai_status: crate::model::AiStatus::from_i64(r.get::<_, i64>(12)?),
         scan_state: crate::model::PhotoScanState::from_i64(r.get::<_, i64>(13)?),
         missing: r.get::<_, i64>(14)? != 0,
+        added_at: r.get(15)?,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{Folder, Photo};
+
+    fn temp_lib() -> (Library, std::path::PathBuf) {
+        let mut p = std::env::temp_dir();
+        p.push(format!(
+            "pichouse-lib-{}-{:?}.db",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_file(&p);
+        (Library::open_at(&p).unwrap(), p)
+    }
+
+    #[test]
+    fn new_files_respects_first_scan_boundary() {
+        let (lib, path) = temp_lib();
+        let root = "/tmp/pichouse-newfiles-root";
+        lib.add_library_folder(root).unwrap();
+        let fid = lib
+            .upsert_folder(&Folder {
+                path: format!("{root}/sub"),
+                name: "sub".into(),
+                mtime: 0,
+                year: 2020,
+                ..Default::default()
+            })
+            .unwrap();
+
+        // Photo added during the initial scan (before boundary).
+        let before = lib
+            .upsert_photo_structure(&Photo {
+                folder_id: fid,
+                path: format!("{root}/sub/old.jpg"),
+                filename: "old.jpg".into(),
+                ..Default::default()
+            })
+            .unwrap();
+
+        // Complete the first scan: sets the boundary to "now".
+        lib.mark_first_scan_done(root).unwrap();
+
+        // Before the boundary there are no new files.
+        assert_eq!(lib.new_photos_count(3600).unwrap(), 0);
+
+        // Ensure the next insert lands in a later second than the boundary
+        // (added_at is second-granularity; "new" is strictly after the scan).
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+
+        // A photo added after the boundary is "new".
+        let after = lib
+            .upsert_photo_structure(&Photo {
+                folder_id: fid,
+                path: format!("{root}/sub/new.jpg"),
+                filename: "new.jpg".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_ne!(before, after);
+
+        let groups = lib.new_photos_grouped(3600).unwrap();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].0.id, fid);
+        assert_eq!(groups[0].1.len(), 1);
+        assert_eq!(groups[0].1[0].filename, "new.jpg");
+        assert_eq!(lib.new_photos_count(3600).unwrap(), 1);
+
+        // A very small age window drops it (age-based expiry).
+        assert_eq!(lib.new_photos_count(-1).unwrap(), 0);
+
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("db-wal"));
+        let _ = std::fs::remove_file(path.with_extension("db-shm"));
+    }
 }

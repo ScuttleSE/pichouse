@@ -67,6 +67,7 @@ fn build_ui(app: &Application) {
         enrich_queue: std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new())),
         status: RefCell::new(None),
         grid: RefCell::new(None),
+        new_files: RefCell::new(None),
         properties: RefCell::new(None),
         viewer: RefCell::new(None),
         sidebar: RefCell::new(None),
@@ -82,6 +83,9 @@ fn build_ui(app: &Application) {
 
     let grid = Grid::new(lib.clone(), gen.clone(), prefs.active_size());
     *state.grid.borrow_mut() = Some(grid.clone());
+
+    let new_files = super::newfiles::NewFilesView::new(gen.clone(), prefs.active_size());
+    *state.new_files.borrow_mut() = Some(new_files.clone());
 
     let properties = Properties::new();
     properties.bind_state(state.clone());
@@ -104,6 +108,12 @@ fn build_ui(app: &Application) {
             state.open_viewer(photos, index);
         });
     }
+    {
+        let state = state.clone();
+        new_files.set_on_activate(move |photos, index| {
+            state.open_viewer(photos, index);
+        });
+    }
 
     // Library sidebar (album tree) and raw Folders tree.
     let sidebar = Sidebar::new();
@@ -118,6 +128,7 @@ fn build_ui(app: &Application) {
     center_stack.set_vexpand(true);
     center_stack.set_hexpand(true);
     center_stack.add_named(grid.widget(), Some("grid"));
+    center_stack.add_named(new_files.widget(), Some("newfiles"));
     center_stack.add_named(viewer.widget(), Some("viewer"));
     center_stack.set_visible_child_name("grid");
     *state.center_stack.borrow_mut() = Some(center_stack.clone());

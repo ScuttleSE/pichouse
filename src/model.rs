@@ -10,6 +10,9 @@ pub struct LibraryFolder {
     pub path: String,
     /// Unix timestamp (seconds) when the folder was added.
     pub added_at: i64,
+    /// Unix timestamp (seconds) when this root's first full scan completed;
+    /// `0` until then. Files recorded after this are candidates for "new".
+    pub first_scan_done_at: i64,
 }
 
 /// A scanned directory (a library root or any subfolder) that contains photos.
@@ -53,6 +56,9 @@ pub struct Photo {
     /// `true` when the file is gone from disk but the row is kept (soft
     /// "missing") so tags/edits survive a temporary unmount, move, or delete.
     pub missing: bool,
+    /// Unix timestamp (seconds) when this photo row was first recorded. Used
+    /// with the owning root's `first_scan_done_at` to decide "new".
+    pub added_at: i64,
 }
 
 /// The two-phase import state of a photo. The integer values are stable and are

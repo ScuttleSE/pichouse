@@ -23,6 +23,7 @@ use super::dialogs::{confirm, prompt_text};
 use super::state::{show_error, AppState};
 
 const NEW_FOLDERS_ID: &str = "newfolders";
+const NEW_FILES_ID: &str = "newfiles";
 const ALBUM_PREFIX: &str = "album:";
 const FOLDER_PREFIX: &str = "folder:";
 
@@ -35,6 +36,8 @@ struct TreeData {
     album_children: HashMap<i64, Vec<i64>>,
     album_folders: HashMap<i64, Vec<i64>>,
     unassigned: Vec<i64>,
+    /// Count of "new files" across the library (for the New Files row).
+    new_files_count: i64,
 }
 
 /// The Library-tab album tree sidebar.
@@ -209,7 +212,12 @@ impl Sidebar {
 
     fn node_label(&self, id: &str) -> (String, &'static str) {
         let data = self.data.borrow();
-        if id == NEW_FOLDERS_ID {
+        if id == NEW_FILES_ID {
+            (
+                format!("New Files ({})", data.new_files_count),
+                "document-open-recent-symbolic",
+            )
+        } else if id == NEW_FOLDERS_ID {
             (
                 format!("New folders ({})", data.unassigned.len()),
                 "folder-symbolic",
@@ -230,9 +238,16 @@ impl Sidebar {
 
     fn on_selection_changed(&self, sel: &gtk4::MultiSelection) {
         for id in self.selected_ids(sel) {
+            if id == NEW_FILES_ID {
+                if let Some(state) = self.state() {
+                    state.show_new_files();
+                    return;
+                }
+            }
             if let Some(fid) = folder_id_of(&id) {
                 let folder = self.data.borrow().folders.get(&fid).cloned();
                 if let (Some(state), Some(f)) = (self.state(), folder) {
+                    state.show_grid();
                     super::app::load_folder_into_grid(&state, &f);
                     return;
                 }
@@ -272,11 +287,16 @@ impl Sidebar {
         let counts = state.lib.folder_photo_counts().unwrap_or_default();
         let albums = state.lib.albums().unwrap_or_default();
         let folder_album = state.lib.folder_albums().unwrap_or_default();
+        let new_files_count = state
+            .lib
+            .new_photos_count(super::newfiles::NEW_MAX_AGE_SECS)
+            .unwrap_or(0);
 
         folders.sort_by(|a, b| a.name.cmp(&b.name));
 
         let mut data = TreeData {
             counts,
+            new_files_count,
             ..TreeData::default()
         };
         for a in &albums {
@@ -299,6 +319,9 @@ impl Sidebar {
         let mut roots: Vec<String> = Vec::new();
         {
             let data = self.data.borrow();
+            if data.new_files_count > 0 {
+                roots.push(NEW_FILES_ID.to_string());
+            }
             for &aid in data.album_children.get(&0).into_iter().flatten() {
                 roots.push(format!("{ALBUM_PREFIX}{aid}"));
             }

@@ -132,6 +132,9 @@ fn start_scan_worker(state: &Rc<AppState>) {
             );
             match result {
                 Ok(_) => {
+                    // Record that this root's first scan is complete, so files
+                    // added later count as "new".
+                    let _ = lib.mark_first_scan_done(&path);
                     // Auto-organize the just-scanned tree into the Library view,
                     // then refresh the sidebars incrementally.
                     super::albumtree::sync_disk_tree(&lib, &path);

@@ -3,7 +3,11 @@
 CREATE TABLE IF NOT EXISTS library_folders (
     id       INTEGER PRIMARY KEY AUTOINCREMENT,
     path     TEXT NOT NULL UNIQUE,
-    added_at INTEGER NOT NULL
+    added_at INTEGER NOT NULL,
+    -- Unix time when this root's first full scan completed. 0 until then.
+    -- A photo counts as "new" only if it was added after this moment, so the
+    -- initial import of an existing library never floods the New Files view.
+    first_scan_done_at INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS folders (
@@ -33,12 +37,18 @@ CREATE TABLE IF NOT EXISTS photos (
     scan_state  INTEGER NOT NULL DEFAULT 0,
     -- 1 when the file is gone from disk but the row is kept (soft "missing")
     -- so tags/edits survive a temporary unmount, move, or delete.
-    missing     INTEGER NOT NULL DEFAULT 0
+    missing     INTEGER NOT NULL DEFAULT 0,
+    -- Unix time when this photo row was first recorded in the library. Set on
+    -- the Phase 1 structure insert. Used with the owning root's
+    -- first_scan_done_at to decide whether the photo is "new".
+    added_at    INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_photos_folder ON photos(folder_id);
 -- Fast selection of photos still needing Phase 2 enrichment.
 CREATE INDEX IF NOT EXISTS idx_photos_scan_state ON photos(scan_state);
+-- Fast selection of recently added photos for the New Files view.
+CREATE INDEX IF NOT EXISTS idx_photos_added_at ON photos(added_at);
 
 CREATE TABLE IF NOT EXISTS scan_state (
     folder_id    INTEGER PRIMARY KEY REFERENCES folders(id) ON DELETE CASCADE,

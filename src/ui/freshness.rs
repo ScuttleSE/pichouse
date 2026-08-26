@@ -43,6 +43,7 @@ pub fn reconcile_now(state: &Rc<AppState>) {
             if report.changed() {
                 super::app::reload_folders(&state);
                 state.grid().reload_from_source();
+                state.refresh_new_files_if_active();
                 if !report.added.is_empty() {
                     super::enrich::enqueue(&state, report.added.clone());
                 }

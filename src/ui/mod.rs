@@ -10,6 +10,7 @@ mod enrich;
 mod foldertree;
 mod freshness;
 mod grid;
+mod newfiles;
 mod photo_object;
 mod prefs;
 mod properties;
