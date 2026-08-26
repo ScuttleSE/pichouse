@@ -459,6 +459,15 @@ fn build_factory(thumb_size: i32) -> SignalListItemFactory {
         let (image, label) = overlay_parts(&overlay);
         label.set_text(&photo.filename());
 
+        // Dim the cell when the underlying file is missing from disk.
+        if photo.missing() {
+            overlay.add_css_class("dim-label");
+            overlay.set_tooltip_text(Some("File missing from disk"));
+        } else {
+            overlay.remove_css_class("dim-label");
+            overlay.set_tooltip_text(None);
+        }
+
         // Show the current texture (if already decoded) and update the label.
         apply_texture(&image, &label, photo.texture());
 

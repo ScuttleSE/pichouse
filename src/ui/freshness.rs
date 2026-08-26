@@ -1,0 +1,85 @@
+//! Library freshness: run reconciliation and drive the enrichment of anything
+//! it finds.
+//!
+//! Reconciliation is the reliable path that works on every filesystem,
+//! including network mounts where inotify never sees remote changes. It runs:
+//!   - once on startup (catches everything that changed while closed),
+//!   - on demand (a "Refresh library" action),
+//!   - on a periodic timer (the only mechanism that catches remote NFS/SMB
+//!     changes, and the fallback when inotify is unavailable).
+
+use std::rc::Rc;
+use std::time::Duration;
+
+use gtk4::glib;
+
+use crate::reconcile::{self, Report};
+
+use super::state::AppState;
+
+/// The periodic reconciliation interval. A background timer reconciles the whole
+/// library this often so remote changes on network drives are picked up.
+const PERIODIC: Duration = Duration::from_secs(180);
+
+/// A message posted from the reconcile worker to the UI thread.
+enum Msg {
+    Done(Report),
+}
+
+/// Run a full reconciliation in the background, then enqueue anything new for
+/// enrichment and refresh the view. No-op if a reconciliation is already
+/// running (avoids overlapping walks; the next timer tick will catch up).
+pub fn reconcile_now(state: &Rc<AppState>) {
+    if state.reconcile_job.running() {
+        return;
+    }
+    let cancel = state.reconcile_job.begin();
+    let (tx, rx) = glib::MainContext::channel::<Msg>(glib::Priority::DEFAULT);
+
+    {
+        let state = state.clone();
+        rx.attach(None, move |Msg::Done(report)| {
+            state.reconcile_job.finish();
+            if report.changed() {
+                super::app::reload_folders(&state);
+                state.grid().reload_from_source();
+                if !report.added.is_empty() {
+                    super::enrich::enqueue(&state, report.added.clone());
+                }
+                let mut parts = Vec::new();
+                if !report.added.is_empty() {
+                    parts.push(format!("{} added", report.added.len()));
+                }
+                if report.missing > 0 {
+                    parts.push(format!("{} missing", report.missing));
+                }
+                if report.reappeared > 0 {
+                    parts.push(format!("{} back", report.reappeared));
+                }
+                if report.moved > 0 {
+                    parts.push(format!("{} moved", report.moved));
+                }
+                state
+                    .status()
+                    .set_message(&format!("Library updated: {}", parts.join(", ")));
+            }
+            glib::ControlFlow::Continue
+        });
+    }
+
+    let lib = state.lib.clone();
+    std::thread::spawn(move || {
+        let report = reconcile::reconcile_all(&lib, &cancel);
+        let _ = tx.send(Msg::Done(report));
+    });
+}
+
+/// Start the periodic reconciliation timer. Runs on the GLib main loop, so it
+/// simply kicks `reconcile_now` on each tick.
+pub fn start_periodic(state: &Rc<AppState>) {
+    let state = state.clone();
+    glib::timeout_add_local(PERIODIC, move || {
+        reconcile_now(&state);
+        glib::ControlFlow::Continue
+    });
+}

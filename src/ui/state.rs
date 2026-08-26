@@ -36,6 +36,8 @@ pub struct AppState {
     pub ai_job: Controller,
     /// The Phase 2 enrichment worker session (see `super::enrich`).
     pub enrich_job: Controller,
+    /// The library-freshness reconciliation session (see `super::freshness`).
+    pub reconcile_job: Controller,
     /// Paths waiting to be scanned. A running scan thread drains this, so adding
     /// a folder while a scan runs appends to it instead of cancelling the scan.
     pub scan_queue: Arc<Mutex<std::collections::VecDeque<String>>>,

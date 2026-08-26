@@ -3,6 +3,7 @@
 mod ai;
 mod db;
 mod model;
+mod reconcile;
 mod scan;
 mod thumb;
 mod ui;

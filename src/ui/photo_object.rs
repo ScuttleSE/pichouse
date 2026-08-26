@@ -25,6 +25,10 @@ mod imp {
         pub filename: RefCell<String>,
         #[property(get, set)]
         pub orientation: RefCell<i32>,
+        /// `true` when the file is gone from disk (soft "missing"); the cell is
+        /// shown dimmed.
+        #[property(get, set)]
+        pub missing: RefCell<bool>,
         /// The decoded thumbnail, or `None` until a worker fills it in. The
         /// bound `Image` observes this property.
         #[property(get, set, nullable)]
@@ -54,6 +58,7 @@ impl PhotoObject {
             .property("path", p.path.clone())
             .property("filename", p.filename.clone())
             .property("orientation", p.orientation)
+            .property("missing", p.missing)
             .build()
     }
 }

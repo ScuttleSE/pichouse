@@ -62,6 +62,7 @@ fn build_ui(app: &Application) {
         scan: Controller::default(),
         ai_job: Controller::default(),
         enrich_job: Controller::default(),
+        reconcile_job: Controller::default(),
         scan_queue: std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new())),
         enrich_queue: std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new())),
         status: RefCell::new(None),
@@ -217,6 +218,14 @@ fn populate(state: &Rc<AppState>) {
         // interrupted import in a previous session.
         super::enrich::ensure_running(state);
     }
+    // Reconcile against disk once at startup (catches files added or removed
+    // while the app was closed, including on network drives), then keep a
+    // periodic reconcile running as the reliable freshness path.
+    super::freshness::reconcile_now(state);
+    super::freshness::start_periodic(state);
+    // inotify fast-path for local folders (optional; periodic reconcile is the
+    // reliable path and covers network drives where inotify is silent).
+    super::watcher::start(state);
 }
 
 /// Load a scanned folder's photos into the grid (called by the sidebar).

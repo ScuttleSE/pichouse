@@ -26,6 +26,15 @@ pub fn build_toolbar(state: &Rc<AppState>) -> GtkBox {
         rescan.connect_clicked(move |_| super::actions::rescan_all(&state));
     }
 
+    let refresh = Button::from_icon_name("emblem-synchronizing-symbolic");
+    refresh.set_tooltip_text(Some(
+        "Refresh library (detect files added or removed on disk)",
+    ));
+    {
+        let state = state.clone();
+        refresh.connect_clicked(move |_| super::freshness::reconcile_now(&state));
+    }
+
     // AI menu button with a popover of actions.
     let ai_btn = Button::from_icon_name("insert-image-symbolic");
     ai_btn.set_tooltip_text(Some("AI tag photos"));
@@ -124,6 +133,7 @@ pub fn build_toolbar(state: &Rc<AppState>) -> GtkBox {
     box_.set_margin_end(6);
     box_.append(&settings);
     box_.append(&rescan);
+    box_.append(&refresh);
     box_.append(&ai_btn);
     box_.append(&search);
     box_.append(&zoom);

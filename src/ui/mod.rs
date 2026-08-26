@@ -8,6 +8,7 @@ mod controller;
 mod dialogs;
 mod enrich;
 mod foldertree;
+mod freshness;
 mod grid;
 mod photo_object;
 mod prefs;
@@ -23,5 +24,6 @@ mod thumbcache;
 mod toolbar;
 mod util;
 mod viewer;
+mod watcher;
 
 pub use app::run;
