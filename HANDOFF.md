@@ -7,8 +7,8 @@ ROADMAP.md for planned features.
 ## 1. State
 
 The Go to Rust port is complete. The Rust application replaces the Go
-application. The Go code is deleted. The `rust-port` branch is merged into
-`main`.
+application. The Go code is deleted. All work is on `main`. The temporary
+`rust-port` branch is deleted.
 
 The application builds, tests pass, and the UI runs on the target machine
 (Debian 13, GTK 4.18).
@@ -56,10 +56,7 @@ and tests only.
 - `.gitea/workflows/build.yaml` runs on push to `main`. It reads the version
   from `Cargo.toml`, bumps the build number, commits it with `[skip ci]`, runs
   `cargo test --release` and `cargo build --release`, and publishes one rolling
-  pre-release binary.
-- `.gitea/workflows/ci-rust-port.yaml` runs on push to `rust-port`. It runs
-  `cargo test` and `cargo build` and uploads the binary as a zip artifact. No
-  version bump, no release.
+  pre-release binary. This is the only workflow.
 - The runner has no passwordless sudo. CI does not run `apt-get`. It adds the
   installed cargo bin directory to `GITHUB_PATH` and verifies `cargo` and
   `gtk4` are present.

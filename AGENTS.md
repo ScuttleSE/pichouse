@@ -102,7 +102,7 @@ GTK4 (>= 4.10) must be present at runtime; Debian 13 ships GTK 4.18.
                          toolbar, status, settings, settings_ai, aitag,
                          tagmanager, shortcuts, dialogs, actions, controller,
                          prefs, photo_object, util)
-    .gitea/workflows/    CI (build/release on main; validation on rust-port)
+    .gitea/workflows/    CI (build/test/release on push to main)
 
 ## CI
 
