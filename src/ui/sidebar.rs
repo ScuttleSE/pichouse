@@ -635,14 +635,32 @@ impl Sidebar {
             return;
         };
         if let Some(old) = self.menu_pop.borrow_mut().take() {
-            old.unparent();
+            if old.parent().is_some() {
+                old.unparent();
+            }
         }
         let pop = PopoverMenu::from_model_full(&menu, gtk4::PopoverMenuFlags::NESTED);
         pop.set_has_arrow(false);
-        pop.set_parent(expander);
+        // Parent the popover on the stable ListView, not the recycled row
+        // expander. A menu action (e.g. Delete Album) rebuilds the tree and
+        // recycles/destroys the row; a popover still parented to that row would
+        // crash. Translate the click point into ListView coordinates.
+        let (px, py) = expander
+            .translate_coordinates(&self.list_view, x, y)
+            .unwrap_or((x, y));
+        pop.set_parent(&self.list_view);
         pop.set_position(gtk4::PositionType::Right);
-        let rect = gdk::Rectangle::new(x as i32, y as i32, 1, 1);
+        let rect = gdk::Rectangle::new(px as i32, py as i32, 1, 1);
         pop.set_pointing_to(Some(&rect));
+        // Unparent when dismissed so it never outlives its parent.
+        {
+            let pop_weak = pop.downgrade();
+            pop.connect_closed(move |_| {
+                if let Some(pop) = pop_weak.upgrade() {
+                    pop.unparent();
+                }
+            });
+        }
         pop.popup();
         *self.menu_pop.borrow_mut() = Some(pop);
     }

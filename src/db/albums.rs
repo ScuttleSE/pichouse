@@ -140,3 +140,64 @@ impl Library {
         Ok(out)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{Folder, Photo};
+
+    fn temp_lib() -> (Library, std::path::PathBuf) {
+        let mut p = std::env::temp_dir();
+        p.push(format!(
+            "pichouse-albtest-{}-{}.db",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_file(&p);
+        (Library::open_at(&p).unwrap(), p)
+    }
+
+    #[test]
+    fn remove_library_folder_then_use_albums() {
+        let (lib, path) = temp_lib();
+        let root = "/tmp/pichouse-albtest-root";
+        lib.add_library_folder(root).unwrap();
+        let fid = lib
+            .upsert_folder(&Folder {
+                path: format!("{root}/sub"),
+                name: "sub".into(),
+                mtime: 0,
+                year: 2020,
+                ..Default::default()
+            })
+            .unwrap();
+        lib.upsert_photo(&Photo {
+            folder_id: fid,
+            path: format!("{root}/sub/a.jpg"),
+            filename: "a.jpg".into(),
+            ..Default::default()
+        })
+        .unwrap();
+        let aid = lib.create_album("My Album", 0).unwrap();
+        lib.add_folder_to_album(fid, aid).unwrap();
+
+        // Remove the library folder: folders + photos + album_folders cascade.
+        lib.remove_library_folder(root).unwrap();
+
+        // The album survives but is empty. These calls must not panic/error.
+        let albums = lib.albums().unwrap();
+        assert_eq!(albums.len(), 1);
+        let fa = lib.folder_albums().unwrap();
+        assert!(fa.is_empty());
+        lib.rename_album(aid, "Renamed").unwrap();
+        lib.delete_album(aid).unwrap();
+        assert!(lib.albums().unwrap().is_empty());
+
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("db-wal"));
+        let _ = std::fs::remove_file(path.with_extension("db-shm"));
+    }
+}
