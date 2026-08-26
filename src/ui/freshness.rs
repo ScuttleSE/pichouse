@@ -60,6 +60,9 @@ pub fn reconcile_now(state: &Rc<AppState>) {
                 if report.moved > 0 {
                     parts.push(format!("{} moved", report.moved));
                 }
+                if report.removed > 0 {
+                    parts.push(format!("{} removed", report.removed));
+                }
                 state
                     .status()
                     .set_message(&format!("Library updated: {}", parts.join(", ")));

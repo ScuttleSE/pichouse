@@ -35,6 +35,7 @@ pub struct Report {
     pub missing: usize,
     pub reappeared: usize,
     pub moved: usize,
+    pub removed: usize,
 }
 
 impl Report {
@@ -43,11 +44,16 @@ impl Report {
         self.missing += other.missing;
         self.reappeared += other.reappeared;
         self.moved += other.moved;
+        self.removed += other.removed;
     }
 
     /// Whether anything changed.
     pub fn changed(&self) -> bool {
-        !self.added.is_empty() || self.missing > 0 || self.reappeared > 0 || self.moved > 0
+        !self.added.is_empty()
+            || self.missing > 0
+            || self.reappeared > 0
+            || self.moved > 0
+            || self.removed > 0
     }
 }
 
@@ -81,9 +87,20 @@ pub fn reconcile_all(lib: &Library, cancel: &Arc<AtomicBool>) -> Report {
 /// of image paths currently on disk in `dir`.
 fn reconcile_dir(lib: &Library, dir: &Path, files: &[PathBuf]) -> Report {
     let mut report = Report::default();
-    let fid = match ensure_folder(lib, dir) {
-        Some(f) => f,
-        None => return report,
+
+    // A directory with no images does not get a folder row unless it already
+    // has one. This keeps pure-container directories (only subfolders) out of
+    // the `folders` table — they exist only as albums in the Library tree.
+    let fid = if files.is_empty() {
+        match lib.folder_id_by_path(&dir.to_string_lossy()) {
+            Ok(Some(id)) => id,
+            _ => return report, // never had photos; nothing to reconcile
+        }
+    } else {
+        match ensure_folder(lib, dir) {
+            Some(f) => f,
+            None => return report,
+        }
     };
 
     // Index the DB rows for this folder by path: path -> (id, size, missing).
@@ -156,7 +173,49 @@ fn reconcile_dir(lib: &Library, dir: &Path, files: &[PathBuf]) -> Report {
         }
     }
 
+    // If this directory holds no images on disk and has no image-containing
+    // subfolders, remove the folder row outright (cascading its now-missing
+    // photos). A pure container (subfolders that hold images) is NEVER removed —
+    // it stays as an album in the Library tree.
+    if files.is_empty() && !dir_has_images(dir) {
+        if lib.delete_folder(fid).is_ok() {
+            report.removed += 1;
+        }
+    }
+
     report
+}
+
+/// Whether `dir` contains any image anywhere beneath it (recursively). Used to
+/// distinguish a truly empty folder (removable) from a container of subfolders
+/// that hold images (kept as an album).
+fn dir_has_images(dir: &Path) -> bool {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return false,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        match entry.file_type() {
+            Ok(ft) if ft.is_dir() => {
+                if dir_has_images(&path) {
+                    return true;
+                }
+            }
+            Ok(_) => {
+                if path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .map(is_image)
+                    .unwrap_or(false)
+                {
+                    return true;
+                }
+            }
+            Err(_) => {}
+        }
+    }
+    false
 }
 
 /// Pop one missing-row id with the given size, if any (move candidate).
@@ -295,8 +354,11 @@ mod tests {
     fn reconcile_detects_add_and_remove() {
         let base = std::env::temp_dir().join(format!("pichouse-recon-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
-        std::fs::create_dir_all(&base).unwrap();
-        std::fs::write(base.join("a.png"), tiny_png()).unwrap();
+        // Image lives in a subfolder so the root acts as a container and the
+        // subfolder as the image-holding leaf.
+        let sub = base.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(sub.join("a.png"), tiny_png()).unwrap();
 
         let db_path = std::env::temp_dir().join(format!("pichouse-recon-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&db_path);
@@ -304,31 +366,58 @@ mod tests {
         lib.add_library_folder(&base.to_string_lossy()).unwrap();
         let cancel = Arc::new(AtomicBool::new(false));
 
-        // First reconcile: a.png is added.
+        // First reconcile: a.png is added. Only the leaf subfolder gets a folder
+        // row; the container root does not (no phantom 0-image folder).
         let r = reconcile_all(&lib, &cancel);
         assert_eq!(r.added.len(), 1);
         assert_eq!(r.missing, 0);
+        let folders = lib.folders().unwrap();
+        assert_eq!(folders.len(), 1, "only the image-holding subfolder is a folder row");
+        assert!(folders[0].path.ends_with("sub"));
 
         // Second reconcile: nothing changed.
         let r = reconcile_all(&lib, &cancel);
         assert!(!r.changed());
 
-        // Remove the file: it is soft-marked missing, not deleted.
-        std::fs::remove_file(base.join("a.png")).unwrap();
+        // Remove the only image: the leaf folder is now empty on disk and has no
+        // image subfolders, so its folder row (and photo) is removed outright.
+        std::fs::remove_file(sub.join("a.png")).unwrap();
         let r = reconcile_all(&lib, &cancel);
-        assert_eq!(r.missing, 1);
-        let folders = lib.folders().unwrap();
-        let photos = lib.photos_in_folder(folders[0].id).unwrap();
-        assert_eq!(photos.len(), 1);
-        assert!(photos[0].missing);
+        assert_eq!(r.removed, 1);
+        assert!(lib.folders().unwrap().is_empty());
 
-        // Add it back: it reappears (missing cleared), row reused.
-        std::fs::write(base.join("a.png"), tiny_png()).unwrap();
-        let r = reconcile_all(&lib, &cancel);
-        assert_eq!(r.reappeared, 1);
-        let photos = lib.photos_in_folder(folders[0].id).unwrap();
-        assert_eq!(photos.len(), 1);
-        assert!(!photos[0].missing);
+        let _ = std::fs::remove_dir_all(&base);
+        let _ = std::fs::remove_file(&db_path);
+        let _ = std::fs::remove_file(db_path.with_extension("db-wal"));
+        let _ = std::fs::remove_file(db_path.with_extension("db-shm"));
+    }
+
+    #[test]
+    fn reconcile_keeps_container_but_not_phantom_folder() {
+        // A directory that holds only a subfolder-of-images must not become a
+        // folder row; only the image-holding subfolder does.
+        let base = std::env::temp_dir()
+            .join(format!("pichouse-recon2-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let container = base.join("Trips");
+        let leaf = container.join("2020");
+        std::fs::create_dir_all(&leaf).unwrap();
+        std::fs::write(leaf.join("p.png"), tiny_png()).unwrap();
+
+        let db_path = std::env::temp_dir()
+            .join(format!("pichouse-recon2-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&db_path);
+        let lib = Library::open_at(&db_path).unwrap();
+        lib.add_library_folder(&base.to_string_lossy()).unwrap();
+        let cancel = Arc::new(AtomicBool::new(false));
+
+        reconcile_all(&lib, &cancel);
+        let folders = lib.folders().unwrap();
+        assert_eq!(folders.len(), 1, "only the leaf holding images is a folder");
+        assert!(folders[0].path.ends_with("2020"));
+        // Neither the container nor the root has a folder row.
+        assert!(lib.folder_id_by_path(&container.to_string_lossy()).unwrap().is_none());
+        assert!(lib.folder_id_by_path(&base.to_string_lossy()).unwrap().is_none());
 
         let _ = std::fs::remove_dir_all(&base);
         let _ = std::fs::remove_file(&db_path);

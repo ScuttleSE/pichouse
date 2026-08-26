@@ -296,7 +296,7 @@ impl Sidebar {
         let Some(state) = self.state() else { return };
         let mut folders = state.lib.folders().unwrap_or_default();
         let counts = state.lib.folder_photo_counts().unwrap_or_default();
-        let albums = state.lib.albums().unwrap_or_default();
+        let mut albums = state.lib.albums().unwrap_or_default();
         let folder_album = state.lib.folder_albums().unwrap_or_default();
         let new_files_count = state
             .lib
@@ -304,6 +304,9 @@ impl Sidebar {
             .unwrap_or(0);
 
         folders.sort_by(|a, b| a.name.cmp(&b.name));
+        // Show albums alphabetically at every level (case-insensitive). They are
+        // pushed into album_children in this order, so children sort too.
+        albums.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
         let mut data = TreeData {
             counts,

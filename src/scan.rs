@@ -50,16 +50,22 @@ impl<'a> Scanner<'a> {
     /// folder tree and grid can therefore populate almost immediately, even for
     /// tens of thousands of files.
     ///
-    /// `progress` is called after each photo. When `cancel` becomes true the
-    /// walk stops promptly. Returns the number of photos recorded.
-    pub fn scan_folder<F>(
+    /// `progress` is called after each photo. `on_folder` is called once per
+    /// directory, right after its photo rows are recorded, with the folder id
+    /// and its path — the caller uses this to file the folder into the Library
+    /// album tree immediately, so it never lingers under "New folders". When
+    /// `cancel` becomes true the walk stops promptly. Returns the number of
+    /// photos recorded.
+    pub fn scan_folder<F, G>(
         &self,
         root: &Path,
         cancel: &Arc<AtomicBool>,
         mut progress: F,
+        mut on_folder: G,
     ) -> Result<usize, ScanError>
     where
         F: FnMut(Progress),
+        G: FnMut(i64, &Path),
     {
         // First pass: collect image files grouped by directory.
         let mut by_dir: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
@@ -83,6 +89,9 @@ impl<'a> Scanner<'a> {
                 .filter_map(|path| structure_photo(fid, path))
                 .collect();
             self.lib.insert_structure_batch(&batch)?;
+
+            // File this folder into the Library album tree right away.
+            on_folder(fid, dir);
 
             for path in files {
                 done += 1;
@@ -385,7 +394,7 @@ mod tests {
         let cancel = Arc::new(AtomicBool::new(false));
         let mut seen = 0;
         let n = scanner
-            .scan_folder(&dir, &cancel, |_p| seen += 1)
+            .scan_folder(&dir, &cancel, |_p| seen += 1, |_fid, _dir| {})
             .unwrap();
         assert_eq!(n, 1);
         assert_eq!(seen, 1);

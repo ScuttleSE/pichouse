@@ -192,6 +192,26 @@ impl Library {
         Ok(id)
     }
 
+    /// The id of a scanned folder by path, without creating it. `None` if no
+    /// such folder row exists.
+    pub fn folder_id_by_path(&self, path: &str) -> Result<Option<i64>> {
+        let conn = self.conn.lock().unwrap();
+        let id: Option<i64> = conn
+            .query_row("SELECT id FROM folders WHERE path = ?1", params![path], |r| {
+                r.get(0)
+            })
+            .optional()?;
+        Ok(id)
+    }
+
+    /// Delete a scanned folder row (and, by cascade, its photos and album
+    /// membership). Used to drop a folder that no longer holds any images.
+    pub fn delete_folder(&self, folder_id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM folders WHERE id = ?1", params![folder_id])?;
+        Ok(())
+    }
+
     /// All scanned folders ordered by year (desc) then name.
     pub fn folders(&self) -> Result<Vec<Folder>> {
         let conn = self.conn.lock().unwrap();

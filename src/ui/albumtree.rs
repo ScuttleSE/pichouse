@@ -1,55 +1,64 @@
 //! Auto-organize scanned folders into the Library album tree, mirroring the
 //! on-disk directory hierarchy.
 //!
-//! After a library root is scanned, each scanned folder beneath it is placed
-//! into an album chain that matches its directory path relative to the root.
-//! The root's basename becomes a top-level album. Intermediate directories
-//! become nested sub-albums. This runs once per scan; albums remain fully
-//! user-editable afterward, and existing album membership is never overwritten.
+//! After (and during) a scan, each scanned folder beneath a library root is
+//! placed into an album chain matching its directory path relative to the root.
+//! The root's basename becomes a top-level album; intermediate directories
+//! become nested sub-albums. Folders already filed in an album are never moved,
+//! so user edits persist.
 
 use std::collections::HashMap;
 use std::path::Path;
 
 use crate::db::Library;
+use crate::model::Folder;
 
-/// Mirror the on-disk directory tree under `root` into the album tree. Only
-/// folders not already assigned to an album are placed, so user edits persist.
-pub fn sync_disk_tree(lib: &Library, root: &str) {
-    let folders = match lib.folders() {
-        Ok(f) => f,
-        Err(_) => return,
-    };
-    let albums = lib.albums().unwrap_or_default();
-    let folder_album = lib.folder_albums().unwrap_or_default();
+/// Mirrors on-disk directory structure into the album tree, reusing a cache of
+/// existing albums so repeated calls during a scan stay cheap. Build one per
+/// root (or rebuild when albums may have changed) and file folders into it.
+pub struct DiskAlbumMapper {
+    /// (parent_album_id, album_name) -> album_id.
+    album_by_key: HashMap<(i64, String), i64>,
+    /// folder_id -> album_id, for folders already assigned to some album.
+    folder_album: HashMap<i64, i64>,
+}
 
-    // Index existing albums by (parent_id, name) so we reuse rather than
-    // duplicate on rescans.
-    let mut album_by_key: HashMap<(i64, String), i64> = HashMap::new();
-    for a in &albums {
-        album_by_key.insert((a.parent_id, a.name.clone()), a.id);
+impl DiskAlbumMapper {
+    /// Build a mapper from the library's current albums and folder membership.
+    pub fn new(lib: &Library) -> DiskAlbumMapper {
+        let albums = lib.albums().unwrap_or_default();
+        let folder_album = lib.folder_albums().unwrap_or_default();
+        let mut album_by_key = HashMap::new();
+        for a in &albums {
+            album_by_key.insert((a.parent_id, a.name.clone()), a.id);
+        }
+        DiskAlbumMapper {
+            album_by_key,
+            folder_album,
+        }
     }
 
-    let root_path = Path::new(root);
-    let root_name = root_path
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| root.to_string());
-
-    for folder in &folders {
-        // Only handle folders under this root.
+    /// File a single scanned `folder` into its disk-mirrored album under `root`.
+    /// Creates any missing album levels. No-op if the folder is already in an
+    /// album (preserving user placements) or is not under `root`.
+    pub fn file(&mut self, lib: &Library, root: &str, folder: &Folder) {
+        if self.folder_album.contains_key(&folder.id) {
+            return;
+        }
+        let root_path = Path::new(root);
         let fpath = Path::new(&folder.path);
         let Ok(rel) = fpath.strip_prefix(root_path) else {
-            continue;
+            return;
         };
-        // Skip folders the user already filed somewhere.
-        if folder_album.contains_key(&folder.id) {
-            continue;
-        }
+        let root_name = root_path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| root.to_string());
 
-        // Build the album chain: root name, then each intermediate directory
-        // component of the relative path (excluding the folder's own leaf, since
-        // the folder itself is the content, not an album).
-        let mut chain: Vec<String> = vec![root_name.clone()];
+        // Album chain: root name, then each intermediate directory component of
+        // the relative path (excluding the folder's own leaf — the folder itself
+        // is the content, not an album).
+        let mut chain: Vec<String> = vec![root_name];
         let comps: Vec<String> = rel
             .components()
             .filter_map(|c| match c {
@@ -57,8 +66,6 @@ pub fn sync_disk_tree(lib: &Library, root: &str) {
                 _ => None,
             })
             .collect();
-        // All but the last component are intermediate album levels. If the
-        // folder IS the root (rel is empty), it just goes under the root album.
         if comps.len() > 1 {
             chain.extend_from_slice(&comps[..comps.len() - 1]);
         }
@@ -67,24 +74,35 @@ pub fn sync_disk_tree(lib: &Library, root: &str) {
         let mut parent_id = 0i64;
         for name in &chain {
             let key = (parent_id, name.clone());
-            let aid = match album_by_key.get(&key) {
+            let aid = match self.album_by_key.get(&key) {
                 Some(&id) => id,
                 None => match lib.create_album(name, parent_id) {
                     Ok(id) => {
-                        album_by_key.insert(key, id);
+                        self.album_by_key.insert(key, id);
                         id
                     }
-                    Err(_) => {
-                        parent_id = 0;
-                        break;
-                    }
+                    Err(_) => return,
                 },
             };
             parent_id = aid;
         }
 
-        if parent_id != 0 {
-            let _ = lib.add_folder_to_album(folder.id, parent_id);
+        if parent_id != 0 && lib.add_folder_to_album(folder.id, parent_id).is_ok() {
+            self.folder_album.insert(folder.id, parent_id);
         }
+    }
+}
+
+/// Mirror the on-disk directory tree under `root` into the album tree in one
+/// pass. A convenience wrapper over `DiskAlbumMapper` for the completion sweep
+/// and reconcile paths. Only folders not already filed are placed.
+pub fn sync_disk_tree(lib: &Library, root: &str) {
+    let folders = match lib.folders() {
+        Ok(f) => f,
+        Err(_) => return,
+    };
+    let mut mapper = DiskAlbumMapper::new(lib);
+    for folder in &folders {
+        mapper.file(lib, root, folder);
     }
 }

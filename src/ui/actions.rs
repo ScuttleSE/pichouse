@@ -13,7 +13,13 @@ enum Msg {
     Message(String),
     Progress(f64),
     Scanning(bool),
-    Reload,
+    /// Refresh the sidebars and the visible grid, without starting Phase 2
+    /// enrichment. Used during the scan so the Library tree builds up live while
+    /// Phase 1 keeps priority (the whole file tree lands first).
+    ReloadOnly,
+    /// Refresh, then start bulk Phase 2 enrichment. Sent once, after the entire
+    /// queued scan has drained.
+    ReloadAndEnrich,
     Error(String),
     Finished,
 }
@@ -77,11 +83,16 @@ fn start_scan_worker(state: &Rc<AppState>) {
                 Msg::Message(m) => status.set_message(&m),
                 Msg::Progress(p) => status.set_progress(p),
                 Msg::Scanning(s) => status.set_scanning(s),
-                Msg::Reload => {
+                Msg::ReloadOnly => {
                     super::app::reload_folders(&state);
                     // Re-query the visible folder so newly scanned photos appear.
                     state.grid().reload_from_source();
-                    // Kick off Phase 2 enrichment for any structure-only photos.
+                }
+                Msg::ReloadAndEnrich => {
+                    super::app::reload_folders(&state);
+                    state.grid().reload_from_source();
+                    // Bulk Phase 2 enrichment starts only after the whole scan
+                    // has finished, so the file tree is fully in Library first.
                     super::enrich::ensure_running(&state);
                 }
                 Msg::Error(e) => show_error(&state, &e),
@@ -115,13 +126,19 @@ fn start_scan_worker(state: &Rc<AppState>) {
 
             let _ = tx.send(Msg::Message(format!("Scanning {path}")));
             let tx_progress = tx.clone();
-            let lib_cb = lib.clone();
-            let path_cb = path.clone();
+            let tx_folder = tx.clone();
+            let lib_folder = lib.clone();
+            let root_folder = path.clone();
             // Per-folder running counts, read back after the folder completes.
             let this_done = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
             let this_total = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
             let this_done_cb = this_done.clone();
             let this_total_cb = this_total.clone();
+            // File each scanned directory into the Library album tree the moment
+            // its rows are written, so folders never linger under "New folders".
+            // A per-root mapper caches albums so this stays cheap.
+            let mut mapper = super::albumtree::DiskAlbumMapper::new(&lib_folder);
+            let mut dirs_since_reload = 0usize;
             let result = scanner.scan_folder(
                 std::path::Path::new(&path),
                 &cancel,
@@ -142,12 +159,21 @@ fn start_scan_worker(state: &Rc<AppState>) {
                         "Scanning {} ({}/{})",
                         p.folder, done, total
                     )));
-                    // Periodically mirror the discovered folders into the album
-                    // tree and refresh the sidebar, so the Library tree builds up
-                    // live during the scan rather than only at the end.
-                    if p.done % 200 == 0 {
-                        super::albumtree::sync_disk_tree(&lib_cb, &path_cb);
-                        let _ = tx_progress.send(Msg::Reload);
+                },
+                move |fid, dir| {
+                    // Folder just recorded: file it into its disk-mirrored album
+                    // immediately, then refresh the sidebar every few folders so
+                    // the Library tree builds up live during the scan.
+                    let folder = crate::model::Folder {
+                        id: fid,
+                        path: dir.to_string_lossy().into_owned(),
+                        ..Default::default()
+                    };
+                    mapper.file(&lib_folder, &root_folder, &folder);
+                    dirs_since_reload += 1;
+                    if dirs_since_reload >= 4 {
+                        dirs_since_reload = 0;
+                        let _ = tx_folder.send(Msg::ReloadOnly);
                     }
                 },
             );
@@ -162,10 +188,10 @@ fn start_scan_worker(state: &Rc<AppState>) {
                     // Record that this root's first scan is complete, so files
                     // added later count as "new".
                     let _ = lib.mark_first_scan_done(&path);
-                    // Auto-organize the just-scanned tree into the Library view,
-                    // then refresh the sidebars incrementally.
+                    // Safety-net sweep in case any folder was missed, then
+                    // refresh the sidebars.
                     super::albumtree::sync_disk_tree(&lib, &path);
-                    let _ = tx.send(Msg::Reload);
+                    let _ = tx.send(Msg::ReloadOnly);
                 }
                 Err(ScanError::Cancelled(_)) => {
                     cancelled = true;
@@ -180,7 +206,7 @@ fn start_scan_worker(state: &Rc<AppState>) {
 
         let _ = tx.send(Msg::Scanning(false));
         let _ = tx.send(Msg::Progress(-1.0));
-        let _ = tx.send(Msg::Reload);
+        let _ = tx.send(Msg::ReloadAndEnrich);
         if cancelled {
             let _ = tx.send(Msg::Message("Scan stopped".into()));
         } else if let Some(e) = scan_err {
