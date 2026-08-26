@@ -322,11 +322,11 @@ impl Sidebar {
             if data.new_files_count > 0 {
                 roots.push(NEW_FILES_ID.to_string());
             }
-            for &aid in data.album_children.get(&0).into_iter().flatten() {
-                roots.push(format!("{ALBUM_PREFIX}{aid}"));
-            }
             if !data.unassigned.is_empty() {
                 roots.push(NEW_FOLDERS_ID.to_string());
+            }
+            for &aid in data.album_children.get(&0).into_iter().flatten() {
+                roots.push(format!("{ALBUM_PREFIX}{aid}"));
             }
         }
         let n = self.list_root.n_items();
