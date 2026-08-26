@@ -201,3 +201,23 @@ Virtual albums are a distinct concept that groups individual *photos*.
 - Interaction with edits (which view is shown) and with Immich upload/sync
   (can a virtual album be uploaded/synced as an Immich album?).
 - UI for adding photos to a virtual album (drag-drop, context menu).
+
+## Slideshows
+
+Play an album (or any photo set) as a full-screen slideshow.
+
+### Behaviour
+- Slideshow of an album's images.
+- Adjustable per-image duration (how long each image is shown).
+- Shuffle mode (random order).
+- Repeat/loop mode.
+- Standard playback controls: play/pause, next/previous, exit.
+
+### Open questions / to decide
+- Transitions between images (none/crossfade) and whether that is configurable.
+- Whether edits (non-destructive) are shown in the slideshow (expected: yes).
+- Which sets can be played (normal albums, virtual albums, folder view,
+  current selection).
+- Fit/scale handling for mixed aspect ratios and portrait/landscape.
+- Optional Ken Burns / pan-zoom effect (nice-to-have).
+- Behaviour on the last image when repeat is off (stop vs. exit).
