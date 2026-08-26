@@ -11,7 +11,6 @@ use gtk4::gdk;
 use gtk4::gdk_pixbuf::PixbufLoader;
 use gtk4::gio;
 use gtk4::glib;
-use gtk4::glib::closure_local;
 use gtk4::prelude::*;
 use gtk4::{
     Align, GridView, Image, Label, ListItem, Overlay, PolicyType, ScrolledWindow,
@@ -237,16 +236,15 @@ fn build_factory() -> SignalListItemFactory {
         // Observe future texture changes for this bound object.
         let image_weak = image.downgrade();
         let label_weak = label.downgrade();
-        let handler = photo.connect_closure(
-            "notify::texture",
-            false,
-            closure_local!(move |obj: PhotoObject| {
+        let handler = photo.connect_notify_local(
+            Some("texture"),
+            move |obj: &PhotoObject, _pspec| {
                 if let (Some(image), Some(label)) =
                     (image_weak.upgrade(), label_weak.upgrade())
                 {
                     apply_texture(&image, &label, obj.texture());
                 }
-            }),
+            },
         );
         // Store the handler id so unbind can disconnect it.
         unsafe {
