@@ -60,7 +60,7 @@ The version format is major.minor.build. The series starts at 0.0.0.
 - Browsing the library reflects the cached DB state by default.
 - A separate raw filesystem "folder view" is also available.
 - Thumbnails are generated on first view and cached in a separate SQLite DB.
-- UI layout mimics Picasa 3 (see `picasa.png`), with modern styling.
+- UI layout mimics Picasa 3, with modern styling.
 
 ## Tech stack
 

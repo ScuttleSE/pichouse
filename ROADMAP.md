@@ -6,22 +6,28 @@ unordered by priority unless noted.
 
 ## Picasa-style sidebar tree
 
-Restructure the left tree view to match Picasa 3 (see `picasa.jpg`): a single
-tree split into distinct, collapsible **sections** with headers, each showing a
-count, with per-item counts and tiny thumbnail icons.
+Restyle the **Library** tab's tree to match Picasa 3: split it into distinct,
+collapsible **sections** with headers, each showing a count, with per-item
+counts and tiny thumbnail icons.
 
-### Sections (headers)
-- Separate the tree into headed sections, in this order:
+Note: the left panel keeps its existing top-level **tabs** — **Library** and
+**Folders** (the stack switcher in `layout.go`). This change is *inside* the
+Library tab, not a merge of the two tabs. The raw filesystem view stays in the
+separate **Folders** tab.
+
+### Sections (headers) inside the Library tab
+- Split the Library tree into headed, collapsible sections, e.g.:
   - **Albums** — pichouse albums (folder-backed and, later, virtual).
-  - **People** — named people from facial recognition (ties into Facial
-    detection & recognition).
-  - **Folders** — the raw filesystem folder view.
-- Each section header shows a **count** of items in that section, e.g.
-  `Albums (4)`, `People (1)`, `Folders (253)`.
+  - **Faces / People** — named people from facial recognition (ties into
+    Facial detection & recognition).
+  - **Immich** — albums from a connected Immich server (ties into Immich
+    integration).
+- Each section header looks like a Picasa section header and shows a **count**
+  of items in that section, e.g. `Albums (4)`, `People (1)`.
 - Each section is **collapsible** (expand/collapse via the header triangle).
 
 ### Per-item display
-- Each album/folder/person row shows the **number of images** it contains, in
+- Each album/person row shows the **number of images** it contains, in
   parentheses after the name, e.g. `Recently Updated (250)`.
 - Each album row shows a **tiny thumbnail icon** — a small thumbnail of the
   **first image** in that album — in place of a generic folder icon.
@@ -32,11 +38,11 @@ count, with per-item counts and tiny thumbnail icons.
 - Thumbnail icon size and where the small icon comes from (reuse the thumb
   cache at a smaller size vs. a dedicated tiny thumb).
 - How the image count is computed and kept fresh (live query vs. cached count on
-  the album/folder row; recursive count for folders with sub-folders?).
-- Whether counts are recursive for nested folders or count direct children only
-  (Picasa shows a per-folder count).
-- How this maps onto the current sidebar/foldertree UI code and the albums vs.
-  folder-view split already in pichouse.
+  the album row).
+- How the headed sections map onto the current sidebar tree model (the tree
+  currently has a single root list; sections need header rows or grouping).
+- Whether the same headed-section styling and counts also apply in the
+  **Folders** tab (Picasa's Folders section shows per-folder counts).
 - Section order, default collapsed/expanded state, and persistence of that
   state across restarts.
 
