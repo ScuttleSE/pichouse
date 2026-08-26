@@ -349,6 +349,39 @@ clean them up by auto-selecting the "worse" copy for potential deletion.
 - UI: how duplicate groups are shown (side-by-side, grouped grid) and the
   review/confirm flow before deletion.
 
+## Geolocation & maps
+
+Use photo GPS EXIF data to show where photos were taken — per-photo on a map,
+and a global map of the whole library.
+
+### Per-photo map (properties panel)
+- When a photo has geodata (GPS EXIF), add a **Map** tab in the right-hand
+  properties panel showing that photo's location.
+- The map is either **Google Maps** or **OpenStreetMap** (decide backend below).
+- No Map tab (or a disabled/empty state) when the photo has no geodata.
+
+### Global map view
+- A global **map view** of the whole library, plotting every geotagged photo.
+- **Cluster** markers where many photos were taken in the same area; zooming in
+  expands clusters into finer clusters / individual photos.
+- Clicking a marker/cluster shows the photos taken there (open in the grid or a
+  popover).
+
+### Open questions / to decide
+- Map backend: OpenStreetMap (open, no API key, e.g. via a tile source /
+  libshumate) vs. Google Maps (API key, terms); offline vs. online tiles.
+- How the map is embedded in a GTK4 app (a native map widget like libshumate vs.
+  a WebKitGTK web view); dependency and packaging impact on Debian 13.
+- Where GPS is read/stored: extend the scanner/EXIF step to persist lat/lon on
+  the photo row in library.db (currently EXIF gives taken_at, dimensions only).
+- Clustering method and thresholds for the global view; server-side vs.
+  client-side clustering for large libraries.
+- How the global map view is launched (a top-level view/tab vs. a menu action)
+  and how it interacts with the current album/selection (map the whole library
+  vs. the current album/selection).
+- Privacy: some photos have sensitive locations; whether to allow hiding/
+  stripping geodata, and interaction with adult content and Immich sync.
+
 ## Adult / mature content tagging
 
 Some libraries contain adult (NSFW) images. Support tagging and organising this
