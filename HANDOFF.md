@@ -61,15 +61,37 @@ freshness. Section 10 describes them.
 - Missing photos are shown dimmed in the grid (a `missing` property on
   `PhotoObject`).
 
+### New Files view
+- A photo carries `added_at` (set on the Phase 1 structure insert). Each library
+  root carries `first_scan_done_at`, stamped once when its first scan completes
+  (`Library::mark_first_scan_done`, called from the scan worker). A photo is
+  "new" when `added_at > first_scan_done_at` for its owning root (matched by path
+  prefix) AND it was added within the last `NEW_MAX_AGE_DAYS` (14) days. Age
+  expiry is automatic; there is no per-file dismiss.
+- The initial import of an existing library never counts as new, because those
+  photos are recorded before the boundary is stamped.
+- `Library::new_photos_grouped` returns `(Folder, Vec<Photo>)` groups, newest
+  first. `new_photos_count` sums them for the sidebar.
+- `ui::newfiles::NewFilesView` renders the grouped view (a folder header per
+  group, thumbnails in a `FlowBox` below) with its own thumbnail worker pool. It
+  is a named child (`newfiles`) of the center `Stack`.
+- The sidebar (`ui::sidebar`) shows a "New Files (N)" row at the top of the
+  Library tab when N > 0; selecting it calls `AppState::show_new_files`.
+  Selecting a normal folder calls `show_grid` first, then loads the folder.
+- The view refreshes live: reconciliation, the watcher, and enrichment call
+  `AppState::refresh_new_files_if_active` after they reload.
+
 ### Schema migration
-- `library.db` gained `photos.scan_state` and `photos.missing`. `Library::open_at`
-  runs an additive `migrate` that adds the columns to an older database and marks
-  already-hashed rows `scan_state = 2`, so no rebuild is forced.
+- `library.db` gained `photos.scan_state`, `photos.missing`, `photos.added_at`,
+  and `library_folders.first_scan_done_at`. `Library::open_at` runs an additive
+  `migrate` that adds the columns to an older database, marks already-hashed rows
+  `scan_state = 2`, and stamps `first_scan_done_at` on existing roots so their
+  photos are not treated as new. No rebuild is forced.
 
 ### Open follow-ups (not done; noted in code)
 - Full hash-based move detection beyond the size heuristic.
-- A "new" badge for freshly added photos, and a "clean up missing" action to
-  hard-delete missing rows on user confirmation.
+- A "clean up missing" action to hard-delete missing rows on user confirmation.
+- Making `NEW_MAX_AGE_DAYS` a user setting (it is a constant now).
 - Interaction with future RAW+JPEG pairing (pair during Phase 1 or Phase 2).
 
 ## 2. What is ported

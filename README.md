@@ -28,6 +28,11 @@ a thumbnail grid in the center, and a properties panel on the right.
   (a move) — reuses its existing row. On local folders an inotify watcher reacts
   quickly; on network drives (NFS/SMB), where inotify cannot see remote changes,
   the periodic reconcile keeps things fresh.
+- **New Files view.** A "New Files" entry at the top of the Library tab collects
+  files added to your library folders *after* the initial scan. Selecting it
+  shows them grouped by folder (a header per folder, thumbnails below). Entries
+  drop off automatically after two weeks. Removed files are marked "missing" and
+  shown dimmed so their tags survive a temporary unmount or move.
 - Browsing reflects the cached database state by default.
 - Thumbnails generated on first view and cached separately (`thumbs.db`).
 - Left sidebar tabs:
