@@ -40,7 +40,7 @@ The version format is major.minor.build. The series starts at 0.0.0.
 - CI increases the build number by 1 on each push to `main`.
 - A documentation-only push does not increase the build number. A push is
   documentation-only when it changes markdown (`*.md`) files only. CI skips the
-  bump for such a push.
+  version bump, the build, and the release for such a push.
 - CI commits the new version back with `[skip ci]` in the message.
 - Do not increase the build number by hand.
 - The user asks for a release. A release increases the major, the minor, or the build.
