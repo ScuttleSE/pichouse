@@ -226,6 +226,41 @@ Play an album (or any photo set) as a full-screen slideshow.
 - Optional Ken Burns / pan-zoom effect (nice-to-have).
 - Behaviour on the last image when repeat is off (stop vs. exit).
 
+## Facial detection & recognition
+
+Detect faces in photos, group the same person's face across the library, let the
+user name a person, and surface all their photos — Picasa "People"-style. Fits
+alongside the existing local AI tagging pipeline; all processing stays local.
+
+### Behaviour
+- Detect faces in library images (a per-photo face-detection pass).
+- **Group** faces that belong to the same person automatically (face clustering
+  by similarity).
+- Let the user **name** a face/cluster (assign a person name), and confirm or
+  correct grouping (merge/split clusters, reassign a face).
+- Once named, a person's photos are available as a **virtual album** containing
+  every image that person appears in (ties into Virtual albums).
+- Membership updates as new matching faces are found in newly scanned photos.
+
+### Open questions / to decide
+- Backend: reuse the existing Ollama/AI stack vs. a dedicated local face
+  pipeline (detector + embedding model, e.g. a face-embedding network + a
+  clustering step). All local, consistent with offline AI tagging.
+- Storage: how faces, bounding boxes, embeddings, clusters, and person names are
+  persisted in library.db (e.g. `faces`, `persons` tables; embedding blobs).
+- Clustering method and threshold, and how re-clustering works as the library
+  grows (incremental assignment vs. periodic re-cluster).
+- Person -> virtual album mapping: a rule-based virtual album ("contains person
+  X") vs. a dedicated People section with its own UI.
+- UI: a People view (named/unnamed faces), naming flow, and confirm/merge/split
+  controls; showing face thumbnails cropped from the source image.
+- Interaction with edits (detect on original), RAW+JPEG pairing (detect once per
+  paired photo), and adult content (faces in NSFW images).
+- Interaction with Immich (Immich has its own people/face feature — map to it or
+  keep separate).
+- Privacy: all face data stays local; how to delete/reset a person or all face
+  data.
+
 ## Duplicate image finder
 
 Find duplicate (and near-duplicate) images within the library and help the user
