@@ -221,3 +221,30 @@ Play an album (or any photo set) as a full-screen slideshow.
 - Fit/scale handling for mixed aspect ratios and portrait/landscape.
 - Optional Ken Burns / pan-zoom effect (nice-to-have).
 - Behaviour on the last image when repeat is off (stop vs. exit).
+
+## Adult / mature content tagging
+
+Some libraries contain adult (NSFW) images. Support tagging and organising this
+content properly, using a local AI model suited to the task. All processing
+stays local (in keeping with the existing Ollama-based, offline AI tagging).
+
+### Behaviour
+- Find/select a local AI model that tags adult images accurately, including
+  explicit/detailed tags where appropriate.
+- Integrate it into the existing AI tagging pipeline (per-photo tags, AI vs.
+  user source, confirm/reject flow).
+- Detect and flag adult content so it can be filtered/hidden in the UI (safe
+  mode / blur / hidden-by-default albums).
+
+### Open questions / to decide
+- Which local model(s): general vision model with an explicit prompt vs. a
+  dedicated NSFW tagger/classifier; where it is hosted (Ollama or a separate
+  backend).
+- Tag vocabulary: free-form explicit tags vs. a controlled set; how these
+  interact with the normal tag namespace.
+- A dedicated "adult" flag on photos/albums vs. relying on tags alone.
+- UI controls: a global safe/reveal toggle, per-album marking, blurred
+  thumbnails, and whether adult content is excluded from slideshows/exports by
+  default.
+- Interaction with Immich sync (does adult tagging/flagging propagate?).
+- Access control: optional gating (PIN/hidden) for adult albums.
