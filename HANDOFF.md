@@ -6,156 +6,109 @@ ROADMAP.md for planned features.
 
 ## 1. Current task
 
-The project moves from Go to Rust. This is the decided direction. The Go app
-stays on `main` for now. The user builds a Rust spike on a branch first.
+The project moves from Go to Rust. The user validated the Rust spike. The user
+started the full port. You do the port now.
 
-STOP POINT: The team waits for validation of the Rust spike. Do NOT start the
-full Go-to-Rust port yet. Start the port only after the user validates the spike
-and tells you to start. Until then, work on `main` (features, docs, roadmap,
-CI) and keep the spike branch as it is.
+The work is on the `rust-port` branch. Do the port in milestones. Commit and push
+each milestone to `rust-port`. Do not push to `main`. Merge to `main` only when
+the port reaches feature parity.
 
-While you wait, you may still add roadmap ideas and fix the Go app on `main`.
+The user said: switch CI to Rust now. CI is already Rust. See section 5.
 
 ## 2. Branches
 
-- `main` holds the Go application. `main` is the product branch now.
-- The team moves to Rust. The Go app on `main` is temporary.
-- `spike/rust-gtk4-grid` holds the Rust spike. Do not merge the spike into
-  `main` now.
-- Merge the spike into `main` only after the user validates the spike and starts
-  the Rust port.
-- Do not change the spike branch now. Leave it as it is.
+- `main` holds the old Go application. Do not change `main` now.
+- `rust-port` holds the Rust port. All new work goes here.
+- `spike/rust-gtk4-grid` holds the validated spike. Do not change it. The spike
+  proved the hard UI part: a GTK4 GridView of recycled thumbnail cells backed by
+  a custom GObject list model, with JPEG blobs from SQLite. Use its pattern for
+  the UI grid.
 
-## 3. State of the Rust spike (branch `spike/rust-gtk4-grid`)
+## 3. Milestones — state
 
-The spike proves the hardest part of a Rust port. The hardest part is the GTK4
-thumbnail grid.
+Done and pushed on `rust-port`:
 
-- The spike is in `spike/rust-grid/`.
-- The spike uses `gtk4-rs` (`gtk4` crate 0.9), `gdk-pixbuf`, `glib`, `gio`, and
-  `rusqlite` (bundled, FTS5-capable).
-- The spike shows a `GridView`. The `GridView` uses a `SignalListItemFactory`
-  and a custom GObject item type `PhotoObject`.
-- The spike reads the real pichouse databases. It reads `library.db` for photo
-  rows. It reads `thumbs-320.db` for thumbnail JPEG blobs.
-- The spike decodes JPEG blobs with `PixbufLoader`.
-- The spike builds and links against system GTK 4.18 on this machine.
-- The spike needs a populated library to show thumbnails. No library exists
-  yet. Run the Go app first to build a library and thumbnails. Then run the
-  spike.
-- Override the data directory with the environment variable
-  `PICHOUSE_DATA_DIR`.
+- M0: Rust scaffolding. `Cargo.toml`, `src/main.rs`, `src/version.rs`. Rust CI.
+- M1: `src/model.rs`. Domain types. Enums for AiStatus, TagSource, ScanStatus.
+- M2: `src/db/`. rusqlite. Library over `library.db`; Thumbs over
+  `thumbs-<N>.db`. Albums, tags, FTS5 search. Mutex serializes each connection.
+- M3: `src/scan.rs`. Recursive image walk, EXIF date, dimensions, SHA-256 hash.
+  Cancel via `Arc<AtomicBool>`.
+- M4: `src/thumb.rs`. decode/rotate/resize (fast_image_resize Catmull-Rom)/JPEG.
+  Per-size cache. Generator with lazily opened stores.
+- M5: `src/ai/`. Ollama blocking client, config, tagger, subprocess manager.
 
-Result: the spike removes the main risk. Every other Go dependency has a direct
-Rust crate. See ROADMAP.md and the spike README for detail.
+All core modules have unit tests. Run `cargo test`. 20 tests pass.
 
-## 4. Rust toolchain
+Not done:
 
-- The user's account has rustup and cargo in `/home/scuttle/.cargo`. This is
-  for local builds only.
-- CI runs as the user `gitea-runner`, uid 1001, home `/home/gitea-runner`. CI
-  does not see the developer's cargo.
-- The spike CI installs rustup into the runner user home if cargo is missing.
+- M6: the GTK4 UI. This is the last and largest milestone (~3700 Go LOC in
+  `internal/ui/`). Port it in sub-steps. See section 4.
+- M7: parity pass. Delete the Go files (`cmd/`, `internal/`, `go.mod`,
+  `go.sum`). Final doc rewrite. Merge `rust-port` to `main`.
 
-## 5. Spike CI (branch only)
+## 4. M6 UI — plan
 
-- The file is `.gitea/workflows/build-rust-spike.yaml`. It exists on the spike
-  branch only.
-- It runs on push to `spike/rust-gtk4-grid`.
-- It checks GTK dev libraries with `pkg-config`. It installs nothing when the
-  libraries are present. The runner has the libraries.
-- The runner user has no passwordless sudo. Do not call `sudo` without a guard.
-  Use `sudo -n` only, and only when a dependency is missing.
-- The spike CI builds with `cargo build --release`. It does not publish a
-  release. The binary is at
-  `spike/rust-grid/target/release/pichouse-spike`.
+Build the UI with gtk4-rs 0.7 (`v4_10` feature). Port these `internal/ui/`
+files. Do the sub-steps in order:
 
-## 6. Versioning (on `main`, in effect now)
+1. App, window, layout skeleton. Paned, Stack, StackSwitcher, status bar. Add an
+   `on_ui` helper (glib idle_add) for background-to-UI-thread messages.
+2. Grid plus thumbnail worker pool. Use a `gio::ListStore` of a `PhotoObject`
+   GObject (from the spike). Keep the generation token and the cell-recycle
+   guard. Decode JPEG to a pixbuf/texture on the UI thread.
+3. Sidebar (album/folder tree, expansion persistence), foldertree,
+   drag-and-drop, native GMenu context menus.
+4. Viewer (navigation, rotate to DB then invalidate thumbs), properties panel
+   (tabs, tags), toolbar (zoom slider, search, AI menu).
+5. Settings windows (library folders, thumbnails, data location, shortcuts), AI
+   settings, tag manager.
+6. Configurable shortcuts, prefs load/save, dialogs.
 
-Read AGENTS.md RULE THREE for the policy.
+Preserve this behaviour (parity risks):
 
-- The version format is major.minor.build. The series started at 0.0.0.
-- The current version is 0.0.5.
-- The version is in `internal/version/version.go` as `Version`.
-- CI increases the build number by 1 on each push to `main`.
-- A documentation-only push does not increase the build number. A push is
-  documentation-only when it changes markdown (`*.md`) files only. CI skips the
-  version bump, the build, and the release for such a push. The docs-only
-  detection is the step "Detect documentation-only push" in `build.yaml`.
-- CI commits the new version back. The commit message contains `[skip ci]`.
-  Gitea skips a commit that contains `[skip ci]`. This stops a loop.
-- Do not increase the build number by hand.
-- A release increases major, minor, or build. The user asks for a release.
-- Ask the user which part to increase if the user does not say.
-- For a major release, increase major by 1. Set minor to 0. Set build to 0.
-- For a minor release, increase minor by 1. Set build to 0.
-- For a build release, increase build by 1.
+- The 4-worker thumbnail pool with a generation token and a recycle guard.
+- Cancellable scan and AI controllers. One Stop button cancels both.
+- Thumbs single-writer serialization (already in `src/db/thumbs.rs`).
+- FTS5 manual maintenance (already in `src/db/tags.rs`).
+- Orientation is display and DB only. Never write it to the source file.
+- Per-size thumbnail DB files. XDG data/config directory resolution.
 
-## 7. CI facts you must know (they caused failures before)
+## 5. CI and versioning
 
-- Gitea does not support `||` in a `${{ }}` expression. The expression
-  `${{ secrets.GITEA_TOKEN || github.token }}` makes the workflow invalid.
-  An invalid workflow creates NO run. Use `${{ secrets.GITEA_TOKEN }}` alone.
-- A repository secret `GITEA_TOKEN` exists. It has write access. CI uses it to
-  push the version-bump commit back to `main`.
-- The Go release workflow `.gitea/workflows/build.yaml` does this on each push
-  to `main`: it reads the version, increases the build, commits the version
-  with `[skip ci]`, pushes to `main`, builds the binary, and updates one
-  rolling pre-release with the tag `rolling`.
-- The Go build needs cgo and GTK. The build is slow. Wait for it.
+`.gitea/workflows/build.yaml` is Rust now. It:
 
-## 8. Next steps
+- reads the version from `Cargo.toml` (`[package] version`);
+- bumps the build number on each non-docs push to `main`;
+- commits the bump with `[skip ci]`;
+- runs `cargo test --release` and `cargo build --release`;
+- publishes one rolling pre-release.
 
-- WAIT for the user to validate the Rust spike. This is the current blocker.
-- Do NOT start the Rust port before the user validates the spike and says start.
-- After the user validates the spike and says start, follow the plan in section
-  9.
-- If the user adds features, put ideas in ROADMAP.md. Keep ROADMAP.md
-  structured. See its existing sections.
-- Commit ROADMAP.md and AGENTS.md changes to `main`. Do not put them on the
-  spike branch unless the user says so.
+`src/version.rs` mirrors the Cargo version with `env!("CARGO_PKG_VERSION")`. Do
+not change the build number by hand. See AGENTS.md RULE THREE.
 
-## 9. Rust port plan (for later, when the user commits to it)
+Note: CI triggers on push to `main` only. Pushes to `rust-port` do not run CI.
+CI runs first when you merge `rust-port` to `main`.
 
-Port bottom-up. Keep a build that runs at each step.
+## 6. Schema decision
 
-1. Scaffold a Cargo workspace. Mirror the Go layout as modules.
-   Crates: `rusqlite` (bundled), `image`, `walkdir`, `sha2`, `reqwest`,
-   `serde`, `serde_json`, `regex`, `kamadak-exif`, `gtk4`, `chrono`.
-2. Port `internal/model`. Use structs and enums. Store times as i64.
-3. Port `internal/db`. Copy `schema.sql`. Use one `Connection` behind a Mutex
-   for `library.db`. Use one connection for the thumbnail database. Keep the
-   FTS5 rebuild and the FTS query builder.
-4. Port `internal/thumb`. Decode, scale (CatmullRom), rotate, encode (JPEG
-   quality 85). Add `EncodeForAI`.
-5. Port `internal/scan`. Walk in two passes. Read dimensions. Compute SHA-256.
-   Read EXIF date. Derive the folder year.
-6. Port `internal/ai`. Client for `/api/tags` and `/api/generate`. Manage an
-   `ollama serve` subprocess. Clean tags with regex.
-7. Port `internal/ui`. Build in this order: app and window, toolbar and status,
-   sidebar and folder tree (`TreeListModel`), grid (`GridView` with a
-   subclassed model and async thumbnails), properties, dialogs, drag and drop,
-   keyboard shortcuts.
-8. Change CI to `cargo build --release`. Keep the same system GTK packages.
+The Rust schema is a fresh start. Existing Go databases are not migrated. The
+user rebuilds the library by rescanning. The Rust schema has `orientation` and
+`ai_status` columns inline. There is no runtime migration code.
 
-## 10. Hard points in the Rust UI port
+## 7. Dependencies of note
 
-- The `GridView` and `TreeListModel` need a custom subclassed GObject model in
-  `gtk4-rs`. This is more code than the Go version. The Go version uses a
-  `StringList` and a parallel slice. Do not copy that shortcut.
-- `gtk4-rs` widgets are not `Send`. Move async results to the main thread with
-  `glib::MainContext::spawn_local` and an `async-channel`. Do not share widgets
-  across threads.
-- The existing Go code has no custom Cairo drawing and no custom GObject
-  subclassing. This makes the port simpler.
+- gtk4-rs 0.7 (`v4_10`). Debian 13 ships GLib 2.84 / GTK 4.18. Do not upgrade
+  past the GLib the system ships.
+- rusqlite (`bundled`). Bundled SQLite includes FTS5. There is no separate
+  `fts5` feature in this rusqlite version.
+- reqwest uses `rustls-tls` (not native OpenSSL), to avoid a system OpenSSL
+  dependency on the runner.
+- image, fast_image_resize, kamadak-exif, sha2, base64, serde, serde_json, dirs.
 
-## 11. Data model facts
+## 8. How to work
 
-- The pichouse data directory is `~/.local/share/pichouse/`.
-- `library.db` holds metadata. See `internal/db/schema.sql`.
-- The thumbnail cache is `thumbs-<size>.db`. The default size is 320. So the
-  file is `thumbs-320.db`.
-- The thumbnail cache table is `thumbnails(photo_hash PRIMARY KEY, size, jpeg
-  BLOB, created_at)`.
-- The thumbnail key is the photo SHA-256 hash, column `photos.hash`.
-- A photo has no thumbnail until the scanner computes its hash.
+- Build: `cargo build`. Test: `cargo test`. Run: `cargo run`.
+- Commit and push each milestone to `rust-port`.
+- Keep AGENTS.md and README.md correct as you go.
+- Follow RULE ZERO: do not loop on guesses. Ask the user one question and wait.
