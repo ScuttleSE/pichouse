@@ -27,20 +27,21 @@ All Go modules are ported to Rust:
 - `src/ai/` — Ollama blocking client, config, tagger, subprocess manager.
 - `src/ui/` — the full GTK4 UI (see AGENTS.md for the file list).
 
-## 3. What is deferred
+## 3. Parity
 
-The Go sidebar had a richer feature set than the current Rust sidebar. The Rust
-sidebar shows a flat list of scanned folders. These Go features are NOT yet
-ported:
+The Rust application is at feature parity with the old Go application. All Go UI
+features are ported, including:
 
-- The album tree with sub-albums.
-- The "New folders" grouping under the Library root.
-- Drag-and-drop of folders into albums.
-- Right-click context menus (create album, move to album).
-- The separate raw filesystem "Folders" tab (`foldertree`).
+- The album tree with sub-albums and the "New folders" grouping.
+- Right-click context menus (create/rename/delete album, move to album).
+- Drag-and-drop of folders into albums and album re-parenting.
+- The raw filesystem "Folders" tab.
+- Grid refresh after scan and after rotation (re-queries the source).
+- An in-memory LRU texture cache for fast scroll/re-entry.
 
-The database layer already supports albums (`src/db/albums.rs`). Only the UI for
-them is missing. Add these as a follow-up if the user asks.
+There are no known parity gaps. One historical setting, `thumb.regen`
+(regenerate on slider move), is stored but never consulted — this matches the
+Go behavior exactly and is not a regression.
 
 ## 4. Build, test, run
 
