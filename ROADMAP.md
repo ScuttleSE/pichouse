@@ -175,9 +175,25 @@ Virtual albums are a distinct concept that groups individual *photos*.
   with a slightly different icon to distinguish them.
 - Purely virtual/organisational: they do not move or copy files on disk.
 
+### Rule-based (smart) virtual albums
+- A virtual album can have **rules** that automatically add matching photos,
+  e.g. "all pictures with the tag 'vacation' and date between 2010-05-01 and
+  2010-08-01".
+- Rules match on photo attributes: tags, date/date-range, and potentially
+  folder, filename, camera/EXIF, etc.
+- Membership updates as the library changes (new matching photos are added
+  automatically).
+- Support combining conditions (AND/OR) and multiple rules per album.
+- A virtual album may mix rule-matched photos with manually added ones (TBD),
+  or be purely rule-based vs. purely manual.
+
 ### Open questions / to decide
 - Storage: a new membership table (e.g. `virtual_album_photos(album_id,
   photo_id, position)`) vs. extending the existing albums model.
+- Rule storage and evaluation: how rules are persisted (structured conditions
+  vs. a query expression) and evaluated (live query at view time vs. a
+  materialized membership refreshed on change).
+- How manual additions/removals coexist with rules (pins/exclusions).
 - Whether a photo can belong to multiple virtual albums (expected: yes).
 - Ordering within a virtual album (manual position vs. sort).
 - What happens to a virtual-album entry when the underlying photo is removed or
