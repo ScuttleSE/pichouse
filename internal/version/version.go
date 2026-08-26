@@ -8,4 +8,4 @@
 package version
 
 // Version is the current application version (major.minor.build).
-const Version = "0.0.4"
+const Version = "0.0.5"
