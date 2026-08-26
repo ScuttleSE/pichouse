@@ -6,6 +6,7 @@ mod albumtree;
 mod app;
 mod controller;
 mod dialogs;
+mod enrich;
 mod foldertree;
 mod grid;
 mod photo_object;

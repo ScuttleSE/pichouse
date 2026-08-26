@@ -34,9 +34,14 @@ pub struct AppState {
 
     pub scan: Controller,
     pub ai_job: Controller,
+    /// The Phase 2 enrichment worker session (see `super::enrich`).
+    pub enrich_job: Controller,
     /// Paths waiting to be scanned. A running scan thread drains this, so adding
     /// a folder while a scan runs appends to it instead of cancelling the scan.
     pub scan_queue: Arc<Mutex<std::collections::VecDeque<String>>>,
+    /// Photo ids waiting for Phase 2 enrichment. The enrichment worker pool
+    /// drains this front-to-back; opening a folder front-loads its ids.
+    pub enrich_queue: Arc<Mutex<std::collections::VecDeque<i64>>>,
 
     pub status: RefCell<Option<Rc<StatusBar>>>,
     pub grid: RefCell<Option<Rc<Grid>>>,

@@ -27,10 +27,18 @@ CREATE TABLE IF NOT EXISTS photos (
     hash        TEXT NOT NULL DEFAULT '',
     thumb_ready INTEGER NOT NULL DEFAULT 0,
     orientation INTEGER NOT NULL DEFAULT 0,
-    ai_status   INTEGER NOT NULL DEFAULT 0
+    ai_status   INTEGER NOT NULL DEFAULT 0,
+    -- Two-phase import state: 0=structured (cheap stat only), 1=enriching,
+    -- 2=done (EXIF/dimensions/hash filled in).
+    scan_state  INTEGER NOT NULL DEFAULT 0,
+    -- 1 when the file is gone from disk but the row is kept (soft "missing")
+    -- so tags/edits survive a temporary unmount, move, or delete.
+    missing     INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_photos_folder ON photos(folder_id);
+-- Fast selection of photos still needing Phase 2 enrichment.
+CREATE INDEX IF NOT EXISTS idx_photos_scan_state ON photos(scan_state);
 
 CREATE TABLE IF NOT EXISTS scan_state (
     folder_id    INTEGER PRIMARY KEY REFERENCES folders(id) ON DELETE CASCADE,

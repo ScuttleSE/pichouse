@@ -81,6 +81,8 @@ fn start_scan_worker(state: &Rc<AppState>) {
                     super::app::reload_folders(&state);
                     // Re-query the visible folder so newly scanned photos appear.
                     state.grid().reload_from_source();
+                    // Kick off Phase 2 enrichment for any structure-only photos.
+                    super::enrich::ensure_running(&state);
                 }
                 Msg::Error(e) => show_error(&state, &e),
                 Msg::Finished => state.scan.finish(),

@@ -46,6 +46,43 @@ pub struct Photo {
     pub orientation: i32,
     /// AI tagging state of this photo.
     pub ai_status: AiStatus,
+    /// Two-phase import state. `Structured` photos have only cheap stat data
+    /// (path/size/mod_time); EXIF, dimensions, and hash are filled in by the
+    /// Phase 2 enrichment worker.
+    pub scan_state: PhotoScanState,
+    /// `true` when the file is gone from disk but the row is kept (soft
+    /// "missing") so tags/edits survive a temporary unmount, move, or delete.
+    pub missing: bool,
+}
+
+/// The two-phase import state of a photo. The integer values are stable and are
+/// stored directly in the database.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PhotoScanState {
+    /// Phase 1 done: only cheap stat data recorded (path, size, mod_time).
+    #[default]
+    Structured = 0,
+    /// Phase 2 in progress: a worker is enriching this photo.
+    Enriching = 1,
+    /// Phase 2 done: EXIF taken date, dimensions, and hash are recorded.
+    Done = 2,
+}
+
+impl PhotoScanState {
+    /// Convert an on-disk integer to a `PhotoScanState`. Unknown values map to
+    /// `Structured`.
+    pub fn from_i64(v: i64) -> Self {
+        match v {
+            1 => PhotoScanState::Enriching,
+            2 => PhotoScanState::Done,
+            _ => PhotoScanState::Structured,
+        }
+    }
+
+    /// The integer stored in the database.
+    pub fn as_i64(self) -> i64 {
+        self as i64
+    }
 }
 
 /// AI tagging status of a photo. The integer values are stable and are stored
@@ -179,6 +216,18 @@ mod tests {
             assert_eq!(AiStatus::from_i64(s.as_i64()), s);
         }
         assert_eq!(AiStatus::from_i64(99), AiStatus::Untagged);
+    }
+
+    #[test]
+    fn photo_scan_state_roundtrip() {
+        for s in [
+            PhotoScanState::Structured,
+            PhotoScanState::Enriching,
+            PhotoScanState::Done,
+        ] {
+            assert_eq!(PhotoScanState::from_i64(s.as_i64()), s);
+        }
+        assert_eq!(PhotoScanState::from_i64(99), PhotoScanState::Structured);
     }
 
     #[test]

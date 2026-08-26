@@ -43,10 +43,15 @@ impl<'a> Scanner<'a> {
         Scanner { lib }
     }
 
-    /// Walk `root` recursively, recording folders and photos. `progress` is
-    /// called after each photo. When `cancel` becomes true the walk stops
-    /// promptly. Returns the number of photos recorded; `Err(Cancelled)`
-    /// carries the count recorded so far via the caller's own bookkeeping.
+    /// Walk `root` recursively, recording folders and photo *structure* only
+    /// (Phase 1 of the two-phase import). Per photo this records just cheap
+    /// `fs::metadata` (path, filename, folder_id, size, mod_time); EXIF,
+    /// dimensions, and hash are left for the Phase 2 enrichment worker. The
+    /// folder tree and grid can therefore populate almost immediately, even for
+    /// tens of thousands of files.
+    ///
+    /// `progress` is called after each photo. When `cancel` becomes true the
+    /// walk stops promptly. Returns the number of photos recorded.
     pub fn scan_folder<F>(
         &self,
         root: &Path,
@@ -66,13 +71,13 @@ impl<'a> Scanner<'a> {
             if cancel.load(Ordering::Relaxed) {
                 return Err(ScanError::Cancelled(done));
             }
-            let fid = self.upsert_folder_for(dir, files)?;
+            let fid = self.upsert_folder_for(dir)?;
             self.lib.set_scan_state(fid, ScanStatus::Running)?;
             for path in files {
                 if cancel.load(Ordering::Relaxed) {
                     return Err(ScanError::Cancelled(done));
                 }
-                self.record_photo(fid, path)?;
+                self.record_structure(fid, path)?;
                 done += 1;
                 progress(Progress {
                     folder: dir.to_string_lossy().into_owned(),
@@ -85,25 +90,14 @@ impl<'a> Scanner<'a> {
         Ok(done)
     }
 
-    /// Record the folder for a directory, deriving its year from the earliest
-    /// photo taken date, falling back to the folder mtime year.
-    fn upsert_folder_for(&self, dir: &Path, files: &[PathBuf]) -> Result<i64, ScanError> {
+    /// Record the folder for a directory. The `year` is derived from the folder
+    /// mtime only; it is refined from the earliest EXIF `taken_at` later, once
+    /// Phase 2 enrichment has run (see `Library::set_folder_year`). This keeps
+    /// Phase 1 free of any per-file EXIF decode.
+    fn upsert_folder_for(&self, dir: &Path) -> Result<i64, ScanError> {
         let meta = std::fs::metadata(dir)?;
         let mtime = mtime_secs(&meta);
-        let mut year = year_of(mtime);
-        // Derive year from the earliest EXIF taken date, if any.
-        let mut earliest: Option<i64> = None;
-        for f in files {
-            if let Some(t) = taken_at(f) {
-                earliest = Some(match earliest {
-                    Some(e) if e <= t => e,
-                    _ => t,
-                });
-            }
-        }
-        if let Some(e) = earliest {
-            year = year_of(e);
-        }
+        let year = year_of(mtime);
         let id = self.lib.upsert_folder(&Folder {
             path: dir.to_string_lossy().into_owned(),
             name: dir
@@ -117,12 +111,13 @@ impl<'a> Scanner<'a> {
         Ok(id)
     }
 
-    fn record_photo(&self, folder_id: i64, path: &Path) -> Result<(), ScanError> {
+    /// Phase 1: record a photo's cheap structure (size, mod_time) only.
+    fn record_structure(&self, folder_id: i64, path: &Path) -> Result<(), ScanError> {
         let meta = match std::fs::metadata(path) {
             Ok(m) => m,
             Err(_) => return Ok(()), // file vanished; skip
         };
-        let mut p = Photo {
+        let p = Photo {
             folder_id,
             path: path.to_string_lossy().into_owned(),
             filename: path
@@ -133,19 +128,33 @@ impl<'a> Scanner<'a> {
             mod_time: mtime_secs(&meta),
             ..Default::default()
         };
-        if let Some(t) = taken_at(path) {
-            p.taken_at = t;
-        }
-        if let Some((w, h)) = dimensions(path) {
-            p.width = w;
-            p.height = h;
-        }
-        if let Ok(hash) = hash_file(path) {
-            p.hash = hash;
-        }
-        self.lib.upsert_photo(&p)?;
+        self.lib.upsert_photo_structure(&p)?;
         Ok(())
     }
+}
+
+/// The Phase 2 enrichment result for a single file: EXIF taken date, pixel
+/// dimensions, and content hash.
+pub struct Enrichment {
+    pub taken_at: i64,
+    pub width: i32,
+    pub height: i32,
+    pub hash: String,
+}
+
+/// Compute the Phase 2 enrichment for a file: EXIF `taken_at`, dimensions, and
+/// the SHA-256 content hash. Missing pieces default to `0`/empty. Returns
+/// `None` only if the file cannot be hashed (e.g. it vanished).
+pub fn enrich_file(path: &Path) -> Option<Enrichment> {
+    let hash = hash_file(path).ok()?;
+    let taken_at = taken_at(path).unwrap_or(0);
+    let (width, height) = dimensions(path).unwrap_or((0, 0));
+    Some(Enrichment {
+        taken_at,
+        width,
+        height,
+        hash,
+    })
 }
 
 /// Recursively collect image files under `root`, grouped by parent directory.
@@ -266,7 +275,7 @@ fn civil_to_unix(y: i64, m: i64, d: i64, hh: i64, mm: i64, ss: i64) -> i64 {
 }
 
 /// The year for a Unix timestamp (UTC).
-fn year_of(unix: i64) -> i32 {
+pub fn year_of(unix: i64) -> i32 {
     // Inverse of civil_to_unix for the year component only.
     let days = unix.div_euclid(86400);
     let z = days + 719468;
@@ -370,13 +379,30 @@ mod tests {
             .unwrap();
         assert_eq!(n, 1);
         assert_eq!(seen, 1);
-        // The photo has real dimensions decoded from the PNG.
+        // Phase 1 records structure only: no dimensions or hash yet.
         let folders = lib.folders().unwrap();
         assert_eq!(folders.len(), 1);
         let photos = lib.photos_in_folder(folders[0].id).unwrap();
         assert_eq!(photos.len(), 1);
+        assert_eq!((photos[0].width, photos[0].height), (0, 0));
+        assert!(photos[0].hash.is_empty());
+        assert_eq!(
+            photos[0].scan_state,
+            crate::model::PhotoScanState::Structured
+        );
+
+        // The photo is listed as needing enrichment; enrich it (Phase 2).
+        let need = lib.photos_needing_enrichment(None).unwrap();
+        assert_eq!(need, vec![photos[0].id]);
+        let enr = enrich_file(std::path::Path::new(&photos[0].path)).unwrap();
+        lib.enrich_photo(photos[0].id, enr.taken_at, enr.width, enr.height, &enr.hash)
+            .unwrap();
+        let photos = lib.photos_in_folder(folders[0].id).unwrap();
         assert_eq!((photos[0].width, photos[0].height), (1, 1));
         assert!(!photos[0].hash.is_empty());
+        assert_eq!(photos[0].scan_state, crate::model::PhotoScanState::Done);
+        // Now nothing needs enrichment.
+        assert!(lib.photos_needing_enrichment(None).unwrap().is_empty());
 
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_file(&db_path);

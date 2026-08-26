@@ -61,7 +61,9 @@ fn build_ui(app: &Application) {
         shortcuts: RefCell::new(shortcuts),
         scan: Controller::default(),
         ai_job: Controller::default(),
+        enrich_job: Controller::default(),
         scan_queue: std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new())),
+        enrich_queue: std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new())),
         status: RefCell::new(None),
         grid: RefCell::new(None),
         properties: RefCell::new(None),
@@ -211,6 +213,9 @@ fn populate(state: &Rc<AppState>) {
                 load_folder_into_grid(state, &folder);
             }
         }
+        // Resume Phase 2 enrichment for any photos left structure-only by an
+        // interrupted import in a previous session.
+        super::enrich::ensure_running(state);
     }
 }
 
@@ -222,6 +227,9 @@ pub fn load_folder_into_grid(state: &Rc<AppState>, folder: &crate::model::Folder
     state
         .status()
         .set_message(&format!("{} — {} photos", folder.path, count));
+    // On-demand priority: if this folder has un-enriched photos, move them to
+    // the front of the Phase 2 worklist so what the user opened fills in first.
+    super::enrich::prioritize_folder(state, folder.id);
 }
 
 /// Load a raw filesystem directory's images into the grid (Folders tab). Reuses
