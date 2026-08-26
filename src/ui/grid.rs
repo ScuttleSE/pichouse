@@ -61,10 +61,27 @@ pub struct Grid {
     title: RefCell<String>,
     filter: RefCell<String>,
     lib: Arc<Library>,
+    /// LRU cache of decoded textures, keyed by cell key, to skip re-decoding on
+    /// scroll/re-entry.
+    tex_cache: Rc<RefCell<super::thumbcache::TextureCache>>,
+    /// The source the current photos came from, so the grid can re-query the
+    /// database/disk (a true "refresh visible").
+    source: RefCell<Source>,
     /// Called with (photos, index) when a cell is activated (double-clicked).
     on_activate: RefCell<Option<Box<dyn Fn(Vec<Photo>, usize)>>>,
     /// Called with a photo when the selection changes (single click).
     on_select: RefCell<Option<Box<dyn Fn(Photo)>>>,
+}
+
+/// Where the grid's current photos came from.
+#[derive(Clone)]
+enum Source {
+    /// Nothing loaded yet, or an ad-hoc photo list.
+    None,
+    /// A scanned library folder (id, display name).
+    Folder(i64, String),
+    /// A raw filesystem directory path.
+    RawDir(String),
 }
 
 impl Grid {
@@ -85,6 +102,7 @@ impl Grid {
         let generation = Arc::new(AtomicU64::new(0));
         let pending: Rc<RefCell<HashMap<String, PhotoObject>>> =
             Rc::new(RefCell::new(HashMap::new()));
+        let tex_cache = Rc::new(RefCell::new(super::thumbcache::TextureCache::new(512)));
 
         // Result channel: workers -> UI thread.
         let (done_tx, done_rx) = glib::MainContext::channel::<Done>(glib::Priority::DEFAULT);
@@ -133,13 +151,18 @@ impl Grid {
         root.append(&scroller);
 
         // Apply finished thumbnails on the UI thread by setting the texture on
-        // the matching PhotoObject; the bound Image updates automatically.
+        // the matching PhotoObject; the bound Image updates automatically. The
+        // decoded texture is also cached so re-entry skips decoding.
         let gen_for_apply = generation.clone();
         let pending_for_apply = pending.clone();
+        let cache_for_apply = tex_cache.clone();
         done_rx.attach(None, move |done: Done| {
             if done.generation == gen_for_apply.load(Ordering::Relaxed) {
                 if let Some(obj) = pending_for_apply.borrow_mut().remove(&done.key) {
                     if let Some(texture) = decode_texture(&done.blob) {
+                        cache_for_apply
+                            .borrow_mut()
+                            .put(done.key.clone(), texture.clone());
                         obj.set_texture(Some(texture));
                     }
                 }
@@ -161,6 +184,8 @@ impl Grid {
             title: RefCell::new(String::new()),
             filter: RefCell::new(String::new()),
             lib,
+            tex_cache,
+            source: RefCell::new(Source::None),
             on_activate: RefCell::new(None),
             on_select: RefCell::new(None),
         }
@@ -241,10 +266,89 @@ impl Grid {
             .collect()
     }
 
-    /// Replace the shown photos. Bumps the generation so stale thumbnail results
-    /// are discarded, then enqueues a job per photo.
+    /// Replace the shown photos with an ad-hoc list (no re-queryable source).
+    /// Bumps the generation so stale thumbnail results are discarded.
     pub fn show_photos(&self, title: &str, photos: &[Photo]) {
-        *self.all_photos.borrow_mut() = photos.to_vec();
+        *self.source.borrow_mut() = Source::None;
+        self.set_photos(title, photos.to_vec());
+    }
+
+    /// Show a scanned library folder, remembering it as the source so the grid
+    /// can re-query the database later (e.g. after a scan or rotation).
+    pub fn show_folder(&self, folder_id: i64, name: &str) {
+        *self.source.borrow_mut() = Source::Folder(folder_id, name.to_string());
+        let photos = self.lib.photos_in_folder(folder_id).unwrap_or_default();
+        self.set_photos(name, photos);
+    }
+
+    /// Show a raw filesystem directory, remembering it as the source.
+    pub fn show_raw_folder(&self, dir: &str) {
+        *self.source.borrow_mut() = Source::RawDir(dir.to_string());
+        let (title, photos) = self.load_raw_dir(dir);
+        self.set_photos(&title, photos);
+    }
+
+    /// Re-query the current source (folder or raw dir) from the database/disk
+    /// and rebuild the view. A true "refresh visible": picks up newly scanned
+    /// photos and updated orientations. No-op for ad-hoc lists.
+    pub fn reload_from_source(&self) {
+        let source = self.source.borrow().clone();
+        match source {
+            Source::Folder(id, name) => {
+                let photos = self.lib.photos_in_folder(id).unwrap_or_default();
+                self.set_photos(&name, photos);
+            }
+            Source::RawDir(dir) => {
+                let (title, photos) = self.load_raw_dir(&dir);
+                self.set_photos(&title, photos);
+            }
+            Source::None => {}
+        }
+    }
+
+    /// Load a raw filesystem directory's images, reusing scanned content hashes
+    /// so cached thumbnails are found. Returns (title, photos).
+    fn load_raw_dir(&self, dir: &str) -> (String, Vec<Photo>) {
+        let hashes = self.lib.hashes_by_dir(dir).unwrap_or_default();
+        let mut photos: Vec<Photo> = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            let mut paths: Vec<_> = entries
+                .flatten()
+                .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
+                .map(|e| e.path())
+                .filter(|p| {
+                    p.file_name()
+                        .and_then(|n| n.to_str())
+                        .map(crate::scan::is_image)
+                        .unwrap_or(false)
+                })
+                .collect();
+            paths.sort();
+            for path in paths {
+                let path_str = path.to_string_lossy().into_owned();
+                let filename = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let hash = hashes.get(&path_str).cloned().unwrap_or_default();
+                photos.push(Photo {
+                    path: path_str,
+                    filename,
+                    hash,
+                    ..Default::default()
+                });
+            }
+        }
+        let title = std::path::Path::new(dir)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| dir.to_string());
+        (title, photos)
+    }
+
+    /// Store a photo set and rebuild the view.
+    fn set_photos(&self, title: &str, photos: Vec<Photo>) {
+        *self.all_photos.borrow_mut() = photos;
         *self.title.borrow_mut() = title.to_string();
         self.rebuild();
     }
@@ -268,6 +372,11 @@ impl Grid {
         self.rebuild();
     }
 
+    /// Drop the in-memory texture cache (after clearing the on-disk cache).
+    pub fn clear_texture_cache(&self) {
+        self.tex_cache.borrow_mut().clear();
+    }
+
     /// Rebuild the store and re-enqueue thumbnail jobs for the filtered set.
     fn rebuild(&self) {
         let photos = self.filtered_photos();
@@ -287,6 +396,12 @@ impl Grid {
 
         for (p, obj) in photos.iter().zip(objs) {
             let key = cell_key(p, size);
+            // Serve from the in-memory texture cache when available, skipping a
+            // worker job and JPEG decode entirely.
+            if let Some(texture) = self.tex_cache.borrow_mut().get(&key) {
+                obj.set_texture(Some(texture));
+                continue;
+            }
             self.pending.borrow_mut().insert(key.clone(), obj);
             let _ = self.jobs.send(Job {
                 key,

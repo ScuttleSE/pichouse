@@ -256,6 +256,7 @@ fn thumb_pane(state: &Rc<AppState>) -> GtkBox {
                         show_error(&state2, &e.to_string());
                         return;
                     }
+                    state2.grid().clear_texture_cache();
                     state2.grid().refresh_current();
                     show_message(&state2, "Thumbnails", "Thumbnail cache cleared.");
                 },

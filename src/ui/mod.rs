@@ -17,6 +17,7 @@ mod sidebar;
 mod state;
 mod status;
 mod tagmanager;
+mod thumbcache;
 mod toolbar;
 mod util;
 mod viewer;

@@ -191,6 +191,9 @@ impl Viewer {
             let _ = state.gen.invalidate(&hash);
         }
         self.show();
+        // Re-query the grid's source so the rotated thumbnail regenerates when
+        // the user returns to the grid.
+        state.grid().reload_from_source();
     }
 
     fn show(self: &Rc<Self>) {

@@ -60,7 +60,11 @@ fn scan_paths(state: &Rc<AppState>, paths: Vec<String>) {
                 Msg::Message(m) => status.set_message(&m),
                 Msg::Progress(p) => status.set_progress(p),
                 Msg::Scanning(s) => status.set_scanning(s),
-                Msg::Reload => super::app::reload_folders(&state),
+                Msg::Reload => {
+                    super::app::reload_folders(&state);
+                    // Re-query the visible folder so newly scanned photos appear.
+                    state.grid().reload_from_source();
+                }
                 Msg::Error(e) => show_error(&state, &e),
                 Msg::Finished => state.scan.finish(),
             }

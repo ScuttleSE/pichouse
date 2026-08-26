@@ -216,62 +216,18 @@ fn populate(state: &Rc<AppState>) {
 /// Load a scanned folder's photos into the grid (called by the sidebar).
 pub fn load_folder_into_grid(state: &Rc<AppState>, folder: &crate::model::Folder) {
     *state.current_folder.borrow_mut() = folder.id;
-    match state.lib.photos_in_folder(folder.id) {
-        Ok(photos) => {
-            state.grid().show_photos(&folder.name, &photos);
-            state
-                .status()
-                .set_message(&format!("{} — {} photos", folder.path, photos.len()));
-        }
-        Err(e) => state.status().set_message(&format!("Error: {e}")),
-    }
+    state.grid().show_folder(folder.id, &folder.name);
+    let count = state.lib.photos_in_folder(folder.id).map(|p| p.len()).unwrap_or(0);
+    state
+        .status()
+        .set_message(&format!("{} — {} photos", folder.path, count));
 }
 
 /// Load a raw filesystem directory's images into the grid (Folders tab). Reuses
 /// content hashes recorded during scanning so cached thumbnails are found.
 pub fn load_raw_folder_into_grid(state: &Rc<AppState>, dir: &str) {
-    use crate::model::Photo;
     *state.current_folder.borrow_mut() = 0;
-
-    let hashes = state.lib.hashes_by_dir(dir).unwrap_or_default();
-    let mut photos: Vec<Photo> = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        let mut names: Vec<_> = entries
-            .flatten()
-            .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
-            .map(|e| e.path())
-            .filter(|p| {
-                p.file_name()
-                    .and_then(|n| n.to_str())
-                    .map(crate::scan::is_image)
-                    .unwrap_or(false)
-            })
-            .collect();
-        names.sort();
-        for path in names {
-            let path_str = path.to_string_lossy().into_owned();
-            let filename = path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            let hash = hashes.get(&path_str).cloned().unwrap_or_default();
-            photos.push(Photo {
-                path: path_str,
-                filename,
-                hash,
-                ..Default::default()
-            });
-        }
-    }
-
-    let title = std::path::Path::new(dir)
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| dir.to_string());
-    state.grid().show_photos(&title, &photos);
-    state
-        .status()
-        .set_message(&format!("{} — {} photos", dir, photos.len()));
+    state.grid().show_raw_folder(dir);
 }
 
 /// Show a fatal error in a minimal window (used when the DB cannot open).
