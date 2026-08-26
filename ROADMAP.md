@@ -10,6 +10,8 @@ Interface with an [Immich](https://immich.app/) server so the library can work
 alongside a self-hosted Immich instance.
 
 ### Browse
+- When connected to an Immich server, its albums appear as a **separate
+  section** in the Libraries tab (distinct from local library folders/albums).
 - Browse Immich albums from within pichouse.
 - View the contents of an Immich album (photos/assets) inside the app.
 
@@ -20,6 +22,8 @@ alongside a self-hosted Immich instance.
   than create).
 
 ### Sync
+- **No global sync by default** — only albums the user explicitly selects are
+  synced.
 - Tag a local album as "synced" with an Immich album.
 - When a synced album is tagged, adding pictures to it automatically uploads
   them to Immich in the background.
