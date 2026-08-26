@@ -6,15 +6,24 @@ ROADMAP.md for planned features.
 
 ## 1. Current task
 
-The user studies a rewrite of pichouse from Go to Rust. The user keeps the Go
-app on `main`. The user builds a Rust spike on a branch.
+The project moves from Go to Rust. This is the decided direction. The Go app
+stays on `main` for now. The user builds a Rust spike on a branch first.
+
+STOP POINT: The team waits for validation of the Rust spike. Do NOT start the
+full Go-to-Rust port yet. Start the port only after the user validates the spike
+and tells you to start. Until then, work on `main` (features, docs, roadmap,
+CI) and keep the spike branch as it is.
+
+While you wait, you may still add roadmap ideas and fix the Go app on `main`.
 
 ## 2. Branches
 
-- `main` holds the Go application. `main` is the product branch.
+- `main` holds the Go application. `main` is the product branch now.
+- The team moves to Rust. The Go app on `main` is temporary.
 - `spike/rust-gtk4-grid` holds the Rust spike. Do not merge the spike into
   `main` now.
-- Merge the spike into `main` only when the user converts the app to Rust.
+- Merge the spike into `main` only after the user validates the spike and starts
+  the Rust port.
 - Do not change the spike branch now. Leave it as it is.
 
 ## 3. State of the Rust spike (branch `spike/rust-gtk4-grid`)
@@ -66,9 +75,13 @@ Rust crate. See ROADMAP.md and the spike README for detail.
 Read AGENTS.md RULE THREE for the policy.
 
 - The version format is major.minor.build. The series started at 0.0.0.
-- The current version is 0.0.1.
+- The current version is 0.0.5.
 - The version is in `internal/version/version.go` as `Version`.
 - CI increases the build number by 1 on each push to `main`.
+- A documentation-only push does not increase the build number. A push is
+  documentation-only when it changes markdown (`*.md`) files only. CI skips the
+  version bump, the build, and the release for such a push. The docs-only
+  detection is the step "Detect documentation-only push" in `build.yaml`.
 - CI commits the new version back. The commit message contains `[skip ci]`.
   Gitea skips a commit that contains `[skip ci]`. This stops a loop.
 - Do not increase the build number by hand.
@@ -93,7 +106,10 @@ Read AGENTS.md RULE THREE for the policy.
 
 ## 8. Next steps
 
-- If the user continues the Rust port, follow the plan in this file section 9.
+- WAIT for the user to validate the Rust spike. This is the current blocker.
+- Do NOT start the Rust port before the user validates the spike and says start.
+- After the user validates the spike and says start, follow the plan in section
+  9.
 - If the user adds features, put ideas in ROADMAP.md. Keep ROADMAP.md
   structured. See its existing sections.
 - Commit ROADMAP.md and AGENTS.md changes to `main`. Do not put them on the
