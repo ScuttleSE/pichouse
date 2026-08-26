@@ -11,7 +11,7 @@ mod thumbs;
 
 pub use config::{data_dir, write_configured_data_dir};
 pub use library::Library;
-pub use thumbs::{remove_all_thumb_databases, thumbs_path_for_size, Thumbs};
+pub use thumbs::{remove_all_thumb_databases, Thumbs};
 
 /// A database error: either a SQLite error or an I/O error resolving paths.
 #[derive(Debug)]

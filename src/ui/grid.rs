@@ -47,20 +47,29 @@ pub struct Grid {
     root: gtk4::Box,
     header: Label,
     store: gio::ListStore,
-    #[allow(dead_code)]
+    grid_view: GridView,
     selection: SingleSelection,
-    thumb_size: i32,
+    thumb_size: std::cell::Cell<i32>,
     generation: Arc<AtomicU64>,
     jobs: mpsc::Sender<Job>,
     /// Maps a cell key to its `PhotoObject` for the current generation, so a
     /// worker result can find the object to update on the UI thread.
     pending: Rc<RefCell<HashMap<String, PhotoObject>>>,
+    /// All photos currently loaded (unfiltered), plus the display title and the
+    /// active filter, so filtering/rescale can rebuild the view.
+    all_photos: RefCell<Vec<Photo>>,
+    title: RefCell<String>,
+    filter: RefCell<String>,
+    /// Called with (photos, index) when a cell is activated (double-clicked).
+    on_activate: RefCell<Option<Box<dyn Fn(Vec<Photo>, usize)>>>,
+    /// Called with a photo when the selection changes (single click).
+    on_select: RefCell<Option<Box<dyn Fn(Photo)>>>,
 }
 
 impl Grid {
     /// Build the grid, starting the worker pool. `lib` supplies photo data;
     /// `gen` renders thumbnails. Both are shared with the workers.
-    pub fn new(lib: Arc<Library>, gen: Arc<Generator>, thumb_size: i32) -> Grid {
+    pub fn new(lib: Arc<Library>, gen: Arc<Generator>, thumb_size: i32) -> Rc<Grid> {
         let _ = lib; // reserved for later (raw-folder hash lookups)
         let header = Label::new(None);
         header.set_xalign(0.0);
@@ -142,12 +151,62 @@ impl Grid {
             root,
             header,
             store,
+            grid_view,
             selection,
-            thumb_size,
+            thumb_size: std::cell::Cell::new(thumb_size),
             generation,
             jobs: job_tx,
             pending,
+            all_photos: RefCell::new(Vec::new()),
+            title: RefCell::new(String::new()),
+            filter: RefCell::new(String::new()),
+            on_activate: RefCell::new(None),
+            on_select: RefCell::new(None),
         }
+        .into_rc()
+    }
+
+    fn into_rc(self) -> Rc<Grid> {
+        let rc = Rc::new(self);
+        // Activation (double-click / Enter) opens the viewer.
+        {
+            let rc2 = rc.clone();
+            rc.grid_view.connect_activate(move |_, pos| {
+                let photos = rc2.filtered_photos();
+                if (pos as usize) < photos.len() {
+                    if let Some(cb) = rc2.on_activate.borrow().as_ref() {
+                        cb(photos, pos as usize);
+                    }
+                }
+            });
+        }
+        // Selection change updates the properties panel.
+        {
+            let rc2 = rc.clone();
+            rc.selection.connect_selected_notify(move |sel| {
+                let pos = sel.selected();
+                if pos == gtk4::INVALID_LIST_POSITION {
+                    return;
+                }
+                let photos = rc2.filtered_photos();
+                if let Some(p) = photos.get(pos as usize) {
+                    if let Some(cb) = rc2.on_select.borrow().as_ref() {
+                        cb(p.clone());
+                    }
+                }
+            });
+        }
+        rc
+    }
+
+    /// Register the activation callback (opens the viewer).
+    pub fn set_on_activate<F: Fn(Vec<Photo>, usize) + 'static>(&self, f: F) {
+        *self.on_activate.borrow_mut() = Some(Box::new(f));
+    }
+
+    /// Register the selection callback (updates properties).
+    pub fn set_on_select<F: Fn(Photo) + 'static>(&self, f: F) {
+        *self.on_select.borrow_mut() = Some(Box::new(f));
     }
 
     /// The grid's root widget.
@@ -157,26 +216,68 @@ impl Grid {
 
     /// The active thumbnail size in pixels.
     pub fn thumb_size(&self) -> i32 {
-        self.thumb_size
+        self.thumb_size.get()
+    }
+
+    /// The currently displayed (filtered) photos.
+    fn filtered_photos(&self) -> Vec<Photo> {
+        let filter = self.filter.borrow().to_lowercase();
+        let all = self.all_photos.borrow();
+        if filter.is_empty() {
+            return all.clone();
+        }
+        all.iter()
+            .filter(|p| p.filename.to_lowercase().contains(&filter))
+            .cloned()
+            .collect()
     }
 
     /// Replace the shown photos. Bumps the generation so stale thumbnail results
     /// are discarded, then enqueues a job per photo.
     pub fn show_photos(&self, title: &str, photos: &[Photo]) {
+        *self.all_photos.borrow_mut() = photos.to_vec();
+        *self.title.borrow_mut() = title.to_string();
+        self.rebuild();
+    }
+
+    /// Set the filename/tag filter and rebuild the view.
+    pub fn set_filter(&self, filter: &str) {
+        *self.filter.borrow_mut() = filter.to_string();
+        self.rebuild();
+    }
+
+    /// Change the active thumbnail size and rebuild (new factory + jobs).
+    pub fn set_thumb_size(&self, size: i32) {
+        self.thumb_size.set(size);
+        let factory = build_factory(size);
+        self.grid_view.set_factory(Some(&factory));
+        self.rebuild();
+    }
+
+    /// Rebuild the current folder's view (e.g. after a rotation invalidation).
+    pub fn refresh_current(&self) {
+        self.rebuild();
+    }
+
+    /// Rebuild the store and re-enqueue thumbnail jobs for the filtered set.
+    fn rebuild(&self) {
+        let photos = self.filtered_photos();
         let gen = self.generation.fetch_add(1, Ordering::Relaxed) + 1;
         self.store.remove_all();
         self.pending.borrow_mut().clear();
 
+        let size = self.thumb_size.get();
         let mut objs = Vec::with_capacity(photos.len());
-        for p in photos {
+        for p in &photos {
             let obj = PhotoObject::from_photo(p);
             self.store.append(&obj);
             objs.push(obj);
         }
-        self.header.set_text(&format!("{}  ({})", title, photos.len()));
+        self.header
+            .set_text(&format!("{}  ({})", self.title.borrow(), photos.len()));
 
         for (p, obj) in photos.iter().zip(objs) {
-            let key = cell_key(p, self.thumb_size);
+            let key = cell_key(p, size);
             self.pending.borrow_mut().insert(key.clone(), obj);
             let _ = self.jobs.send(Job {
                 key,

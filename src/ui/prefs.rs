@@ -1,5 +1,6 @@
 //! Persisted thumbnail/UI preferences, stored in `library.db` settings.
 
+use crate::ai;
 use crate::db::Library;
 
 /// Setting keys stored in `library.db`.
@@ -8,6 +9,19 @@ pub const KEY_THUMB_ACTIVE: &str = "thumb.active";
 pub const KEY_REGEN_ON_MOVE: &str = "thumb.regen";
 pub const KEY_SAVE_ALL_SIZES: &str = "thumb.save_all";
 pub const KEY_PROPS_VISIBLE: &str = "ui.props_visible";
+
+/// AI setting keys stored in `library.db`.
+pub const KEY_AI_ENABLED: &str = "ai.enabled";
+pub const KEY_AI_HOST: &str = "ai.host";
+pub const KEY_AI_PORT: &str = "ai.port";
+pub const KEY_AI_MODEL: &str = "ai.model";
+pub const KEY_AI_CONCURRENCY: &str = "ai.concurrency";
+pub const KEY_AI_MANAGE: &str = "ai.manage";
+pub const KEY_AI_BINARY: &str = "ai.binary";
+pub const KEY_AI_PROMPT: &str = "ai.prompt";
+pub const KEY_AI_NUM_THREAD: &str = "ai.num_thread";
+pub const KEY_AI_NUM_CTX: &str = "ai.num_ctx";
+pub const KEY_AI_NUM_PREDICT: &str = "ai.num_predict";
 
 /// The four slider preset sizes in pixels.
 pub const DEFAULT_THUMB_SIZES: [i32; 4] = [96, 160, 240, 320];
@@ -92,4 +106,79 @@ pub fn format_sizes(sizes: &[i32]) -> String {
         .map(|s| s.to_string())
         .collect::<Vec<_>>()
         .join(",")
+}
+
+/// Read the AI tagging configuration from the library database.
+pub fn load_ai_config(lib: &Library) -> ai::Config {
+    let mut c = ai::Config {
+        enabled: bool_setting(lib, KEY_AI_ENABLED, false),
+        manage: bool_setting(lib, KEY_AI_MANAGE, false),
+        ..ai::Config::default()
+    };
+    if let Ok(v) = lib.get_setting(KEY_AI_HOST, "") {
+        if !v.is_empty() {
+            c.host = v;
+        }
+    }
+    if let Ok(v) = lib.get_setting(KEY_AI_PORT, "") {
+        if let Ok(n) = v.parse::<u16>() {
+            if n > 0 {
+                c.port = n;
+            }
+        }
+    }
+    if let Ok(v) = lib.get_setting(KEY_AI_MODEL, "") {
+        if !v.is_empty() {
+            c.model = v;
+        }
+    }
+    if let Ok(v) = lib.get_setting(KEY_AI_CONCURRENCY, "") {
+        if let Ok(n) = v.parse::<i32>() {
+            if n > 0 {
+                c.concurrency = n;
+            }
+        }
+    }
+    if let Ok(v) = lib.get_setting(KEY_AI_BINARY, "") {
+        if !v.is_empty() {
+            c.binary_path = v;
+        }
+    }
+    if let Ok(v) = lib.get_setting(KEY_AI_PROMPT, "") {
+        if !v.is_empty() {
+            c.prompt = v;
+        }
+    }
+    if let Ok(v) = lib.get_setting(KEY_AI_NUM_THREAD, "") {
+        if let Ok(n) = v.parse::<i32>() {
+            if n >= 0 {
+                c.num_thread = n;
+            }
+        }
+    }
+    if let Ok(v) = lib.get_setting(KEY_AI_NUM_CTX, "") {
+        if let Ok(n) = v.parse::<i32>() {
+            if n >= 0 {
+                c.num_ctx = n;
+            }
+        }
+    }
+    if let Ok(v) = lib.get_setting(KEY_AI_NUM_PREDICT, "") {
+        if let Ok(n) = v.parse::<i32>() {
+            if n > 0 {
+                c.num_predict = n;
+            }
+        }
+    }
+    c.normalize();
+    c
+}
+
+/// Store a boolean setting as "1"/"0".
+pub fn bool_to_str(b: bool) -> &'static str {
+    if b {
+        "1"
+    } else {
+        "0"
+    }
 }
