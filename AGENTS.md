@@ -32,6 +32,23 @@ When the context becomes too large, write a handoff document for a new context.
 
 ---
 
+## RULE THREE — VERSIONING
+
+The version format is major.minor.build. The series starts at 0.0.0.
+
+- Store the version in `internal/version/version.go` as `Version`.
+- CI increases the build number by 1 on each push to `main`.
+- CI commits the new version back with `[skip ci]` in the message.
+- Do not increase the build number by hand.
+- The user asks for a release. A release increases the major, the minor, or the build.
+- Ask the user which part to increase if the user does not say.
+- For a major release, increase major by 1. Set minor to 0. Set build to 0.
+- For a minor release, increase minor by 1. Set build to 0.
+- For a build release, increase build by 1.
+- CI keeps one rolling pre-release from the latest `main` build.
+
+---
+
 ## Project
 
 **pichouse** — a Picasa-like photo library GUI application for Linux, written in Go.
