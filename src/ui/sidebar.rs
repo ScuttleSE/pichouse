@@ -89,6 +89,7 @@ impl Sidebar {
                 item.set_child(Some(&expander));
                 if let Some(sidebar) = weak_setup.upgrade() {
                     sidebar.attach_row_menu(&expander);
+                    sidebar.attach_row_drag(&expander);
                 }
             });
             let weak_bind = weak.clone();
@@ -447,6 +448,20 @@ impl Sidebar {
         self.reload();
     }
 
+    /// Re-parent `src_album` under `target_album` (drag an album onto an album).
+    fn reparent_album(self: &Rc<Self>, src_album: i64, target_album: i64) {
+        if src_album == target_album {
+            return;
+        }
+        let Some(state) = self.state() else { return };
+        if let Err(e) = state.lib.set_album_parent(src_album, target_album) {
+            show_error(&state, &e.to_string());
+            return;
+        }
+        self.mark_expanded(&format!("{ALBUM_PREFIX}{target_album}"));
+        self.reload();
+    }
+
     // --- context menu ---
 
     fn install_context_menu(self: &Rc<Self>) {
@@ -524,6 +539,56 @@ impl Sidebar {
         }
 
         self.list_view.insert_action_group("sidebar", Some(&group));
+    }
+
+    /// Make a folder or album row draggable, and album rows drop targets.
+    /// Dropping folders onto an album moves them into it; dropping an album onto
+    /// an album makes it a sub-album. The dragged node id travels as a string.
+    fn attach_row_drag(self: &Rc<Self>, expander: &TreeExpander) {
+        let src = gtk4::DragSource::new();
+        src.set_actions(gdk::DragAction::MOVE);
+        let expander_weak = expander.downgrade();
+        src.connect_prepare(move |_, _, _| {
+            let expander = expander_weak.upgrade()?;
+            let id = expander.widget_name().to_string();
+            if album_id_of(&id).is_none() && folder_id_of(&id).is_none() {
+                return None;
+            }
+            let value = id.to_value();
+            Some(gdk::ContentProvider::for_value(&value))
+        });
+        expander.add_controller(src);
+
+        let tgt = gtk4::DropTarget::new(glib::types::Type::STRING, gdk::DragAction::MOVE);
+        let this = self.clone();
+        let expander_weak = expander.downgrade();
+        tgt.connect_drop(move |_, value, _, _| {
+            let Some(expander) = expander_weak.upgrade() else {
+                return false;
+            };
+            let target_id = expander.widget_name().to_string();
+            let Some(target_album) = album_id_of(&target_id) else {
+                return false;
+            };
+            let dragged: String = match value.get() {
+                Ok(s) => s,
+                Err(_) => return false,
+            };
+            if let Some(src_album) = album_id_of(&dragged) {
+                this.reparent_album(src_album, target_album);
+                true
+            } else if let Some(fid) = folder_id_of(&dragged) {
+                let mut fids = this.selected_folder_ids();
+                if fids.is_empty() {
+                    fids.push(fid);
+                }
+                this.move_folders_to_album(&fids, target_album);
+                true
+            } else {
+                false
+            }
+        });
+        expander.add_controller(tgt);
     }
 
     fn attach_row_menu(self: &Rc<Self>, expander: &TreeExpander) {
