@@ -327,6 +327,8 @@ fn shortcut_pane(state: &Rc<AppState>, parent: &Window) -> GtkBox {
     grid.set_row_spacing(6);
     grid.set_column_spacing(12);
 
+    // Keep the per-action key labels so Reset can refresh them live.
+    let mut key_labels: Vec<(super::shortcuts::Action, Label)> = Vec::new();
     for (row, (action, _def)) in super::shortcuts::defaults().into_iter().enumerate() {
         let name = Label::new(Some(action.label()));
         name.set_xalign(0.0);
@@ -346,6 +348,7 @@ fn shortcut_pane(state: &Rc<AppState>, parent: &Window) -> GtkBox {
         grid.attach(&name, 0, row as i32, 1, 1);
         grid.attach(&key_label, 1, row as i32, 1, 1);
         grid.attach(&change, 2, row as i32, 1, 1);
+        key_labels.push((action, key_label));
     }
     root.append(&grid);
 
@@ -359,13 +362,12 @@ fn shortcut_pane(state: &Rc<AppState>, parent: &Window) -> GtkBox {
                 let _ = state
                     .lib
                     .set_setting(&format!("keybind.{}", action_key(action)), &name);
+                // Live-refresh the matching key label.
+                if let Some((_, label)) = key_labels.iter().find(|(a, _)| *a == action) {
+                    label.set_text(&name);
+                }
             }
             state.viewer().refresh_tooltips();
-            show_message(
-                &state,
-                "Shortcuts",
-                "Shortcuts reset. Reopen Settings to see updated labels.",
-            );
         });
     }
     root.append(&reset);
