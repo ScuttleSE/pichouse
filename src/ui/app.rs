@@ -1,10 +1,11 @@
 //! Top-level application: window, layout skeleton, and startup wiring.
 
+use std::rc::Rc;
 use std::sync::Arc;
 
 use gtk4::glib;
 use gtk4::prelude::*;
-use gtk4::{Application, ApplicationWindow, Label, Orientation, Separator};
+use gtk4::{Application, ApplicationWindow, Label, Orientation, Paned, Separator};
 
 use crate::db::Library;
 use crate::thumb::Generator;
@@ -12,6 +13,7 @@ use crate::version;
 
 use super::grid::Grid;
 use super::prefs::Prefs;
+use super::sidebar::Sidebar;
 
 /// The GTK application identifier.
 const APP_ID: &str = "se.hemmalab.pichouse";
@@ -39,19 +41,37 @@ fn build_ui(app: &Application) {
         gen.set_all_sizes(&prefs.sizes);
     }
 
-    let grid = Grid::new(lib.clone(), gen.clone(), prefs.active_size());
+    let grid = Rc::new(Grid::new(lib.clone(), gen.clone(), prefs.active_size()));
 
     // Status bar (placeholder; filled out in a later sub-step).
-    let status = Label::new(None);
+    let status = Rc::new(Label::new(None));
     status.set_xalign(0.0);
     status.set_margin_start(8);
     status.set_margin_top(4);
     status.set_margin_bottom(4);
 
+    // Sidebar: selecting a folder loads its photos into the grid.
+    let sidebar = {
+        let lib = lib.clone();
+        let grid = grid.clone();
+        let status = status.clone();
+        Sidebar::new(move |folder_id| {
+            load_folder(&lib, &grid, &status, folder_id);
+        })
+    };
+
+    // Left (sidebar) | center (grid) split.
+    let paned = Paned::new(Orientation::Horizontal);
+    paned.set_start_child(Some(sidebar.widget()));
+    paned.set_end_child(Some(grid.widget()));
+    paned.set_resize_start_child(false);
+    paned.set_position(280);
+    paned.set_vexpand(true);
+
     let root = gtk4::Box::new(Orientation::Vertical, 0);
-    root.append(grid.widget());
+    root.append(&paned);
     root.append(&Separator::new(Orientation::Horizontal));
-    root.append(&status);
+    root.append(status.as_ref());
 
     let window = ApplicationWindow::builder()
         .application(app)
@@ -61,38 +81,55 @@ fn build_ui(app: &Application) {
         .child(&root)
         .build();
 
-    // Checkpoint behaviour: show the first scanned folder's photos, or a hint
-    // if the library is empty. Sidebar-driven navigation arrives in M6.3.
-    load_initial(&lib, &grid, &status);
+    // Populate the sidebar and auto-select the first folder.
+    populate(&lib, &sidebar, &grid, &status);
 
     window.present();
 }
 
-/// Load the first folder's photos into the grid, or show a hint when empty.
-fn load_initial(lib: &Arc<Library>, grid: &Grid, status: &Label) {
-    match lib.folders() {
-        Ok(folders) if !folders.is_empty() => {
-            let f = &folders[0];
-            match lib.photos_in_folder(f.id) {
-                Ok(photos) => {
-                    grid.show_photos(&f.name, &photos);
-                    status.set_text(&format!(
-                        "{} photos in {} (first of {} folders)",
-                        photos.len(),
-                        f.path,
-                        folders.len()
-                    ));
-                }
-                Err(e) => status.set_text(&format!("Error loading photos: {e}")),
-            }
+/// Fill the sidebar with folders and select the first one.
+fn populate(lib: &Arc<Library>, sidebar: &Sidebar, grid: &Rc<Grid>, status: &Rc<Label>) {
+    let folders = match lib.folders() {
+        Ok(f) => f,
+        Err(e) => {
+            status.set_text(&format!("Error reading folders: {e}"));
+            return;
         }
-        Ok(_) => {
-            status.set_text(
-                "Library is empty. Add and scan a folder with the Go app (or a later \
-                 milestone's Settings) to populate it.",
-            );
+    };
+    if folders.is_empty() {
+        status.set_text(
+            "Library is empty. Add and scan a folder (Settings arrives in a later \
+             milestone) to populate it.",
+        );
+        return;
+    }
+    let counts = lib.folder_photo_counts().unwrap_or_default();
+    sidebar.set_folders(&folders, &counts);
+    status.set_text(&format!("{} folders", folders.len()));
+    // Selecting the first row triggers the on_select callback, which loads it.
+    if sidebar.select_first().is_none() {
+        // Fallback: load directly if selection did not fire.
+        load_folder(lib, grid, status, folders[0].id);
+    }
+}
+
+/// Load one folder's photos into the grid and update the status bar.
+fn load_folder(lib: &Arc<Library>, grid: &Rc<Grid>, status: &Rc<Label>, folder_id: i64) {
+    let folder = match lib.folders() {
+        Ok(fs) => fs.into_iter().find(|f| f.id == folder_id),
+        Err(_) => None,
+    };
+    let title = folder
+        .as_ref()
+        .map(|f| f.name.clone())
+        .unwrap_or_else(|| "Folder".to_string());
+    match lib.photos_in_folder(folder_id) {
+        Ok(photos) => {
+            grid.show_photos(&title, &photos);
+            let path = folder.map(|f| f.path).unwrap_or_default();
+            status.set_text(&format!("{} — {} photos", path, photos.len()));
         }
-        Err(e) => status.set_text(&format!("Error reading folders: {e}")),
+        Err(e) => status.set_text(&format!("Error loading photos: {e}")),
     }
 }
 

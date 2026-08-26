@@ -108,7 +108,7 @@ impl Grid {
             });
         }
 
-        let factory = build_factory();
+        let factory = build_factory(thumb_size);
         let grid_view = GridView::new(Some(selection.clone()), Some(factory));
         grid_view.set_min_columns(1);
         grid_view.set_max_columns(20);
@@ -200,11 +200,14 @@ fn cell_key(p: &Photo, size: i32) -> String {
 /// Build the recycled cell factory: an `Overlay` of a fallback `Label` under an
 /// `Image`. The image observes the bound `PhotoObject.texture` property; the
 /// label shows the filename until a texture arrives.
-fn build_factory() -> SignalListItemFactory {
+fn build_factory(thumb_size: i32) -> SignalListItemFactory {
     let factory = SignalListItemFactory::new();
-    factory.connect_setup(|_, item| {
+    factory.connect_setup(move |_, item| {
         let item = item.downcast_ref::<ListItem>().unwrap();
         let overlay = Overlay::new();
+        // Reserve a square cell so thumbnails are shown at full size and the
+        // grid lays out evenly before textures arrive.
+        overlay.set_size_request(thumb_size, thumb_size);
 
         let label = Label::new(None);
         label.set_wrap(true);
@@ -215,6 +218,7 @@ fn build_factory() -> SignalListItemFactory {
         overlay.set_child(Some(&label));
 
         let image = Image::new();
+        image.set_pixel_size(thumb_size);
         overlay.add_overlay(&image);
 
         item.set_child(Some(&overlay));
