@@ -3,6 +3,7 @@
 mod db;
 mod model;
 mod scan;
+mod thumb;
 mod version;
 
 fn main() {
