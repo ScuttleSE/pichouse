@@ -1,6 +1,6 @@
 # pichouse
 
-A Picasa-like photo library application for Linux, written in Go.
+A Picasa-like photo library application for Linux, written in Rust.
 
 pichouse lets you add one or more library folders through a Settings dialog,
 scans them into a local SQLite database, generates cached thumbnails, and lets
@@ -85,11 +85,13 @@ can see where time is spent.
 
 ## Tech stack
 
-- **Language:** Go (module `git.hemmalab.se/scuttle/pichouse`)
-- **GUI:** GTK4 via [gotk4](https://github.com/diamondburned/gotk4) v0.3.1
-  (native desktop; requires cgo; targets the system GLib 2.84 on Debian 13)
-- **Database:** `modernc.org/sqlite` (pure-Go)
-- **EXIF:** `github.com/rwcarlsen/goexif`
+- **Language:** Rust (2021 edition, binary crate `pichouse`)
+- **GUI:** GTK4 via [gtk4-rs](https://gtk-rs.org/) 0.7.x with the `v4_10`
+  feature (native desktop; targets the system GLib 2.84 on Debian 13)
+- **Database:** `rusqlite` with the bundled SQLite (includes FTS5)
+- **Images:** `image` + `fast_image_resize` (Catmull-Rom resize)
+- **EXIF:** `kamadak-exif`
+- **AI tagging:** `reqwest` (blocking, rustls-tls) + `serde`
 
 Databases are stored in `~/.local/share/pichouse/`.
 
@@ -108,12 +110,12 @@ GTK4 (>= 4.10) must be present at runtime; Debian 13 ships GTK 4.18.
 
 ## Build and run
 
-    go build ./...
-    go run ./cmd/pichouse
+    cargo build
+    cargo run
 
 ## Test
 
-    go test ./...
+    cargo test
 
 ## Continuous integration
 
