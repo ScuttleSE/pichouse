@@ -25,12 +25,21 @@ All Go modules are ported to Rust:
 - `src/thumb.rs` — decode, rotate, resize (fast_image_resize Catmull-Rom),
   JPEG encode, per-size cache.
 - `src/ai/` — Ollama blocking client, config, tagger, subprocess manager.
-- `src/ui/` — the full GTK4 UI (see AGENTS.md for the file list).
+- `src/ui/` — the full GTK4 UI. Notable files: `app.rs` (window/layout/wiring),
+  `state.rs` (shared `Rc<AppState>`), `grid.rs` (thumbnail grid + worker pool +
+  source tracking), `sidebar.rs` (Library album tree + menus + drag-drop),
+  `foldertree.rs` (raw Folders tab), `albumtree.rs` (disk→album auto-sync),
+  `actions.rs` (scan queue + worker), `aitag.rs` (AI tagging worker pool),
+  `viewer.rs`, `properties.rs`, `toolbar.rs`, `status.rs`, `settings.rs`,
+  `settings_ai.rs`, `tagmanager.rs`, `shortcuts.rs`, `dialogs.rs`,
+  `controller.rs` (cancel token), `thumbcache.rs` (LRU texture cache),
+  `prefs.rs`, `photo_object.rs`, `util.rs`.
 
-## 3. Parity
+## 3. Parity and post-parity work
 
-The Rust application is at feature parity with the old Go application. All Go UI
-features are ported, including:
+The Rust application is at feature parity with the old Go application, plus
+several improvements the Go version did not have. All Go UI features are ported,
+including:
 
 - The album tree with sub-albums and the "New folders" grouping.
 - Right-click context menus (create/rename/delete album, move to album).
@@ -39,9 +48,41 @@ features are ported, including:
 - Grid refresh after scan and after rotation (re-queries the source).
 - An in-memory LRU texture cache for fast scroll/re-entry.
 
+Improvements added after parity (not in Go):
+
+- Scan queue (`src/ui/actions.rs`, `AppState::scan_queue`). Adding a folder
+  while a scan runs appends to a shared queue. The scan worker drains the queue.
+  Before, a second add cancelled the first scan (both apps had this bug; Rust
+  fixed it).
+- Live sidebar population during a scan: the scan progress callback sends a
+  reload every 200 photos, and once per finished root.
+- Auto-album tree (`src/ui/albumtree.rs`, `sync_disk_tree`). After a root is
+  scanned, the on-disk directory hierarchy is mirrored into the Library album
+  tree: the root basename becomes a top-level album, intermediate directories
+  become nested sub-albums, each scanned folder is filed into its album.
+  It never re-files a folder that is already in an album, so user edits and
+  manual placements survive a rescan.
+- Folders tab: a folder icon per row; library roots use a distinct
+  `drive-harddisk-symbolic` icon and show their full path in bold.
+
 There are no known parity gaps. One historical setting, `thumb.regen`
 (regenerate on slider move), is stored but never consulted — this matches the
 Go behavior exactly and is not a regression.
+
+## 3a. Open behaviors / possible follow-ups
+
+The user accepted these; a fresh agent should not "fix" them without being
+asked:
+
+- During a scan, folders discovered mid-scan appear under "New folders" until
+  the root finishes; `sync_disk_tree` only runs when a root completes, then it
+  reorganizes them into the album tree. Making the tree build fully live would
+  require running the sync per-directory (more DB writes).
+- A rescan does NOT re-assert the disk-mirrored tree over manual album edits;
+  it only files folders that are not already in an album. This was a deliberate
+  choice (preserve user edits). The user has not asked to change it.
+- `thumb.regen` remains a stored-but-unused setting (matches Go). Wiring it up
+  would be a genuine new feature, not a bug fix.
 
 ## 4. Build, test, run
 
@@ -88,6 +129,16 @@ rescanning.
   the texture on the UI thread; the bound `Image` observes `notify::texture`.
   A notify handler takes two arguments (object, ParamSpec) — use
   `connect_notify_local`, not a one-argument closure.
+- Shared state moved into background threads must be `Send`. GTK/GObject types
+  are not `Send`. `AppState` holds thread-shared data as `Arc<Mutex<...>>`
+  (`ai_manager`, `scan_queue`); use the `*_arc()` accessors to clone a handle
+  into a worker thread. Do not move an `Rc` or a widget into `thread::spawn`.
+- The grid remembers its `Source` (a scanned folder id, a raw dir, or none) so
+  `reload_from_source()` can re-query after a scan or a rotation. `show_folder`
+  and `show_raw_folder` set the source; `show_photos` sets it to `None`.
+- `Library` and `Thumbs` wrap the SQLite `Connection` in a `Mutex`; every call
+  locks. This also serializes the multi-statement tag/album writes. Do not add a
+  second connection without keeping the single-writer guarantee for `thumbs`.
 
 ## 9. Rules
 
