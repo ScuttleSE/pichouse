@@ -5,6 +5,7 @@ mod aitag;
 mod app;
 mod controller;
 mod dialogs;
+mod foldertree;
 mod grid;
 mod photo_object;
 mod prefs;

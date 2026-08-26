@@ -39,6 +39,8 @@ pub struct AppState {
     pub grid: RefCell<Option<Rc<Grid>>>,
     pub properties: RefCell<Option<Rc<Properties>>>,
     pub viewer: RefCell<Option<Rc<Viewer>>>,
+    pub sidebar: RefCell<Option<Rc<super::sidebar::Sidebar>>>,
+    pub folder_tree: RefCell<Option<Rc<super::foldertree::FolderTree>>>,
     pub center_stack: RefCell<Option<Stack>>,
     /// The id of the folder currently shown in the grid (0 = none / raw view).
     pub current_folder: RefCell<i64>,

@@ -16,6 +16,7 @@ use crate::thumb::Generator;
 use crate::version;
 
 use super::controller::Controller;
+use super::foldertree::FolderTree;
 use super::grid::Grid;
 use super::prefs::{load_ai_config, Prefs};
 use super::properties::Properties;
@@ -64,6 +65,8 @@ fn build_ui(app: &Application) {
         grid: RefCell::new(None),
         properties: RefCell::new(None),
         viewer: RefCell::new(None),
+        sidebar: RefCell::new(None),
+        folder_tree: RefCell::new(None),
         center_stack: RefCell::new(None),
         current_folder: RefCell::new(0),
     });
@@ -98,14 +101,13 @@ fn build_ui(app: &Application) {
         });
     }
 
-    // Sidebar: selecting a folder loads it.
-    let sidebar = {
-        let state = state.clone();
-        Sidebar::new(move |folder_id| {
-            load_folder(&state, folder_id);
-        })
-    };
-    let sidebar = Rc::new(sidebar);
+    // Library sidebar (album tree) and raw Folders tree.
+    let sidebar = Sidebar::new();
+    sidebar.bind_state(state.clone());
+    *state.sidebar.borrow_mut() = Some(sidebar.clone());
+
+    let folder_tree = FolderTree::new(state.clone());
+    *state.folder_tree.borrow_mut() = Some(folder_tree.clone());
 
     // Center stack: grid <-> viewer.
     let center_stack = Stack::new();
@@ -116,10 +118,11 @@ fn build_ui(app: &Application) {
     center_stack.set_visible_child_name("grid");
     *state.center_stack.borrow_mut() = Some(center_stack.clone());
 
-    // Left: sidebar in a stack (Library only for now) with a switcher header.
+    // Left: a stack switcher toggles Library (album tree) and Folders (raw fs).
     let left_stack = Stack::new();
     left_stack.set_vexpand(true);
     left_stack.add_titled(sidebar.widget(), Some("library"), "Library");
+    left_stack.add_titled(folder_tree.widget(), Some("folders"), "Folders");
     let switcher = StackSwitcher::new();
     switcher.set_stack(Some(&left_stack));
     let left_box = gtk4::Box::new(Orientation::Vertical, 0);
@@ -177,38 +180,23 @@ fn build_ui(app: &Application) {
     window.add_controller(key_ctrl);
 
     // Populate the sidebar and select the first folder.
-    populate(&state, &sidebar);
+    populate(&state);
 
     window.present();
 }
 
-/// Reload the folder list into the sidebar (after scan/add/remove).
+/// Reload both sidebars from the current database (after scan/add/remove).
 pub fn reload_folders(state: &Rc<AppState>) {
-    // The sidebar is not stored in AppState; the app rebuilds its list by
-    // reading folders and updating via a stored closure is unnecessary here.
-    // Instead, the grid header stays; the sidebar is refreshed by re-selecting.
-    // For simplicity we refresh through the stored sidebar reference.
-    if let Some(reload) = SIDEBAR_RELOAD.with(|c| c.borrow().clone()) {
-        reload(state);
+    if let Some(sidebar) = state.sidebar.borrow().clone() {
+        sidebar.reload();
+    }
+    if let Some(ft) = state.folder_tree.borrow().clone() {
+        ft.reload();
     }
 }
 
-thread_local! {
-    /// A stored closure that reloads the sidebar folder list. Set during build.
-    static SIDEBAR_RELOAD: RefCell<Option<Rc<dyn Fn(&Rc<AppState>)>>> = const { RefCell::new(None) };
-}
-
-fn populate(state: &Rc<AppState>, sidebar: &Rc<Sidebar>) {
-    // Store a reload closure for later (scan/add/remove).
-    {
-        let sidebar = sidebar.clone();
-        SIDEBAR_RELOAD.with(|c| {
-            *c.borrow_mut() = Some(Rc::new(move |state: &Rc<AppState>| {
-                fill_sidebar(state, &sidebar);
-            }));
-        });
-    }
-    fill_sidebar(state, sidebar);
+fn populate(state: &Rc<AppState>) {
+    reload_folders(state);
 
     let folders = state.lib.folders().unwrap_or_default();
     if folders.is_empty() {
@@ -217,40 +205,73 @@ fn populate(state: &Rc<AppState>, sidebar: &Rc<Sidebar>) {
             .set_message("Library is empty. Add a folder in Settings → Library Folders.");
     } else {
         state.status().set_message(&format!("{} folders", folders.len()));
-        if let Some(id) = sidebar.select_first() {
-            load_folder(state, id);
+        if let Some(sidebar) = state.sidebar.borrow().clone() {
+            if let Some(folder) = sidebar.select_first_folder() {
+                load_folder_into_grid(state, &folder);
+            }
         }
     }
 }
 
-fn fill_sidebar(state: &Rc<AppState>, sidebar: &Rc<Sidebar>) {
-    let folders = state.lib.folders().unwrap_or_default();
-    let counts = state.lib.folder_photo_counts().unwrap_or_default();
-    sidebar.set_folders(&folders, &counts);
-}
-
-/// Load one folder's photos into the grid and update the status bar.
-fn load_folder(state: &Rc<AppState>, folder_id: i64) {
-    *state.current_folder.borrow_mut() = folder_id;
-    let folder = state
-        .lib
-        .folders()
-        .ok()
-        .and_then(|fs| fs.into_iter().find(|f| f.id == folder_id));
-    let title = folder
-        .as_ref()
-        .map(|f| f.name.clone())
-        .unwrap_or_else(|| "Folder".to_string());
-    match state.lib.photos_in_folder(folder_id) {
+/// Load a scanned folder's photos into the grid (called by the sidebar).
+pub fn load_folder_into_grid(state: &Rc<AppState>, folder: &crate::model::Folder) {
+    *state.current_folder.borrow_mut() = folder.id;
+    match state.lib.photos_in_folder(folder.id) {
         Ok(photos) => {
-            state.grid().show_photos(&title, &photos);
-            let path = folder.map(|f| f.path).unwrap_or_default();
+            state.grid().show_photos(&folder.name, &photos);
             state
                 .status()
-                .set_message(&format!("{} — {} photos", path, photos.len()));
+                .set_message(&format!("{} — {} photos", folder.path, photos.len()));
         }
         Err(e) => state.status().set_message(&format!("Error: {e}")),
     }
+}
+
+/// Load a raw filesystem directory's images into the grid (Folders tab). Reuses
+/// content hashes recorded during scanning so cached thumbnails are found.
+pub fn load_raw_folder_into_grid(state: &Rc<AppState>, dir: &str) {
+    use crate::model::Photo;
+    *state.current_folder.borrow_mut() = 0;
+
+    let hashes = state.lib.hashes_by_dir(dir).unwrap_or_default();
+    let mut photos: Vec<Photo> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        let mut names: Vec<_> = entries
+            .flatten()
+            .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
+            .map(|e| e.path())
+            .filter(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .map(crate::scan::is_image)
+                    .unwrap_or(false)
+            })
+            .collect();
+        names.sort();
+        for path in names {
+            let path_str = path.to_string_lossy().into_owned();
+            let filename = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let hash = hashes.get(&path_str).cloned().unwrap_or_default();
+            photos.push(Photo {
+                path: path_str,
+                filename,
+                hash,
+                ..Default::default()
+            });
+        }
+    }
+
+    let title = std::path::Path::new(dir)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| dir.to_string());
+    state.grid().show_photos(&title, &photos);
+    state
+        .status()
+        .set_message(&format!("{} — {} photos", dir, photos.len()));
 }
 
 /// Show a fatal error in a minimal window (used when the DB cannot open).

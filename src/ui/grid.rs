@@ -60,6 +60,7 @@ pub struct Grid {
     all_photos: RefCell<Vec<Photo>>,
     title: RefCell<String>,
     filter: RefCell<String>,
+    lib: Arc<Library>,
     /// Called with (photos, index) when a cell is activated (double-clicked).
     on_activate: RefCell<Option<Box<dyn Fn(Vec<Photo>, usize)>>>,
     /// Called with a photo when the selection changes (single click).
@@ -70,7 +71,6 @@ impl Grid {
     /// Build the grid, starting the worker pool. `lib` supplies photo data;
     /// `gen` renders thumbnails. Both are shared with the workers.
     pub fn new(lib: Arc<Library>, gen: Arc<Generator>, thumb_size: i32) -> Rc<Grid> {
-        let _ = lib; // reserved for later (raw-folder hash lookups)
         let header = Label::new(None);
         header.set_xalign(0.0);
         header.set_margin_start(8);
@@ -160,6 +160,7 @@ impl Grid {
             all_photos: RefCell::new(Vec::new()),
             title: RefCell::new(String::new()),
             filter: RefCell::new(String::new()),
+            lib,
             on_activate: RefCell::new(None),
             on_select: RefCell::new(None),
         }
@@ -219,15 +220,23 @@ impl Grid {
         self.thumb_size.get()
     }
 
-    /// The currently displayed (filtered) photos.
+    /// The currently displayed (filtered) photos. Matches on filename OR on
+    /// tags (via the FTS index), mirroring the toolbar search behaviour.
     fn filtered_photos(&self) -> Vec<Photo> {
         let filter = self.filter.borrow().to_lowercase();
         let all = self.all_photos.borrow();
         if filter.is_empty() {
             return all.clone();
         }
+        let tag_matches = self
+            .lib
+            .search_photo_ids_by_tag(&filter)
+            .unwrap_or_default();
         all.iter()
-            .filter(|p| p.filename.to_lowercase().contains(&filter))
+            .filter(|p| {
+                p.filename.to_lowercase().contains(&filter)
+                    || (p.id != 0 && tag_matches.contains(&p.id))
+            })
             .cloned()
             .collect()
     }
