@@ -147,6 +147,9 @@ fn folder_pane(state: &Rc<AppState>, parent: &Window) -> GtkBox {
                         return;
                     }
                     super::app::reload_folders(&state2);
+                    // If the grid was showing a folder that just got removed,
+                    // clear it so stale thumbnails are not shown or clickable.
+                    state2.clear_grid_if_folder_gone();
                     reload();
                 },
             );

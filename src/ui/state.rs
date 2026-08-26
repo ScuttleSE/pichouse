@@ -137,6 +137,26 @@ impl AppState {
         }
     }
 
+    /// Clear the grid if the folder it is showing no longer exists (e.g. after
+    /// the owning library folder was removed). Resets the current folder and
+    /// empties the grid so stale, now-deleted thumbnails cannot be opened.
+    pub fn clear_grid_if_folder_gone(&self) {
+        let current = *self.current_folder.borrow();
+        if current == 0 {
+            return;
+        }
+        let exists = self
+            .lib
+            .folders()
+            .map(|fs| fs.iter().any(|f| f.id == current))
+            .unwrap_or(false);
+        if !exists {
+            *self.current_folder.borrow_mut() = 0;
+            self.grid().show_photos("", &[]);
+            self.show_grid();
+        }
+    }
+
     /// Whether the viewer is the visible center child.
     pub fn viewer_active(&self) -> bool {
         self.center_stack

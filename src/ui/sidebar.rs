@@ -406,7 +406,7 @@ impl Sidebar {
             if parent_id != 0 {
                 this.mark_expanded(&format!("{ALBUM_PREFIX}{parent_id}"));
             }
-            this.reload();
+            this.reload_deferred();
         });
     }
 
@@ -426,7 +426,7 @@ impl Sidebar {
                 show_error(&state2, &e.to_string());
                 return;
             }
-            this.reload();
+            this.reload_deferred();
         });
     }
 
@@ -451,7 +451,7 @@ impl Sidebar {
                     show_error(&state2, &e.to_string());
                     return;
                 }
-                this.reload();
+                this.reload_deferred();
             },
         );
     }
@@ -498,13 +498,32 @@ impl Sidebar {
 
     // --- context menu ---
 
+    /// Close and unparent the context-menu popover, if any. Called before a
+    /// menu action rebuilds the tree so the popover never outlives the row it is
+    /// parented to.
+    fn dismiss_menu(&self) {
+        if let Some(pop) = self.menu_pop.borrow_mut().take() {
+            pop.popdown();
+            if pop.parent().is_some() {
+                pop.unparent();
+            }
+        }
+    }
+
     fn install_context_menu(self: &Rc<Self>) {
         let group = gio::SimpleActionGroup::new();
         let vt = glib::VariantTy::STRING;
 
-        let add = |name: &str, group: &gio::SimpleActionGroup, f: Rc<dyn Fn(&str)>| {
+        // Each action first dismisses the popover, then runs, so the tree can be
+        // rebuilt without recycling the row that owns a still-parented popover.
+        let weak = Rc::downgrade(self);
+        let add = move |name: &str, group: &gio::SimpleActionGroup, f: Rc<dyn Fn(&str)>| {
             let act = gio::SimpleAction::new(name, Some(vt));
+            let weak = weak.clone();
             act.connect_activate(move |_, param| {
+                if let Some(this) = weak.upgrade() {
+                    this.dismiss_menu();
+                }
                 let target = param.and_then(|p| p.str()).unwrap_or("");
                 f(target);
             });
