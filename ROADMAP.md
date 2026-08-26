@@ -159,3 +159,29 @@ the library without a manual full rescan.
 - Reconciliation on startup / when a folder reappears after being offline.
 - Interaction with hash-keyed thumbnails and with RAW+JPEG pairing when one
   side of a pair changes.
+
+## Virtual albums
+
+Albums whose contents are hand-picked **individual photos** drawn from any
+number of different (normal, folder-backed) albums — not tied to a single
+folder on disk.
+
+Note: the current schema's `albums`/`album_folders` groups whole *folders*.
+Virtual albums are a distinct concept that groups individual *photos*.
+
+### Behaviour
+- A virtual album can contain photos added from different albums/folders.
+- Virtual albums appear **alongside** normal albums in the Library view, but
+  with a slightly different icon to distinguish them.
+- Purely virtual/organisational: they do not move or copy files on disk.
+
+### Open questions / to decide
+- Storage: a new membership table (e.g. `virtual_album_photos(album_id,
+  photo_id, position)`) vs. extending the existing albums model.
+- Whether a photo can belong to multiple virtual albums (expected: yes).
+- Ordering within a virtual album (manual position vs. sort).
+- What happens to a virtual-album entry when the underlying photo is removed or
+  goes "missing" (see Library freshness).
+- Interaction with edits (which view is shown) and with Immich upload/sync
+  (can a virtual album be uploaded/synced as an Immich album?).
+- UI for adding photos to a virtual album (drag-drop, context menu).
