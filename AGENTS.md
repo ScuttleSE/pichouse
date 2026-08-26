@@ -19,6 +19,19 @@ After completing any change, commit and push all changes. Do not leave work unco
 
 ---
 
+## RULE TWO — HAND OFF BEFORE THE CONTEXT IS TOO LARGE
+
+When the context becomes too large, write a handoff document for a new context.
+
+- Write the document for an agent that starts with no memory of this session.
+- Put in the document the current task, the state of the work, the next steps, and the open questions.
+- Combine the handoff with a technical AGENTS.md.
+- Write the technical AGENTS.md in Simplified Technical English (ASD-STE100), Strict mode.
+- Use short sentences. Use active voice. Use one instruction per sentence. Give each word one meaning.
+- Commit and push the handoff (see RULE ONE).
+
+---
+
 ## Project
 
 **pichouse** — a Picasa-like photo library GUI application for Linux, written in Go.
