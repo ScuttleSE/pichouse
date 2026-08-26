@@ -4,111 +4,95 @@ This document is for an agent with no memory of the last session. It uses
 Simplified Technical English (ASD-STE100, Strict). Read AGENTS.md first. Read
 ROADMAP.md for planned features.
 
-## 1. Current task
+## 1. State
 
-The project moves from Go to Rust. The user validated the Rust spike. The user
-started the full port. You do the port now.
+The Go to Rust port is complete. The Rust application replaces the Go
+application. The Go code is deleted. The `rust-port` branch is merged into
+`main`.
 
-The work is on the `rust-port` branch. Do the port in milestones. Commit and push
-each milestone to `rust-port`. Do not push to `main`. Merge to `main` only when
-the port reaches feature parity.
+The application builds, tests pass, and the UI runs on the target machine
+(Debian 13, GTK 4.18).
 
-The user said: switch CI to Rust now. CI is already Rust. See section 5.
+## 2. What is ported
 
-## 2. Branches
+All Go modules are ported to Rust:
 
-- `main` holds the old Go application. Do not change `main` now.
-- `rust-port` holds the Rust port. All new work goes here.
-- `spike/rust-gtk4-grid` holds the validated spike. Do not change it. The spike
-  proved the hard UI part: a GTK4 GridView of recycled thumbnail cells backed by
-  a custom GObject list model, with JPEG blobs from SQLite. Use its pattern for
-  the UI grid.
+- `src/model.rs` — domain types.
+- `src/db/` — rusqlite over `library.db` and per-size `thumbs-<N>.db`. Albums,
+  tags, FTS5 search. Each connection is behind a `Mutex`.
+- `src/scan.rs` — recursive image walk, EXIF date, dimensions, SHA-256 hash,
+  cancellation.
+- `src/thumb.rs` — decode, rotate, resize (fast_image_resize Catmull-Rom),
+  JPEG encode, per-size cache.
+- `src/ai/` — Ollama blocking client, config, tagger, subprocess manager.
+- `src/ui/` — the full GTK4 UI (see AGENTS.md for the file list).
 
-## 3. Milestones — state
+## 3. What is deferred
 
-Done and pushed on `rust-port`:
+The Go sidebar had a richer feature set than the current Rust sidebar. The Rust
+sidebar shows a flat list of scanned folders. These Go features are NOT yet
+ported:
 
-- M0: Rust scaffolding. `Cargo.toml`, `src/main.rs`, `src/version.rs`. Rust CI.
-- M1: `src/model.rs`. Domain types. Enums for AiStatus, TagSource, ScanStatus.
-- M2: `src/db/`. rusqlite. Library over `library.db`; Thumbs over
-  `thumbs-<N>.db`. Albums, tags, FTS5 search. Mutex serializes each connection.
-- M3: `src/scan.rs`. Recursive image walk, EXIF date, dimensions, SHA-256 hash.
-  Cancel via `Arc<AtomicBool>`.
-- M4: `src/thumb.rs`. decode/rotate/resize (fast_image_resize Catmull-Rom)/JPEG.
-  Per-size cache. Generator with lazily opened stores.
-- M5: `src/ai/`. Ollama blocking client, config, tagger, subprocess manager.
+- The album tree with sub-albums.
+- The "New folders" grouping under the Library root.
+- Drag-and-drop of folders into albums.
+- Right-click context menus (create album, move to album).
+- The separate raw filesystem "Folders" tab (`foldertree`).
 
-All core modules have unit tests. Run `cargo test`. 20 tests pass.
+The database layer already supports albums (`src/db/albums.rs`). Only the UI for
+them is missing. Add these as a follow-up if the user asks.
 
-Not done:
+## 4. Build, test, run
 
-- M6: the GTK4 UI. This is the last and largest milestone (~3700 Go LOC in
-  `internal/ui/`). Port it in sub-steps. See section 4.
-- M7: parity pass. Delete the Go files (`cmd/`, `internal/`, `go.mod`,
-  `go.sum`). Final doc rewrite. Merge `rust-port` to `main`.
+- Build: `cargo build`
+- Test: `cargo test`
+- Run: `cargo run`
 
-## 4. M6 UI — plan
-
-Build the UI with gtk4-rs 0.7 (`v4_10` feature). Port these `internal/ui/`
-files. Do the sub-steps in order:
-
-1. App, window, layout skeleton. Paned, Stack, StackSwitcher, status bar. Add an
-   `on_ui` helper (glib idle_add) for background-to-UI-thread messages.
-2. Grid plus thumbnail worker pool. Use a `gio::ListStore` of a `PhotoObject`
-   GObject (from the spike). Keep the generation token and the cell-recycle
-   guard. Decode JPEG to a pixbuf/texture on the UI thread.
-3. Sidebar (album/folder tree, expansion persistence), foldertree,
-   drag-and-drop, native GMenu context menus.
-4. Viewer (navigation, rotate to DB then invalidate thumbs), properties panel
-   (tabs, tags), toolbar (zoom slider, search, AI menu).
-5. Settings windows (library folders, thumbnails, data location, shortcuts), AI
-   settings, tag manager.
-6. Configurable shortcuts, prefs load/save, dialogs.
-
-Preserve this behaviour (parity risks):
-
-- The 4-worker thumbnail pool with a generation token and a recycle guard.
-- Cancellable scan and AI controllers. One Stop button cancels both.
-- Thumbs single-writer serialization (already in `src/db/thumbs.rs`).
-- FTS5 manual maintenance (already in `src/db/tags.rs`).
-- Orientation is display and DB only. Never write it to the source file.
-- Per-size thumbnail DB files. XDG data/config directory resolution.
+The GUI needs a display. It does not run in a headless CI container. CI builds
+and tests only.
 
 ## 5. CI and versioning
 
-`.gitea/workflows/build.yaml` is Rust now. It:
+- `.gitea/workflows/build.yaml` runs on push to `main`. It reads the version
+  from `Cargo.toml`, bumps the build number, commits it with `[skip ci]`, runs
+  `cargo test --release` and `cargo build --release`, and publishes one rolling
+  pre-release binary.
+- `.gitea/workflows/ci-rust-port.yaml` runs on push to `rust-port`. It runs
+  `cargo test` and `cargo build` and uploads the binary as a zip artifact. No
+  version bump, no release.
+- The runner has no passwordless sudo. CI does not run `apt-get`. It adds the
+  installed cargo bin directory to `GITHUB_PATH` and verifies `cargo` and
+  `gtk4` are present.
+- `src/version.rs` mirrors the Cargo version with `env!("CARGO_PKG_VERSION")`.
+- Do not change the build number by hand. See AGENTS.md RULE THREE.
 
-- reads the version from `Cargo.toml` (`[package] version`);
-- bumps the build number on each non-docs push to `main`;
-- commits the bump with `[skip ci]`;
-- runs `cargo test --release` and `cargo build --release`;
-- publishes one rolling pre-release.
+## 6. Schema note
 
-`src/version.rs` mirrors the Cargo version with `env!("CARGO_PKG_VERSION")`. Do
-not change the build number by hand. See AGENTS.md RULE THREE.
-
-Note: CI triggers on push to `main` only. Pushes to `rust-port` do not run CI.
-CI runs first when you merge `rust-port` to `main`.
-
-## 6. Schema decision
-
-The Rust schema is a fresh start. Existing Go databases are not migrated. The
-user rebuilds the library by rescanning. The Rust schema has `orientation` and
-`ai_status` columns inline. There is no runtime migration code.
+The Rust schema is a fresh start. It has `orientation` and `ai_status` inline.
+There is no migration from the Go databases. The user rebuilds the library by
+rescanning.
 
 ## 7. Dependencies of note
 
-- gtk4-rs 0.7 (`v4_10`). Debian 13 ships GLib 2.84 / GTK 4.18. Do not upgrade
-  past the GLib the system ships.
-- rusqlite (`bundled`). Bundled SQLite includes FTS5. There is no separate
-  `fts5` feature in this rusqlite version.
-- reqwest uses `rustls-tls` (not native OpenSSL), to avoid a system OpenSSL
-  dependency on the runner.
+- gtk4-rs 0.7 (`v4_10`). Do not upgrade past the GLib the system ships.
+- rusqlite (`bundled`) — bundled SQLite includes FTS5.
+- reqwest uses `rustls-tls` (no system OpenSSL).
 - image, fast_image_resize, kamadak-exif, sha2, base64, serde, serde_json, dirs.
 
-## 8. How to work
+## 8. Known technical notes
 
-- Build: `cargo build`. Test: `cargo test`. Run: `cargo run`.
-- Commit and push each milestone to `rust-port`.
-- Keep AGENTS.md and README.md correct as you go.
+- `Pixbuf` is not `Send`. Workers send raw bytes to the UI thread; the UI thread
+  decodes to a texture or pixbuf.
+- Background workers talk to the UI with `glib::MainContext::channel`. This is
+  deprecated in glib 0.18 but works. A future change may move to
+  `async-channel` + `spawn_future_local`.
+- The grid uses a `PhotoObject` GObject with a `texture` property. A worker sets
+  the texture on the UI thread; the bound `Image` observes `notify::texture`.
+  A notify handler takes two arguments (object, ParamSpec) — use
+  `connect_notify_local`, not a one-argument closure.
+
+## 9. Rules
+
 - Follow RULE ZERO: do not loop on guesses. Ask the user one question and wait.
+- Commit and push after each change (RULE ONE).
+- Keep AGENTS.md and README.md correct (RULE TWO).

@@ -59,14 +59,8 @@ The version format is major.minor.build. The series starts at 0.0.0.
 
 - Add one or more Library folders; they are scanned into a local SQLite database.
 - Browsing the library reflects the cached DB state by default.
-- A separate raw filesystem "folder view" is also available.
-- Thumbnails are generated on first view and cached in a separate SQLite DB.
+- Thumbnails are generated on first view and cached in per-size SQLite DBs.
 - UI layout mimics Picasa 3, with modern styling.
-
-> Note: this project is a Go -> Rust rewrite in progress on the `rust-port`
-> branch. Core logic modules are ported first; the GTK4 UI is ported last.
-> Existing SQLite databases are rebuilt by rescanning; no schema migration from
-> the Go version is provided.
 
 ## Tech stack
 
@@ -99,13 +93,16 @@ GTK4 (>= 4.10) must be present at runtime; Debian 13 ships GTK 4.18.
 
     src/main.rs          entry point
     src/version.rs       Version constant (mirrors Cargo.toml, read by CI)
-    src/db/              SQLite schema + access (library.db, thumbs-<N>.db)
-    src/scan/            filesystem scanner
-    src/thumb/           thumbnail generation + cache
-    src/ai/              local AI tagging backend (Ollama HTTP client, tagger)
     src/model.rs         shared types
-    src/ui/              GTK4 UI (app, layout, sidebar, foldertree, grid, properties, toolbar, status, settings, aitag, tagmanager)
-    .gitea/workflows/    CI (build on push to main, rolling pre-release)
+    src/db/              SQLite schema + access (library.db, thumbs-<N>.db)
+    src/scan.rs          filesystem scanner
+    src/thumb.rs         thumbnail generation + cache
+    src/ai/              local AI tagging backend (Ollama HTTP client, tagger)
+    src/ui/              GTK4 UI (app, state, grid, sidebar, viewer, properties,
+                         toolbar, status, settings, settings_ai, aitag,
+                         tagmanager, shortcuts, dialogs, actions, controller,
+                         prefs, photo_object, util)
+    .gitea/workflows/    CI (build/release on main; validation on rust-port)
 
 ## CI
 

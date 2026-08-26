@@ -2,10 +2,6 @@
 
 A Picasa-like photo library application for Linux, written in Rust.
 
-> **Rewrite in progress.** pichouse is being ported from Go to Rust on the
-> `rust-port` branch. Core logic modules are ported first; the GTK4 UI last.
-> The feature descriptions below describe the target application.
-
 pichouse lets you add one or more library folders through a Settings dialog,
 scans them into a local SQLite database, generates cached thumbnails, and lets
 you browse your photos through a Picasa-style interface: a collapsible sidebar
