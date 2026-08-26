@@ -73,19 +73,33 @@ impl<'a> Scanner<'a> {
             }
             let fid = self.upsert_folder_for(dir)?;
             self.lib.set_scan_state(fid, ScanStatus::Running)?;
+
+            // Record the whole directory's photos in one transaction. This holds
+            // the DB lock once per directory instead of twice per photo, keeping
+            // the scan fast and leaving the lock free between directories so the
+            // Phase 2 enrichment/thumbnail workers and the UI are not starved.
+            let batch: Vec<Photo> = files
+                .iter()
+                .filter_map(|path| structure_photo(fid, path))
+                .collect();
+            self.lib.insert_structure_batch(&batch)?;
+
             for path in files {
-                if cancel.load(Ordering::Relaxed) {
-                    return Err(ScanError::Cancelled(done));
-                }
-                self.record_structure(fid, path)?;
                 done += 1;
                 progress(Progress {
                     folder: dir.to_string_lossy().into_owned(),
                     done,
                     total,
                 });
+                let _ = path;
+                if cancel.load(Ordering::Relaxed) {
+                    return Err(ScanError::Cancelled(done));
+                }
             }
             self.lib.set_scan_state(fid, ScanStatus::Done)?;
+            // Yield so the enrichment workers get a turn on the DB lock between
+            // directories rather than the scan monopolizing it.
+            std::thread::yield_now();
         }
         Ok(done)
     }
@@ -110,27 +124,23 @@ impl<'a> Scanner<'a> {
         })?;
         Ok(id)
     }
+}
 
-    /// Phase 1: record a photo's cheap structure (size, mod_time) only.
-    fn record_structure(&self, folder_id: i64, path: &Path) -> Result<(), ScanError> {
-        let meta = match std::fs::metadata(path) {
-            Ok(m) => m,
-            Err(_) => return Ok(()), // file vanished; skip
-        };
-        let p = Photo {
-            folder_id,
-            path: path.to_string_lossy().into_owned(),
-            filename: path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-            size: meta.len() as i64,
-            mod_time: mtime_secs(&meta),
-            ..Default::default()
-        };
-        self.lib.upsert_photo_structure(&p)?;
-        Ok(())
-    }
+/// Build a Phase 1 `Photo` (cheap structure only) for a file, or `None` if the
+/// file vanished before it could be stat'd.
+fn structure_photo(folder_id: i64, path: &Path) -> Option<Photo> {
+    let meta = std::fs::metadata(path).ok()?;
+    Some(Photo {
+        folder_id,
+        path: path.to_string_lossy().into_owned(),
+        filename: path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        size: meta.len() as i64,
+        mod_time: mtime_secs(&meta),
+        ..Default::default()
+    })
 }
 
 /// The Phase 2 enrichment result for a single file: EXIF taken date, pixel

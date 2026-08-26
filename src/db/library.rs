@@ -271,6 +271,35 @@ impl Library {
         Ok(id)
     }
 
+    /// Record a whole directory's photos in one transaction (Phase 1). Far
+    /// cheaper than `upsert_photo_structure` per file: it takes the DB lock once
+    /// for the batch instead of twice per photo, which speeds up the scan and,
+    /// crucially, leaves the lock free between batches so the Phase 2 enrichment
+    /// workers (and the UI) are not starved during a large scan. Does not return
+    /// ids.
+    pub fn insert_structure_batch(&self, photos: &[Photo]) -> Result<()> {
+        if photos.is_empty() {
+            return Ok(());
+        }
+        let ts = now();
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT INTO photos(folder_id, path, filename, size, mod_time, scan_state, missing, added_at)
+                 VALUES(?1, ?2, ?3, ?4, ?5, 0, 0, ?6)
+                 ON CONFLICT(path) DO UPDATE SET
+                   folder_id=excluded.folder_id, filename=excluded.filename,
+                   size=excluded.size, mod_time=excluded.mod_time, missing=0",
+            )?;
+            for p in photos {
+                stmt.execute(params![p.folder_id, p.path, p.filename, p.size, p.mod_time, ts])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     /// Ids of photos still needing Phase 2 enrichment (structured, not missing).
     /// Pass `Some(folder_id)` to limit to one folder, `None` for the whole
     /// library. Ordered by folder then filename for a stable worklist.
