@@ -1,5 +1,6 @@
 //! pichouse — a Picasa-like photo library GUI application for Linux.
 
+mod db;
 mod model;
 mod version;
 
