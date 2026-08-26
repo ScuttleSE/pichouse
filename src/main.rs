@@ -2,6 +2,7 @@
 
 mod db;
 mod model;
+mod scan;
 mod version;
 
 fn main() {
