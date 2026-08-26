@@ -126,3 +126,36 @@ has been processed.)
 - Worklist model: how the priority queue is represented (in-memory vs. a DB
   column), and how "currently viewed" is signalled from the UI to the worker.
 - Interaction with RAW+JPEG pairing (pair during Phase 1 or Phase 2?).
+
+## Library freshness (keep the library in sync with disk)
+
+Detect changes on disk in existing library folders as quickly as possible:
+files added to or removed from known paths should be picked up and reflected in
+the library without a manual full rescan.
+
+### Detection
+- Watch library folders for filesystem changes (add/remove/rename) and react
+  promptly.
+- Newly added files are scanned in (structure first, then enriched, per the
+  two-phase import) and appear in the grid.
+- Removed files are detected and their photo rows handled (see below).
+
+### Library-view handling of added/removed files
+- Work out how added and removed files are presented in the Library view.
+- Added: new photos surface in their folder/album; consider a visual "new"
+  indicator.
+- Removed: decide whether the photo row is deleted immediately, marked
+  "missing" (kept so tags/edits survive a temporary unmount or move), or
+  offered for cleanup — and how missing items are shown in the grid.
+
+### Open questions / to decide
+- Watch mechanism: OS filesystem notifications (inotify on Linux) vs. periodic
+  rescan/polling, and how to handle very large trees and watch-limit ceilings.
+- Move vs. delete+add: detecting a moved/renamed file so tags/edits follow it
+  rather than being lost.
+- Debouncing bursts of changes (e.g. a bulk copy in progress) before scanning.
+- Whether removed files are hard-deleted, soft-marked "missing", or trashed,
+  and any user confirmation for cleanup.
+- Reconciliation on startup / when a folder reappears after being offline.
+- Interaction with hash-keyed thumbnails and with RAW+JPEG pairing when one
+  side of a pair changes.
