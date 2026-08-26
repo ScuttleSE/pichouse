@@ -34,6 +34,9 @@ pub struct AppState {
 
     pub scan: Controller,
     pub ai_job: Controller,
+    /// Paths waiting to be scanned. A running scan thread drains this, so adding
+    /// a folder while a scan runs appends to it instead of cancelling the scan.
+    pub scan_queue: Arc<Mutex<std::collections::VecDeque<String>>>,
 
     pub status: RefCell<Option<Rc<StatusBar>>>,
     pub grid: RefCell<Option<Rc<Grid>>>,
@@ -66,6 +69,11 @@ impl AppState {
     /// A clone of the shared AI manager handle for background workers.
     pub fn ai_manager_arc(&self) -> Arc<Mutex<ai::Manager>> {
         self.ai_manager.clone()
+    }
+
+    /// A clone of the shared scan queue handle for the scan worker.
+    pub fn scan_queue_arc(&self) -> Arc<Mutex<std::collections::VecDeque<String>>> {
+        self.scan_queue.clone()
     }
 
     /// Push the active thumbnail preferences into the generator.

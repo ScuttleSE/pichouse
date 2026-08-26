@@ -1,4 +1,4 @@
-//! Library scanning actions with cancellation and progress.
+//! Library scanning actions with cancellation, a shared queue, and progress.
 
 use std::rc::Rc;
 
@@ -18,14 +18,15 @@ enum Msg {
     Finished,
 }
 
-/// Add a library folder, then scan it.
+/// Add a library folder, then scan it. If a scan is already running, the new
+/// folder is appended to the scan queue instead of cancelling the running scan.
 pub fn add_library_folder(state: &Rc<AppState>, path: &str) {
     if let Err(e) = state.lib.add_library_folder(path) {
         show_error(state, &e.to_string());
         return;
     }
     super::app::reload_folders(state);
-    scan_paths(state, vec![path.to_string()]);
+    enqueue_scan(state, vec![path.to_string()]);
 }
 
 /// Rescan all library folders.
@@ -42,11 +43,27 @@ pub fn rescan_all(state: &Rc<AppState>) {
         return;
     }
     let paths = folders.into_iter().map(|f| f.path).collect();
-    scan_paths(state, paths);
+    enqueue_scan(state, paths);
 }
 
-/// Scan the given root paths in a background thread.
-fn scan_paths(state: &Rc<AppState>, paths: Vec<String>) {
+/// Append paths to the scan queue and start a scan worker if none is running.
+fn enqueue_scan(state: &Rc<AppState>, paths: Vec<String>) {
+    {
+        let mut q = state.scan_queue.lock().unwrap();
+        for p in paths {
+            if !q.contains(&p) {
+                q.push_back(p);
+            }
+        }
+    }
+    if !state.scan.running() {
+        start_scan_worker(state);
+    }
+}
+
+/// Start the background scan worker. It drains the shared queue, so folders
+/// added mid-scan are picked up without cancelling the running scan.
+fn start_scan_worker(state: &Rc<AppState>) {
     let cancel = state.scan.begin();
     let status = state.status();
     status.set_scanning(true);
@@ -73,16 +90,25 @@ fn scan_paths(state: &Rc<AppState>, paths: Vec<String>) {
     }
 
     let lib = state.lib.clone();
+    let queue = state.scan_queue_arc();
     std::thread::spawn(move || {
         let scanner = Scanner::new(&lib);
         let mut scan_err: Option<String> = None;
         let mut cancelled = false;
-        for path in &paths {
+
+        // Drain the queue, including paths appended while scanning.
+        loop {
+            let path = {
+                let mut q = queue.lock().unwrap();
+                q.pop_front()
+            };
+            let Some(path) = path else { break };
+
             let _ = tx.send(Msg::Message(format!("Scanning {path}")));
             let _ = tx.send(Msg::Progress(0.0));
             let tx_progress = tx.clone();
             let result = scanner.scan_folder(
-                std::path::Path::new(path),
+                std::path::Path::new(&path),
                 &cancel,
                 move |p| {
                     let frac = if p.total > 0 {
@@ -95,10 +121,20 @@ fn scan_paths(state: &Rc<AppState>, paths: Vec<String>) {
                         "Scanning {} ({}/{})",
                         p.folder, p.done, p.total
                     )));
+                    // Periodically refresh the sidebars so newly discovered
+                    // folders appear during a long scan, not only at the end.
+                    if p.done % 200 == 0 {
+                        let _ = tx_progress.send(Msg::Reload);
+                    }
                 },
             );
             match result {
-                Ok(_) => {}
+                Ok(_) => {
+                    // Auto-organize the just-scanned tree into the Library view,
+                    // then refresh the sidebars incrementally.
+                    super::albumtree::sync_disk_tree(&lib, &path);
+                    let _ = tx.send(Msg::Reload);
+                }
                 Err(ScanError::Cancelled(_)) => {
                     cancelled = true;
                     break;

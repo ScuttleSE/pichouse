@@ -2,6 +2,7 @@
 
 mod actions;
 mod aitag;
+mod albumtree;
 mod app;
 mod controller;
 mod dialogs;

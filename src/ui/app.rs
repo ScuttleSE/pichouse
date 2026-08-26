@@ -61,6 +61,7 @@ fn build_ui(app: &Application) {
         shortcuts: RefCell::new(shortcuts),
         scan: Controller::default(),
         ai_job: Controller::default(),
+        scan_queue: std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new())),
         status: RefCell::new(None),
         grid: RefCell::new(None),
         properties: RefCell::new(None),
