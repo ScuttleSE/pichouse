@@ -36,7 +36,8 @@ When the context becomes too large, write a handoff document for a new context.
 
 The version format is major.minor.build. The series starts at 0.0.0.
 
-- Store the version in `internal/version/version.go` as `Version`.
+- Store the version in `Cargo.toml` as the `[package] version`.
+  `src/version.rs` mirrors it at build time with `env!("CARGO_PKG_VERSION")`.
 - CI increases the build number by 1 on each push to `main`.
 - A documentation-only push does not increase the build number. A push is
   documentation-only when it changes markdown (`*.md`) files only. CI skips the
@@ -54,7 +55,7 @@ The version format is major.minor.build. The series starts at 0.0.0.
 
 ## Project
 
-**pichouse** — a Picasa-like photo library GUI application for Linux, written in Go.
+**pichouse** — a Picasa-like photo library GUI application for Linux, written in Rust.
 
 - Add one or more Library folders; they are scanned into a local SQLite database.
 - Browsing the library reflects the cached DB state by default.
@@ -62,12 +63,25 @@ The version format is major.minor.build. The series starts at 0.0.0.
 - Thumbnails are generated on first view and cached in a separate SQLite DB.
 - UI layout mimics Picasa 3, with modern styling.
 
+> Note: this project is a Go -> Rust rewrite in progress on the `rust-port`
+> branch. Core logic modules are ported first; the GTK4 UI is ported last.
+> Existing SQLite databases are rebuilt by rescanning; no schema migration from
+> the Go version is provided.
+
 ## Tech stack
 
-- **Language:** Go (module `git.hemmalab.se/scuttle/pichouse`)
-- **GUI:** GTK4 via [gotk4](https://github.com/diamondburned/gotk4) (`github.com/diamondburned/gotk4/pkg`). Native desktop; requires cgo. **Pinned to v0.3.1**, which targets GLib 2.84 (Debian 13). Newer gotk4 (v0.4.x) requires GLib >= 2.88, which Debian 13 does not ship — do not upgrade this dependency without also upgrading GLib.
-- **DB:** `modernc.org/sqlite` (pure-Go). Two files: `library.db` (metadata), `thumbs.db` (thumbnail blobs), stored in `~/.local/share/pichouse/`.
-- **EXIF:** `github.com/rwcarlsen/goexif`
+- **Language:** Rust (2021 edition, binary crate `pichouse`)
+- **GUI:** GTK4 via [gtk4-rs](https://gtk-rs.org/) (`gtk4` crate). Native desktop.
+  **Pinned to gtk4-rs 0.7.x with the `v4_10` feature**, which targets GLib 2.84
+  (Debian 13). Newer gtk4-rs needs a newer GLib than Debian 13 ships — do not
+  upgrade this dependency without also upgrading GLib.
+- **DB:** `rusqlite` with the `bundled` feature (bundled SQLite includes FTS5).
+  Two files: `library.db` (metadata) and per-size `thumbs-<N>.db` (thumbnail
+  blobs), stored in `~/.local/share/pichouse/`.
+- **Images:** `image` (decode/encode) + `fast_image_resize` (Catmull-Rom resize).
+- **EXIF:** `kamadak-exif`
+- **AI tagging:** `reqwest` (blocking, rustls-tls) + `serde` (Ollama HTTP client).
+- **Hashing:** `sha2` (content hash used as the thumbnail cache key).
 
 ## System prerequisites (Debian 13; also required on the Gitea runner)
 
@@ -77,28 +91,29 @@ GTK4 (>= 4.10) must be present at runtime; Debian 13 ships GTK 4.18.
 
 ## Build / run / test
 
-    go build ./...
-    go run ./cmd/pichouse
-    go test ./...
+    cargo build
+    cargo run
+    cargo test
 
 ## Layout
 
-    cmd/pichouse/        entry point
-    internal/version/    Version constant (read by CI)
-    internal/db/         SQLite schema + access (library.db, thumbs.db)
-    internal/scan/       filesystem scanner
-    internal/thumb/      thumbnail generation + cache
-    internal/ai/         local AI tagging backend (Ollama HTTP client, tagger)
-    internal/model/      shared types
-    internal/ui/         GTK4 UI (app, layout, sidebar, foldertree, grid, properties, toolbar, status, settings, aitag, tagmanager)
+    src/main.rs          entry point
+    src/version.rs       Version constant (mirrors Cargo.toml, read by CI)
+    src/db/              SQLite schema + access (library.db, thumbs-<N>.db)
+    src/scan/            filesystem scanner
+    src/thumb/           thumbnail generation + cache
+    src/ai/              local AI tagging backend (Ollama HTTP client, tagger)
+    src/model.rs         shared types
+    src/ui/              GTK4 UI (app, layout, sidebar, foldertree, grid, properties, toolbar, status, settings, aitag, tagmanager)
     .gitea/workflows/    CI (build on push to main, rolling pre-release)
 
 ## CI
 
-`.gitea/workflows/build.yaml` builds on push to `main` on the `debian-go` runner (this machine),
-reads the version from `internal/version/version.go`, builds `./cmd/pichouse` with `CGO_ENABLED=1`,
-and publishes a rolling pre-release. Build-only — it does not launch the GUI. The runner host must
-have the system prerequisites installed (see above).
+`.gitea/workflows/build.yaml` builds on push to `main` on the `debian-go` runner,
+reads the version from `Cargo.toml`, runs `cargo test --release` and `cargo build
+--release`, and publishes a rolling pre-release. Build-only — it does not launch
+the GUI. The runner host must have the system prerequisites installed (see above)
+plus a Rust toolchain (`cargo`).
 
 ## Conventions
 

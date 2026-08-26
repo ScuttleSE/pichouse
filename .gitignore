@@ -1,6 +1,7 @@
 # Build artifacts
 /dist/
 /pichouse
+/target/
 
 # Local databases and app data
 *.db

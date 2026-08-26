@@ -1,0 +1,40 @@
+[package]
+name = "pichouse"
+version = "0.0.5"
+edition = "2021"
+description = "A Picasa-like photo library GUI application for Linux."
+license = "MIT"
+
+[[bin]]
+name = "pichouse"
+path = "src/main.rs"
+
+[dependencies]
+# GUI. Pinned to a gtk4-rs release that targets GLib 2.84 / GTK 4.10 (Debian 13).
+# Do not upgrade past the GLib version Debian 13 ships.
+gtk4 = { version = "0.7", features = ["v4_10"] }
+
+# Database. Bundled SQLite (includes FTS5 for tag search).
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Image decode / resize / encode.
+image = "0.25"
+fast_image_resize = "4"
+
+# EXIF taken-date extraction.
+kamadak-exif = "0.5"
+
+# Content hashing (thumbnail cache key).
+sha2 = "0.10"
+
+# Ollama HTTP client (blocking, to mirror the Go goroutine worker model).
+# Use rustls to avoid a system OpenSSL dependency on the CI runner.
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# XDG data/config directory resolution.
+dirs = "5"
+
+[profile.release]
+opt-level = 3
