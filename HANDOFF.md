@@ -2,11 +2,84 @@
 
 This document is for an agent with no memory of the last session. It uses
 Simplified Technical English (ASD-STE100, Strict). Read AGENTS.md first. Read
-ROADMAP.md for planned features. Read section 0 first — it describes the most
-recent work (the Immich integration). The later sections describe earlier
-features and are still correct.
+ROADMAP.md for planned features. Read section 00 first — it describes the most
+recent work (four small follow-up features). Then read section 0 — it describes
+the Immich integration. The later sections describe earlier features and are
+still correct.
 
-## 0. Immich integration (most recent work — read this first)
+## 00. Small follow-up features (most recent work — read this first)
+
+This section describes the last session. The session did four small follow-up
+tasks. Each task is complete. The application builds. `cargo test` passes 37
+tests. Each task is on `main`. Each task is pushed.
+
+The remaining `cargo build` warnings are 25. Each remaining warning is a
+deprecation warning. The deprecation warnings come from the glib channel API and
+the GTK `MessageDialog`. Section 8 describes this future migration. Do not treat
+the deprecation warnings as new work here.
+
+### 00.1 New Files window is a user setting
+
+The New Files window was a constant. It is now a user setting.
+
+- The setting is `Prefs.new_max_age_days`. The default is 14.
+- The setting key is `ui.new_max_age_days` (`prefs::KEY_NEW_MAX_AGE_DAYS`).
+- `Prefs::new_max_age_secs()` gives the value in seconds.
+- The Thumbnails settings pane has a spin button. The range is 1 to 365 days.
+- A change writes the pref and the DB setting. A change refreshes the New Files
+  view and reloads the sidebar, so the count updates at once.
+- The old constants `NEW_MAX_AGE_DAYS` and `NEW_MAX_AGE_SECS` are removed from
+  `src/ui/newfiles.rs`. Read the window from the prefs.
+
+### 00.2 Clean Up Missing Photos action
+
+A new action hard-deletes photo rows that are marked missing.
+
+- `Library::missing_photo_count()` counts rows where `missing = 1`.
+- `Library::delete_missing_photos()` deletes rows where `missing = 1`. It
+  returns the count. The `ON DELETE CASCADE` rule removes the tags and the
+  virtual-album memberships. The pragma `foreign_keys=ON` is set at open, so the
+  cascade runs.
+- The action is a destructive button in the Thumbnails settings pane. The button
+  uses the `confirm(...)` dialog first. The action does not touch any file on
+  disk. After the delete, it reloads the sidebar, the grid, and the New Files
+  view.
+
+### 00.3 thumb.regen is wired
+
+The `thumb.regen` setting was stored but unused. It is now wired.
+
+- The setting is `Prefs.regen_on_move` (key `thumb.regen`). The checkbox is in
+  the Thumbnails settings pane.
+- When the setting is on, the toolbar zoom slider clears the grid in-memory
+  texture cache before it resizes. So each cell re-renders at the new size. The
+  code is in `src/ui/toolbar.rs`, the slider `connect_value_changed` handler.
+- When the setting is off, the prior behavior is kept.
+- This is not a full on-disk regenerate. A full regenerate is the "Clear
+  Thumbnail Cache" button.
+
+### 00.4 Dead-code warnings cleared
+
+The dead-code warnings are cleared.
+
+- One truly-unused import was removed (`gtk4::prelude` in
+  `src/ui/shortcuts.rs`).
+- Each intentional kept-API item now has `#[allow(dead_code)]` and a comment.
+  Examples: `Library::upsert_photo`, `Library::set_thumb_ready`,
+  `Thumbs::clear`, `Generator::size`, `Grid::thumb_size`,
+  `NewFilesView::set_thumb_size`, `GenResult` duration fields, the `enrich::Msg`
+  `folder_id` field, the `grid::Source::Immich` fields, and `ScanStatus::Error`
+  / `ScanStatus::from_str`.
+- Do not delete a kept-API item without a check. It may serve a future feature.
+
+### 00.5 Open follow-ups (not done)
+
+- Give the grid selection model a hands-on test pass (see section 12.4). The GUI
+  needs a display; CI cannot do this.
+- Migrate the glib channel API and the GTK `MessageDialog` to remove the 25
+  deprecation warnings (see section 8). This is a larger, separate task.
+
+## 0. Immich integration (read after section 00)
 
 The Immich integration is the active work area. Read this section before the
 older sections. The older sections describe earlier features and are still
