@@ -286,10 +286,17 @@ impl Grid {
                         }
                         None => {
                             if is_immich {
+                                let head: Vec<String> = done
+                                    .blob
+                                    .iter()
+                                    .take(16)
+                                    .map(|b| format!("{b:02x}"))
+                                    .collect();
                                 eprintln!(
-                                    "[immich] decode FAILED key={} bytes={}",
+                                    "[immich] decode FAILED key={} bytes={} head={}",
                                     done.key,
-                                    done.blob.len()
+                                    done.blob.len(),
+                                    head.join(" ")
                                 );
                             }
                         }
@@ -774,11 +781,31 @@ fn overlay_parts(overlay: &Overlay) -> (Image, Label) {
     (image, label)
 }
 
-/// Decode a JPEG blob into a `gdk::Texture`.
+/// Decode an image blob into a `gdk::Texture`.
+///
+/// Tries GTK's `PixbufLoader` first (fast for JPEG/PNG). Immich thumbnails are
+/// often WebP, which many GTK builds cannot load, so on failure the `image`
+/// crate decodes the bytes and the result is uploaded as an RGBA memory
+/// texture.
 fn decode_texture(blob: &[u8]) -> Option<gdk::Texture> {
     let loader = PixbufLoader::new();
-    loader.write(blob).ok()?;
-    loader.close().ok()?;
-    let pixbuf = loader.pixbuf()?;
-    Some(gdk::Texture::for_pixbuf(&pixbuf))
+    if loader.write(blob).is_ok() && loader.close().is_ok() {
+        if let Some(pixbuf) = loader.pixbuf() {
+            return Some(gdk::Texture::for_pixbuf(&pixbuf));
+        }
+    }
+    // Fallback: decode with the `image` crate (supports WebP) and build a
+    // memory texture from raw RGBA bytes.
+    let img = image::load_from_memory(blob).ok()?;
+    let rgba = img.to_rgba8();
+    let (w, h) = (rgba.width() as i32, rgba.height() as i32);
+    let bytes = glib::Bytes::from_owned(rgba.into_raw());
+    let texture = gdk::MemoryTexture::new(
+        w,
+        h,
+        gdk::MemoryFormat::R8g8b8a8,
+        &bytes,
+        (w * 4) as usize,
+    );
+    Some(texture.upcast())
 }
