@@ -33,6 +33,7 @@ pub fn show_settings(state: &Rc<AppState>) {
     stack.set_vexpand(true);
     stack.add_titled(&folder_pane(state, &window), Some("folders"), "Library Folders");
     stack.add_titled(&thumb_pane(state), Some("thumbs"), "Thumbnails");
+    stack.add_titled(&appearance_pane(state), Some("appearance"), "Appearance");
     stack.add_titled(
         &super::settings_ai::ai_pane(state),
         Some("ai"),
@@ -267,6 +268,42 @@ fn thumb_pane(state: &Rc<AppState>) -> GtkBox {
         });
     }
     root.append(&clear);
+    root
+}
+
+fn appearance_pane(state: &Rc<AppState>) -> GtkBox {
+    let root = pane_box();
+    let intro = Label::new(Some("Appearance"));
+    intro.set_xalign(0.0);
+    root.append(&intro);
+
+    let theme = CheckButton::with_label("Use recommended theme (Adwaita)");
+    theme.set_active(state.prefs.borrow().theme_override);
+    {
+        let state = state.clone();
+        theme.connect_toggled(move |b| {
+            let on = b.is_active();
+            state.prefs.borrow_mut().theme_override = on;
+            let _ = state
+                .lib
+                .set_setting(prefs::KEY_THEME_OVERRIDE, prefs::bool_to_str(on));
+            // Apply live.
+            super::app::apply_theme(on);
+        });
+    }
+    root.append(&theme);
+
+    let hint = Label::new(Some(
+        "Leave this on if the folder tree will not expand. Some environments \
+         (e.g. remote desktops) ship a broken system theme that hides the tree \
+         expander. Uncheck to use your system theme. A restart may be needed for \
+         the change to fully apply.",
+    ));
+    hint.set_xalign(0.0);
+    hint.set_wrap(true);
+    hint.add_css_class("dim-label");
+    root.append(&hint);
+
     root
 }
 

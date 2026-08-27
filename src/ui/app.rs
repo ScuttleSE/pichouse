@@ -49,6 +49,11 @@ fn build_ui(app: &Application) {
     let ai_config = load_ai_config(&lib);
     let shortcuts = Shortcuts::load(&lib);
 
+    // Apply the theme choice before building any widgets. Forcing Adwaita
+    // avoids broken system themes (e.g. on Kasm/remote desktops) that hide the
+    // folder-tree expander.
+    apply_theme(prefs.theme_override);
+
     let gen = Arc::new(Generator::new(prefs.active_size()));
 
     let state = Rc::new(AppState {
@@ -198,6 +203,23 @@ fn build_ui(app: &Application) {
     populate(&state);
 
     window.present();
+}
+
+/// Apply the theme preference. When `force_adwaita` is set, override the system
+/// theme with the built-in Adwaita theme (which always parses cleanly); this
+/// fixes environments whose system GTK theme is broken and hides the tree
+/// expander. When unset, reset the override so the system theme is used.
+///
+/// Takes effect live; a few cached theme resources may only fully update after
+/// a restart.
+pub fn apply_theme(force_adwaita: bool) {
+    if let Some(settings) = gtk4::Settings::default() {
+        if force_adwaita {
+            settings.set_gtk_theme_name(Some("Adwaita"));
+        } else {
+            settings.reset_property("gtk-theme-name");
+        }
+    }
 }
 
 /// Reload both sidebars from the current database (after scan/add/remove).

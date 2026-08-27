@@ -9,6 +9,10 @@ pub const KEY_THUMB_ACTIVE: &str = "thumb.active";
 pub const KEY_REGEN_ON_MOVE: &str = "thumb.regen";
 pub const KEY_SAVE_ALL_SIZES: &str = "thumb.save_all";
 pub const KEY_PROPS_VISIBLE: &str = "ui.props_visible";
+/// When set, force the built-in Adwaita theme instead of the system theme. On
+/// by default because some environments (e.g. Kasm/remote desktops) ship a
+/// broken GTK theme that hides the folder-tree expander.
+pub const KEY_THEME_OVERRIDE: &str = "ui.theme_override";
 
 /// AI setting keys stored in `library.db`.
 pub const KEY_AI_ENABLED: &str = "ai.enabled";
@@ -36,6 +40,8 @@ pub struct Prefs {
     pub regen_on_move: bool,
     pub save_all_sizes: bool,
     pub props_visible: bool,
+    /// Force the built-in Adwaita theme (default true).
+    pub theme_override: bool,
 }
 
 impl Default for Prefs {
@@ -46,6 +52,7 @@ impl Default for Prefs {
             regen_on_move: false,
             save_all_sizes: false,
             props_visible: true,
+            theme_override: true,
         }
     }
 }
@@ -69,6 +76,7 @@ impl Prefs {
         p.regen_on_move = bool_setting(lib, KEY_REGEN_ON_MOVE, false);
         p.save_all_sizes = bool_setting(lib, KEY_SAVE_ALL_SIZES, false);
         p.props_visible = bool_setting(lib, KEY_PROPS_VISIBLE, true);
+        p.theme_override = bool_setting(lib, KEY_THEME_OVERRIDE, true);
         p
     }
 
