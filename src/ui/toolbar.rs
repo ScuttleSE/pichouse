@@ -115,6 +115,12 @@ pub fn build_toolbar(state: &Rc<AppState>) -> GtkBox {
                 .lib
                 .set_setting(super::prefs::KEY_THUMB_ACTIVE, &i.to_string());
             state.apply_thumb_prefs();
+            // When "regenerate on slider move" is on, drop the in-memory texture
+            // cache so each cell re-renders at the new size instead of scaling a
+            // cached texture.
+            if state.prefs.borrow().regen_on_move {
+                state.grid().clear_texture_cache();
+            }
             state.grid().set_thumb_size(new_size);
         });
     }
