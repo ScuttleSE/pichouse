@@ -29,6 +29,8 @@ const FOLDER_PREFIX: &str = "folder:";
 const VALBUM_PREFIX: &str = "valbum:";
 /// Header row that groups all virtual albums, shown above normal albums.
 const VIRTUAL_HEADER_ID: &str = "virtualheader";
+/// `library.db` settings key for the persisted set of expanded tree node ids.
+const EXPANDED_SETTING_KEY: &str = "sidebar_expanded";
 
 /// Tree data rebuilt on each reload.
 #[derive(Default)]
@@ -59,6 +61,8 @@ pub struct Sidebar {
     state: RefCell<Option<Rc<AppState>>>,
     /// A shared per-right-click popover (rebuilt each time).
     menu_pop: RefCell<Option<PopoverMenu>>,
+    /// A weak self-reference, used to hook per-row signal handlers.
+    weak_self: std::rc::Weak<Sidebar>,
 }
 
 impl Sidebar {
@@ -148,6 +152,7 @@ impl Sidebar {
                 expanded: RefCell::new(std::collections::HashSet::new()),
                 state: RefCell::new(None),
                 menu_pop: RefCell::new(None),
+                weak_self: weak.clone(),
             }
         });
 
@@ -158,6 +163,9 @@ impl Sidebar {
     /// Give the sidebar access to shared state.
     pub fn bind_state(self: &Rc<Self>, state: Rc<AppState>) {
         *self.state.borrow_mut() = Some(state);
+        // Restore the expansion set persisted from the last session before the
+        // first reload builds the tree.
+        self.load_expansion();
     }
 
     fn state(&self) -> Option<Rc<AppState>> {
@@ -229,6 +237,40 @@ impl Sidebar {
         }
         if let Some(label) = label {
             label.set_text(&name);
+        }
+
+        // Persist expansion changes immediately when the user expands/collapses
+        // this row, so the tree view survives a restart even without a reload.
+        // Disconnect the handler left on this recycled item from its previous
+        // row before connecting to the current one.
+        unsafe {
+            if let Some(prev) =
+                item.steal_data::<(glib::WeakRef<TreeListRow>, glib::SignalHandlerId)>(
+                    "expanded-handler",
+                )
+            {
+                if let Some(prev_row) = prev.0.upgrade() {
+                    prev_row.disconnect(prev.1);
+                }
+            }
+        }
+        let sidebar_weak = self.weak_self.clone();
+        let handler = row.connect_expanded_notify(move |r| {
+            if let Some(sidebar) = sidebar_weak.upgrade() {
+                if let Some(so) = r.item().and_downcast::<StringObject>() {
+                    let id = so.string().to_string();
+                    if r.is_expanded() {
+                        sidebar.expanded.borrow_mut().insert(id);
+                    } else {
+                        sidebar.expanded.borrow_mut().remove(&id);
+                    }
+                    sidebar.persist_expansion();
+                }
+            }
+        });
+        let weak_row = glib::object::ObjectExt::downgrade(&row);
+        unsafe {
+            item.set_data("expanded-handler", (weak_row, handler));
         }
     }
 
@@ -427,14 +469,48 @@ impl Sidebar {
 
     fn save_expansion(&self) {
         let n = self.tree_model.n_items();
+        // Only rows currently present in the tree can have their state observed.
+        // Rebuild their expanded/collapsed state, but keep ids for rows that are
+        // not currently realized (e.g. collapsed ancestors hide descendants) so
+        // a deep expansion survives a reload.
         let mut expanded = self.expanded.borrow_mut();
         for i in 0..n {
             if let Some(row) = self.tree_model.row(i) {
-                if row.is_expanded() {
-                    if let Some(so) = row.item().and_downcast::<StringObject>() {
-                        expanded.insert(so.string().to_string());
+                if let Some(so) = row.item().and_downcast::<StringObject>() {
+                    let id = so.string().to_string();
+                    if row.is_expanded() {
+                        expanded.insert(id);
+                    } else {
+                        expanded.remove(&id);
                     }
                 }
+            }
+        }
+        drop(expanded);
+        self.persist_expansion();
+    }
+
+    /// Save the current expansion set to `library.db` so it survives restarts.
+    fn persist_expansion(&self) {
+        let Some(state) = self.state() else { return };
+        let ids: Vec<String> = self.expanded.borrow().iter().cloned().collect();
+        let joined = ids.join("\n");
+        let _ = state.lib.set_setting(EXPANDED_SETTING_KEY, &joined);
+    }
+
+    /// Load the persisted expansion set from `library.db`. Called once when the
+    /// sidebar is bound to state, before the first reload.
+    fn load_expansion(&self) {
+        let Some(state) = self.state() else { return };
+        let raw = state
+            .lib
+            .get_setting(EXPANDED_SETTING_KEY, "")
+            .unwrap_or_default();
+        let mut expanded = self.expanded.borrow_mut();
+        expanded.clear();
+        for id in raw.split('\n') {
+            if !id.is_empty() {
+                expanded.insert(id.to_string());
             }
         }
     }
