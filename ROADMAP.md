@@ -121,6 +121,9 @@ implemented; linked folders with auto-upload (Phase 4a) are.
   server-side duplicate).
 - "Sync Now" forces a two-way sync of a folder; "Unsync from Immich" removes the
   link (does not touch the server album).
+- Sync can also be started from the Immich side: right-click an Immich album →
+  "Sync to local folder…" downloads it into a new subfolder of a chosen library
+  root and links that folder for two-way sync.
 - The Immich album list auto-refreshes every 5 minutes (plus the manual
   "Refresh Albums" action).
 

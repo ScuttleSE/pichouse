@@ -683,11 +683,144 @@ fn unique_dest(dir: &str, filename: &str) -> std::path::PathBuf {
     base
 }
 
+/// Show a dialog to sync an Immich album down to a new local folder. The user
+/// picks a library root and a subfolder name; the album's assets download into
+/// `root/subfolder`, which is then linked for two-way sync.
+pub fn show_album_to_local_dialog(
+    state: &Rc<AppState>,
+    server_id: i64,
+    album_uuid: &str,
+    album_name: &str,
+) {
+    use gtk4::prelude::*;
+    use gtk4::{Box as GtkBox, Button, DropDown, Entry, Label, Orientation, StringList, Window};
+
+    let roots = state.lib.library_folders().unwrap_or_default();
+    if roots.is_empty() {
+        state
+            .status()
+            .set_message("Add a library folder first (Settings → Library Folders).");
+        return;
+    }
+
+    let root = GtkBox::new(Orientation::Vertical, 8);
+    root.set_margin_top(12);
+    root.set_margin_bottom(12);
+    root.set_margin_start(12);
+    root.set_margin_end(12);
+    root.append(&Label::new(Some(&format!(
+        "Download Immich album \"{album_name}\" into a local folder and keep\n\
+         it synced both ways."
+    ))));
+
+    let root_names: Vec<&str> = roots.iter().map(|r| r.path.as_str()).collect();
+    let root_list = StringList::new(&root_names);
+    let root_drop = DropDown::new(Some(root_list), gtk4::Expression::NONE);
+    let root_row = GtkBox::new(Orientation::Horizontal, 6);
+    root_row.append(&Label::new(Some("Library root")));
+    root_row.append(&root_drop);
+    root.append(&root_row);
+
+    let name_row = GtkBox::new(Orientation::Horizontal, 6);
+    name_row.append(&Label::new(Some("Subfolder")));
+    let name_entry = Entry::new();
+    name_entry.set_text(&sanitize_folder_name(album_name));
+    name_entry.set_hexpand(true);
+    name_row.append(&name_entry);
+    root.append(&name_row);
+
+    let ok = Button::with_label("Sync");
+    ok.add_css_class("suggested-action");
+    let cancel = Button::with_label("Cancel");
+    let buttons = GtkBox::new(Orientation::Horizontal, 6);
+    buttons.set_halign(gtk4::Align::End);
+    buttons.append(&cancel);
+    buttons.append(&ok);
+    root.append(&buttons);
+
+    let window = Window::builder()
+        .title("Sync Immich album to local")
+        .modal(true)
+        .default_width(420)
+        .child(&root)
+        .build();
+    if let Some(w) = state.window() {
+        window.set_transient_for(Some(&w));
+    }
+    {
+        let window = window.clone();
+        cancel.connect_clicked(move |_| window.close());
+    }
+    {
+        let state = state.clone();
+        let window = window.clone();
+        let roots = roots.clone();
+        let album_uuid = album_uuid.to_string();
+        let name_entry = name_entry.clone();
+        let root_drop = root_drop.clone();
+        ok.connect_clicked(move |_| {
+            let Some(root) = roots.get(root_drop.selected() as usize) else {
+                return;
+            };
+            let sub = sanitize_folder_name(&name_entry.text());
+            if sub.is_empty() {
+                return;
+            }
+            let dir = std::path::Path::new(&root.path).join(&sub);
+            if let Err(e) = std::fs::create_dir_all(&dir) {
+                super::state::show_error(&state, &format!("Could not create folder: {e}"));
+                return;
+            }
+            let dir_str = dir.to_string_lossy().into_owned();
+            // Create the folder row so it has an id we can link immediately.
+            let folder = crate::model::Folder {
+                path: dir_str.clone(),
+                name: sub.clone(),
+                mtime: 0,
+                year: 0,
+                ..Default::default()
+            };
+            let folder_id = match state.lib.upsert_folder(&folder) {
+                Ok(id) => id,
+                Err(e) => {
+                    super::state::show_error(&state, &e.to_string());
+                    return;
+                }
+            };
+            if let Err(e) =
+                state
+                    .lib
+                    .set_immich_folder_link(folder_id, server_id, &album_uuid)
+            {
+                super::state::show_error(&state, &e.to_string());
+                return;
+            }
+            if let Some(sb) = state.sidebar.borrow().as_ref() {
+                sb.reload();
+            }
+            // Pull the album's assets down; the reconcile turns them into local
+            // photos. No initial upload (the folder starts empty locally).
+            sync_folder_down(&state, folder_id);
+            window.close();
+        });
+    }
+
+    window.set_visible(true);
+}
+
+/// Make a filesystem-safe folder name from an album name.
+fn sanitize_folder_name(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| if "/\\:*?\"<>|".contains(c) { '_' } else { c })
+        .collect();
+    cleaned.trim().to_string()
+}
+
 /// Background upload of an explicit photo list to a target album. Shared by the
 /// auto-upload path. Runs on the immich_upload controller and reports a brief
 /// status message. Does not touch the album list on completion.
-fn upload_photo_list(
-    state: &Rc<AppState>,
+fn upload_photo_list(    state: &Rc<AppState>,
     photos: Vec<Photo>,
     server: crate::model::ImmichServer,
     target: UploadTarget,

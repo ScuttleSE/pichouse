@@ -1019,6 +1019,30 @@ impl Sidebar {
         {
             let this = self.clone();
             add(
+                "album-to-local",
+                &group,
+                Rc::new(move |t| {
+                    let Some((sid, uuid)) = immich_album_of(t) else {
+                        return;
+                    };
+                    let Some(state) = this.state() else { return };
+                    let name = this
+                        .data
+                        .borrow()
+                        .immich_albums
+                        .get(&sid)
+                        .into_iter()
+                        .flatten()
+                        .find(|(u, _, _)| *u == uuid)
+                        .map(|(_, n, _)| n.clone())
+                        .unwrap_or_else(|| uuid.clone());
+                    super::immich::show_album_to_local_dialog(&state, sid, &uuid, &name);
+                }),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
                 "sync-immich",
                 &group,
                 Rc::new(move |t| {
@@ -1402,6 +1426,11 @@ impl Sidebar {
             menu.append(
                 Some("Refresh Albums"),
                 Some(&detailed("refresh-immich", id)),
+            );
+        } else if immich_album_of(id).is_some() {
+            menu.append(
+                Some("Sync to local folder…"),
+                Some(&detailed("album-to-local", id)),
             );
         } else {
             return None;
