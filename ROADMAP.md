@@ -98,6 +98,25 @@ not yet implemented.
   them to Immich in the background.
 - Sync tags back and forth between pichouse and Immich (two-way tag sync).
 
+### Phase 5 — Immich photos in virtual albums (future)
+Let Immich assets be members of pichouse virtual albums. Today they cannot:
+virtual-album membership stores `photos.id`, and Immich photos are synthetic
+grid entries with `id = 0` and no row in the `photos` table. Adding one raises a
+`FOREIGN KEY constraint failed` error, so the grid excludes Immich photos from
+"add to virtual album" and from drag-and-drop onto a virtual album.
+
+To support this, decide one of:
+- Import the Immich asset as a local `photos` row (an `immich://` path, a
+  nullable or sentinel `folder_id`, no local file on disk), so existing
+  membership and rules work unchanged; or
+- Add a membership table that can reference a remote asset (server id + asset
+  uuid) alongside local `photos.id`, and teach the grid loader and rule
+  evaluator to mix both.
+
+Open points: how such a photo shows in the grid and viewer (already handled by
+the `immich://` path), how it interacts with tags and rules, and what happens
+when the remote asset or server is removed.
+
 ### Open questions / to decide
 - Authentication: API key vs. user login; where credentials are stored.
 - Server configuration: single server or multiple; where the URL is set
