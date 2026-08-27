@@ -107,3 +107,43 @@ CREATE INDEX IF NOT EXISTS idx_phototags_tag ON photo_tags(tag_id);
 -- Maintained explicitly by the tag write methods (contentless FTS5 table).
 CREATE VIRTUAL TABLE IF NOT EXISTS photo_tags_fts
     USING fts5(tags, tokenize='unicode61');
+
+-- Virtual albums group individual *photos* (not folders) drawn from anywhere in
+-- the library. They may nest, a photo may belong to many, and membership mixes
+-- manually pinned photos with rule-matched (smart) photos. They do not touch
+-- files on disk.
+CREATE TABLE IF NOT EXISTS virtual_albums (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL,
+    parent_id  INTEGER REFERENCES virtual_albums(id) ON DELETE CASCADE,
+    position   INTEGER NOT NULL DEFAULT 0,
+    -- How multiple rules combine: 0 = AND (match every rule), 1 = OR (any rule).
+    rule_match INTEGER NOT NULL DEFAULT 1
+);
+
+-- Manual membership and manual exclusions for a virtual album. kind = 0 pins a
+-- photo (always included); kind = 1 excludes a photo the rules would otherwise
+-- match (hide it).
+CREATE TABLE IF NOT EXISTS virtual_album_photos (
+    album_id  INTEGER NOT NULL REFERENCES virtual_albums(id) ON DELETE CASCADE,
+    photo_id  INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
+    position  INTEGER NOT NULL DEFAULT 0,
+    kind      INTEGER NOT NULL DEFAULT 0,   -- 0 = pin, 1 = exclusion
+    PRIMARY KEY (album_id, photo_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_vap_photo ON virtual_album_photos(photo_id);
+
+-- Structured rules that drive smart membership. field/op/value describe one
+-- condition; the owning album's rule_match combines them.
+--   field: 'tag' | 'date_from' | 'date_to' | 'filename' | 'folder'
+--   op:    'has' | 'gte' | 'lte' | 'contains' | 'eq'
+CREATE TABLE IF NOT EXISTS virtual_album_rules (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    album_id INTEGER NOT NULL REFERENCES virtual_albums(id) ON DELETE CASCADE,
+    field    TEXT NOT NULL,
+    op       TEXT NOT NULL,
+    value    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_var_album ON virtual_album_rules(album_id);

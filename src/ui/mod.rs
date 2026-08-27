@@ -25,6 +25,8 @@ mod thumbcache;
 mod toolbar;
 mod util;
 mod viewer;
+mod vmenu;
+mod vrules;
 mod watcher;
 
 pub use app::run;

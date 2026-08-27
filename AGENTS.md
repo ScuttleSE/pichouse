@@ -94,7 +94,9 @@ GTK4 (>= 4.10) must be present at runtime; Debian 13 ships GTK 4.18.
     src/main.rs          entry point
     src/version.rs       Version constant (mirrors Cargo.toml, read by CI)
     src/model.rs         shared types
-    src/db/              SQLite schema + access (library.db, thumbs-<N>.db)
+    src/db/              SQLite schema + access (library.db, thumbs-<N>.db);
+                         includes virtual_albums.rs (virtual album CRUD,
+                         membership, and rule evaluation)
     src/scan.rs          filesystem scanner (Phase 1 structure walk + Phase 2
                          per-file enrich helper)
     src/reconcile.rs     library freshness: diff disk against the DB per folder
@@ -104,7 +106,7 @@ GTK4 (>= 4.10) must be present at runtime; Debian 13 ships GTK 4.18.
                          toolbar, status, settings, settings_ai, aitag,
                          tagmanager, shortcuts, dialogs, actions, controller,
                          prefs, photo_object, util, enrich, freshness, watcher,
-                         newfiles)
+                         newfiles, vrules, vmenu)
     .gitea/workflows/    CI (build/test/release on push to main)
 
 ## CI

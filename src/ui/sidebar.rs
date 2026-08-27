@@ -17,7 +17,7 @@ use gtk4::{
     TreeListModel, TreeListRow,
 };
 
-use crate::model::{Album, Folder};
+use crate::model::{Album, Folder, VirtualAlbum};
 
 use super::dialogs::{confirm, prompt_text};
 use super::state::{show_error, AppState};
@@ -26,6 +26,9 @@ const NEW_FOLDERS_ID: &str = "newfolders";
 const NEW_FILES_ID: &str = "newfiles";
 const ALBUM_PREFIX: &str = "album:";
 const FOLDER_PREFIX: &str = "folder:";
+const VALBUM_PREFIX: &str = "valbum:";
+/// Header row that groups all virtual albums, shown above normal albums.
+const VIRTUAL_HEADER_ID: &str = "virtualheader";
 
 /// Tree data rebuilt on each reload.
 #[derive(Default)]
@@ -38,6 +41,11 @@ struct TreeData {
     unassigned: Vec<i64>,
     /// Count of "new files" across the library (for the New Files row).
     new_files_count: i64,
+    /// Virtual albums by id, plus the parent→children adjacency and per-album
+    /// photo counts.
+    virtual_albums: HashMap<i64, VirtualAlbum>,
+    valbum_children: HashMap<i64, Vec<i64>>,
+    valbum_counts: HashMap<i64, i64>,
 }
 
 /// The Library-tab album tree sidebar.
@@ -164,7 +172,21 @@ impl Sidebar {
     /// The child node-id strings for a node id.
     fn child_ids(&self, id: &str) -> Vec<String> {
         let data = self.data.borrow();
-        if let Some(aid) = album_id_of(id) {
+        if id == VIRTUAL_HEADER_ID {
+            data.valbum_children
+                .get(&0)
+                .into_iter()
+                .flatten()
+                .map(|vid| format!("{VALBUM_PREFIX}{vid}"))
+                .collect()
+        } else if let Some(vid) = valbum_id_of(id) {
+            data.valbum_children
+                .get(&vid)
+                .into_iter()
+                .flatten()
+                .map(|child| format!("{VALBUM_PREFIX}{child}"))
+                .collect()
+        } else if let Some(aid) = album_id_of(id) {
             let mut out = Vec::new();
             for &child in data.album_children.get(&aid).into_iter().flatten() {
                 out.push(format!("{ALBUM_PREFIX}{child}"));
@@ -217,6 +239,16 @@ impl Sidebar {
                 format!("New Files ({})", data.new_files_count),
                 "document-open-recent-symbolic",
             )
+        } else if id == VIRTUAL_HEADER_ID {
+            ("Virtual Albums".to_string(), "starred-symbolic")
+        } else if let Some(vid) = valbum_id_of(id) {
+            let name = data
+                .virtual_albums
+                .get(&vid)
+                .map(|a| a.name.clone())
+                .unwrap_or_default();
+            let count = data.valbum_counts.get(&vid).copied().unwrap_or(0);
+            (format!("{name} ({count})"), "starred-symbolic")
         } else if id == NEW_FOLDERS_ID {
             (
                 format!("New folders ({})", data.unassigned.len()),
@@ -224,11 +256,18 @@ impl Sidebar {
             )
         } else if let Some(aid) = album_id_of(id) {
             (
-                data.albums.get(&aid).map(|a| a.name.clone()).unwrap_or_default(),
+                data.albums
+                    .get(&aid)
+                    .map(|a| a.name.clone())
+                    .unwrap_or_default(),
                 "folder-new-symbolic",
             )
         } else if let Some(fid) = folder_id_of(id) {
-            let name = data.folders.get(&fid).map(|f| f.name.clone()).unwrap_or_default();
+            let name = data
+                .folders
+                .get(&fid)
+                .map(|f| f.name.clone())
+                .unwrap_or_default();
             let count = data.counts.get(&fid).copied().unwrap_or(0);
             (format!("{name} ({count})"), "image-x-generic-symbolic")
         } else {
@@ -241,6 +280,19 @@ impl Sidebar {
             if id == NEW_FILES_ID {
                 if let Some(state) = self.state() {
                     state.show_new_files();
+                    return;
+                }
+            }
+            if let Some(vid) = valbum_id_of(&id) {
+                let name = self
+                    .data
+                    .borrow()
+                    .virtual_albums
+                    .get(&vid)
+                    .map(|a| a.name.clone())
+                    .unwrap_or_default();
+                if let Some(state) = self.state() {
+                    state.show_virtual_album(vid, &name);
                     return;
                 }
             }
@@ -271,7 +323,11 @@ impl Sidebar {
     }
 
     fn selected_folder_ids(&self) -> Vec<i64> {
-        let Some(sel) = self.list_view.model().and_downcast::<gtk4::MultiSelection>() else {
+        let Some(sel) = self
+            .list_view
+            .model()
+            .and_downcast::<gtk4::MultiSelection>()
+        else {
             return Vec::new();
         };
         self.selected_ids(&sel)
@@ -298,6 +354,7 @@ impl Sidebar {
         let counts = state.lib.folder_photo_counts().unwrap_or_default();
         let mut albums = state.lib.albums().unwrap_or_default();
         let folder_album = state.lib.folder_albums().unwrap_or_default();
+        let mut virtual_albums = state.lib.virtual_albums().unwrap_or_default();
         let new_files_count = state
             .lib
             .new_photos_count(super::newfiles::NEW_MAX_AGE_SECS)
@@ -307,6 +364,7 @@ impl Sidebar {
         // Show albums alphabetically at every level (case-insensitive). They are
         // pushed into album_children in this order, so children sort too.
         albums.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        virtual_albums.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
         let mut data = TreeData {
             counts,
@@ -315,7 +373,21 @@ impl Sidebar {
         };
         for a in &albums {
             data.albums.insert(a.id, a.clone());
-            data.album_children.entry(a.parent_id).or_default().push(a.id);
+            data.album_children
+                .entry(a.parent_id)
+                .or_default()
+                .push(a.id);
+        }
+        for va in &virtual_albums {
+            data.valbum_children
+                .entry(va.parent_id)
+                .or_default()
+                .push(va.id);
+            data.valbum_counts.insert(
+                va.id,
+                state.lib.virtual_album_photo_count(va.id).unwrap_or(0),
+            );
+            data.virtual_albums.insert(va.id, va.clone());
         }
         for f in &folders {
             data.folders.insert(f.id, f.clone());
@@ -339,6 +411,9 @@ impl Sidebar {
             if !data.unassigned.is_empty() {
                 roots.push(NEW_FOLDERS_ID.to_string());
             }
+            // Virtual albums section, shown above normal folder-albums. Always
+            // present so the user has a place to create the first one.
+            roots.push(VIRTUAL_HEADER_ID.to_string());
             for &aid in data.album_children.get(&0).into_iter().flatten() {
                 roots.push(format!("{ALBUM_PREFIX}{aid}"));
             }
@@ -424,13 +499,20 @@ impl Sidebar {
             .unwrap_or_default();
         let this = self.clone();
         let state2 = state.clone();
-        prompt_text(&state, None, "Rename Album", "Album name:", &current, move |name| {
-            if let Err(e) = state2.lib.rename_album(id, &name) {
-                show_error(&state2, &e.to_string());
-                return;
-            }
-            this.reload_deferred();
-        });
+        prompt_text(
+            &state,
+            None,
+            "Rename Album",
+            "Album name:",
+            &current,
+            move |name| {
+                if let Err(e) = state2.lib.rename_album(id, &name) {
+                    show_error(&state2, &e.to_string());
+                    return;
+                }
+                this.reload_deferred();
+            },
+        );
     }
 
     fn delete_album(self: &Rc<Self>, id: i64) {
@@ -497,6 +579,113 @@ impl Sidebar {
         }
         self.mark_expanded(&format!("{ALBUM_PREFIX}{target_album}"));
         self.reload_deferred();
+    }
+
+    // --- virtual album operations ---
+
+    fn prompt_create_virtual_album(self: &Rc<Self>, parent_id: i64) {
+        let Some(state) = self.state() else { return };
+        let title = if parent_id != 0 {
+            "New Sub-Album"
+        } else {
+            "New Virtual Album"
+        };
+        let this = self.clone();
+        let state2 = state.clone();
+        prompt_text(&state, None, title, "Album name:", "", move |name| {
+            if let Err(e) = state2.lib.create_virtual_album(&name, parent_id) {
+                show_error(&state2, &e.to_string());
+                return;
+            }
+            this.mark_expanded(VIRTUAL_HEADER_ID);
+            if parent_id != 0 {
+                this.mark_expanded(&format!("{VALBUM_PREFIX}{parent_id}"));
+            }
+            this.reload_deferred();
+        });
+    }
+
+    fn prompt_rename_virtual_album(self: &Rc<Self>, id: i64) {
+        let Some(state) = self.state() else { return };
+        let current = self
+            .data
+            .borrow()
+            .virtual_albums
+            .get(&id)
+            .map(|a| a.name.clone())
+            .unwrap_or_default();
+        let this = self.clone();
+        let state2 = state.clone();
+        prompt_text(
+            &state,
+            None,
+            "Rename Virtual Album",
+            "Album name:",
+            &current,
+            move |name| {
+                if let Err(e) = state2.lib.rename_virtual_album(id, &name) {
+                    show_error(&state2, &e.to_string());
+                    return;
+                }
+                this.reload_deferred();
+            },
+        );
+    }
+
+    fn delete_virtual_album(self: &Rc<Self>, id: i64) {
+        let Some(state) = self.state() else { return };
+        let name = self
+            .data
+            .borrow()
+            .virtual_albums
+            .get(&id)
+            .map(|a| a.name.clone())
+            .unwrap_or_default();
+        let this = self.clone();
+        let state2 = state.clone();
+        confirm(
+            &state,
+            None,
+            "Delete Virtual Album",
+            &format!("Delete virtual album \"{name}\"? Sub-albums are also deleted. Photos on disk are not affected."),
+            move || {
+                if let Err(e) = state2.lib.delete_virtual_album(id) {
+                    show_error(&state2, &e.to_string());
+                    return;
+                }
+                this.reload_deferred();
+            },
+        );
+    }
+
+    /// Re-parent a virtual album under another (drag onto a virtual album).
+    fn reparent_virtual_album(self: &Rc<Self>, src: i64, target: i64) {
+        if src == target {
+            return;
+        }
+        let Some(state) = self.state() else { return };
+        if let Err(e) = state.lib.set_virtual_album_parent(src, target) {
+            show_error(&state, &e.to_string());
+            return;
+        }
+        self.mark_expanded(&format!("{VALBUM_PREFIX}{target}"));
+        self.reload_deferred();
+    }
+
+    /// Open the rules editor for a virtual album.
+    fn edit_virtual_album_rules(self: &Rc<Self>, id: i64) {
+        let Some(state) = self.state() else { return };
+        let name = self
+            .data
+            .borrow()
+            .virtual_albums
+            .get(&id)
+            .map(|a| a.name.clone())
+            .unwrap_or_default();
+        let this = self.clone();
+        super::vrules::open_rules_editor(&state, id, &name, move || {
+            this.reload_deferred();
+        });
     }
 
     // --- context menu ---
@@ -594,6 +783,47 @@ impl Sidebar {
             );
         }
 
+        {
+            let this = self.clone();
+            add(
+                "new-valbum",
+                &group,
+                Rc::new(move |_| this.prompt_create_virtual_album(0)),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "new-subvalbum",
+                &group,
+                Rc::new(move |t| this.prompt_create_virtual_album(valbum_id_of(t).unwrap_or(0))),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "rename-valbum",
+                &group,
+                Rc::new(move |t| this.prompt_rename_virtual_album(valbum_id_of(t).unwrap_or(0))),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "delete-valbum",
+                &group,
+                Rc::new(move |t| this.delete_virtual_album(valbum_id_of(t).unwrap_or(0))),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "edit-valbum-rules",
+                &group,
+                Rc::new(move |t| this.edit_virtual_album_rules(valbum_id_of(t).unwrap_or(0))),
+            );
+        }
+
         self.list_view.insert_action_group("sidebar", Some(&group));
     }
 
@@ -607,7 +837,10 @@ impl Sidebar {
         src.connect_prepare(move |_, _, _| {
             let expander = expander_weak.upgrade()?;
             let id = expander.widget_name().to_string();
-            if album_id_of(&id).is_none() && folder_id_of(&id).is_none() {
+            if album_id_of(&id).is_none()
+                && folder_id_of(&id).is_none()
+                && valbum_id_of(&id).is_none()
+            {
                 return None;
             }
             let value = id.to_value();
@@ -623,12 +856,19 @@ impl Sidebar {
                 return false;
             };
             let target_id = expander.widget_name().to_string();
-            let Some(target_album) = album_id_of(&target_id) else {
-                return false;
-            };
             let dragged: String = match value.get() {
                 Ok(s) => s,
                 Err(_) => return false,
+            };
+            // Dropping a virtual album onto another makes it a sub-album.
+            if let (Some(target_v), Some(src_v)) =
+                (valbum_id_of(&target_id), valbum_id_of(&dragged))
+            {
+                this.reparent_virtual_album(src_v, target_v);
+                return true;
+            }
+            let Some(target_album) = album_id_of(&target_id) else {
+                return false;
             };
             if let Some(src_album) = album_id_of(&dragged) {
                 this.reparent_album(src_album, target_album);
@@ -685,12 +925,28 @@ impl Sidebar {
     fn build_row_menu(&self, id: &str) -> Option<gio::Menu> {
         let menu = gio::Menu::new();
         let data = self.data.borrow();
-        if album_id_of(id).is_some() {
+        if id == VIRTUAL_HEADER_ID {
+            menu.append(
+                Some("New Virtual Album…"),
+                Some(&detailed("new-valbum", id)),
+            );
+        } else if valbum_id_of(id).is_some() {
+            menu.append(Some("New Sub-Album…"), Some(&detailed("new-subvalbum", id)));
+            menu.append(Some("Rename Album…"), Some(&detailed("rename-valbum", id)));
+            menu.append(
+                Some("Edit Rules…"),
+                Some(&detailed("edit-valbum-rules", id)),
+            );
+            menu.append(Some("Delete Album"), Some(&detailed("delete-valbum", id)));
+        } else if album_id_of(id).is_some() {
             menu.append(Some("New Sub-Album…"), Some(&detailed("new-subalbum", id)));
             menu.append(Some("Rename Album…"), Some(&detailed("rename-album", id)));
             menu.append(Some("Delete Album"), Some(&detailed("delete-album", id)));
             if !self.selected_folder_ids().is_empty() {
-                menu.append(Some("Move selected here"), Some(&detailed("move-to-album", id)));
+                menu.append(
+                    Some("Move selected here"),
+                    Some(&detailed("move-to-album", id)),
+                );
             }
         } else if folder_id_of(id).is_some() {
             if data.albums.is_empty() {
@@ -699,7 +955,10 @@ impl Sidebar {
                 let submenu = self.build_move_submenu(&data, 0);
                 menu.append_submenu(Some("Move to Album"), &submenu);
             }
-            menu.append(Some("Remove from Album"), Some(&detailed("remove-folder", id)));
+            menu.append(
+                Some("Remove from Album"),
+                Some(&detailed("remove-folder", id)),
+            );
         } else if id == NEW_FOLDERS_ID {
             menu.append(Some("New Album…"), Some(&detailed("new-album", id)));
         } else {
@@ -722,7 +981,11 @@ impl Sidebar {
         });
         for aid in children {
             let target = format!("{ALBUM_PREFIX}{aid}");
-            let name = data.albums.get(&aid).map(|a| a.name.clone()).unwrap_or_default();
+            let name = data
+                .albums
+                .get(&aid)
+                .map(|a| a.name.clone())
+                .unwrap_or_default();
             if data
                 .album_children
                 .get(&aid)
@@ -766,4 +1029,8 @@ fn album_id_of(id: &str) -> Option<i64> {
 
 fn folder_id_of(id: &str) -> Option<i64> {
     id.strip_prefix(FOLDER_PREFIX).and_then(|n| n.parse().ok())
+}
+
+fn valbum_id_of(id: &str) -> Option<i64> {
+    id.strip_prefix(VALBUM_PREFIX).and_then(|n| n.parse().ok())
 }

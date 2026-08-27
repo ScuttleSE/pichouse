@@ -13,8 +13,8 @@ use gtk4::gio;
 use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{
-    Align, GridView, Image, Label, ListItem, Overlay, PolicyType, ScrolledWindow,
-    SignalListItemFactory, SingleSelection,
+    Align, GridView, Image, Label, ListItem, MultiSelection, Overlay, PolicyType, ScrolledWindow,
+    SignalListItemFactory,
 };
 
 use crate::db::Library;
@@ -48,7 +48,7 @@ pub struct Grid {
     header: Label,
     store: gio::ListStore,
     grid_view: GridView,
-    selection: SingleSelection,
+    selection: MultiSelection,
     thumb_size: std::cell::Cell<i32>,
     generation: Arc<AtomicU64>,
     jobs: mpsc::Sender<Job>,
@@ -71,6 +71,9 @@ pub struct Grid {
     on_activate: RefCell<Option<Box<dyn Fn(Vec<Photo>, usize)>>>,
     /// Called with a photo when the selection changes (single click).
     on_select: RefCell<Option<Box<dyn Fn(Photo)>>>,
+    /// Called with (x, y) in grid coordinates on a right-click, so the app can
+    /// show a context menu over the current selection.
+    on_context_menu: RefCell<Option<Box<dyn Fn(f64, f64)>>>,
 }
 
 /// Where the grid's current photos came from.
@@ -82,6 +85,8 @@ enum Source {
     Folder(i64, String),
     /// A raw filesystem directory path.
     RawDir(String),
+    /// A virtual album (id, display name).
+    VirtualAlbum(i64, String),
 }
 
 impl Grid {
@@ -95,9 +100,7 @@ impl Grid {
         header.set_margin_bottom(6);
 
         let store = gio::ListStore::new::<PhotoObject>();
-        let selection = SingleSelection::new(Some(store.clone()));
-        selection.set_autoselect(false);
-        selection.set_can_unselect(true);
+        let selection = MultiSelection::new(Some(store.clone()));
 
         let generation = Arc::new(AtomicU64::new(0));
         let pending: Rc<RefCell<HashMap<String, PhotoObject>>> =
@@ -188,6 +191,7 @@ impl Grid {
             source: RefCell::new(Source::None),
             on_activate: RefCell::new(None),
             on_select: RefCell::new(None),
+            on_context_menu: RefCell::new(None),
         }
         .into_rc()
     }
@@ -206,14 +210,16 @@ impl Grid {
                 }
             });
         }
-        // Selection change updates the properties panel.
+        // Selection change updates the properties panel with the first
+        // selected photo.
         {
             let rc2 = rc.clone();
-            rc.selection.connect_selected_notify(move |sel| {
-                let pos = sel.selected();
-                if pos == gtk4::INVALID_LIST_POSITION {
+            rc.selection.connect_selection_changed(move |sel, _, _| {
+                let bitset = sel.selection();
+                if bitset.size() == 0 {
                     return;
                 }
+                let pos = bitset.nth(0);
                 let photos = rc2.filtered_photos();
                 if let Some(p) = photos.get(pos as usize) {
                     if let Some(cb) = rc2.on_select.borrow().as_ref() {
@@ -221,6 +227,19 @@ impl Grid {
                     }
                 }
             });
+        }
+        // Right-click anywhere in the grid raises the context menu over the
+        // current selection.
+        {
+            let rc2 = rc.clone();
+            let gesture = gtk4::GestureClick::new();
+            gesture.set_button(gdk::BUTTON_SECONDARY);
+            gesture.connect_pressed(move |_, _, x, y| {
+                if let Some(cb) = rc2.on_context_menu.borrow().as_ref() {
+                    cb(x, y);
+                }
+            });
+            rc.grid_view.add_controller(gesture);
         }
         rc
     }
@@ -233,6 +252,16 @@ impl Grid {
     /// Register the selection callback (updates properties).
     pub fn set_on_select<F: Fn(Photo) + 'static>(&self, f: F) {
         *self.on_select.borrow_mut() = Some(Box::new(f));
+    }
+
+    /// Register the right-click context-menu callback.
+    pub fn set_on_context_menu<F: Fn(f64, f64) + 'static>(&self, f: F) {
+        *self.on_context_menu.borrow_mut() = Some(Box::new(f));
+    }
+
+    /// The `GridView` widget, used as a menu anchor.
+    pub fn grid_view(&self) -> &GridView {
+        &self.grid_view
     }
 
     /// The grid's root widget.
@@ -288,6 +317,40 @@ impl Grid {
         self.set_photos(&title, photos);
     }
 
+    /// Show a virtual album, remembering it as the source so the grid can
+    /// re-query after membership or rule changes.
+    pub fn show_virtual_album(&self, album_id: i64, name: &str) {
+        *self.source.borrow_mut() = Source::VirtualAlbum(album_id, name.to_string());
+        let photos = self
+            .lib
+            .photos_in_virtual_album(album_id)
+            .unwrap_or_default();
+        self.set_photos(name, photos);
+    }
+
+    /// The virtual album id the grid is currently showing, if any.
+    pub fn current_virtual_album(&self) -> Option<i64> {
+        match &*self.source.borrow() {
+            Source::VirtualAlbum(id, _) => Some(*id),
+            _ => None,
+        }
+    }
+
+    /// The photos currently selected in the grid (multi-selection), in view
+    /// order. Empty when nothing is selected.
+    pub fn selected_photos(&self) -> Vec<Photo> {
+        let photos = self.filtered_photos();
+        let bitset = self.selection.selection();
+        let mut out = Vec::new();
+        for i in 0..bitset.size() {
+            let pos = bitset.nth(i as u32) as usize;
+            if let Some(p) = photos.get(pos) {
+                out.push(p.clone());
+            }
+        }
+        out
+    }
+
     /// Re-query the current source (folder or raw dir) from the database/disk
     /// and rebuild the view. A true "refresh visible": picks up newly scanned
     /// photos and updated orientations. No-op for ad-hoc lists.
@@ -301,6 +364,10 @@ impl Grid {
             Source::RawDir(dir) => {
                 let (title, photos) = self.load_raw_dir(&dir);
                 self.set_photos(&title, photos);
+            }
+            Source::VirtualAlbum(id, name) => {
+                let photos = self.lib.photos_in_virtual_album(id).unwrap_or_default();
+                self.set_photos(&name, photos);
             }
             Source::None => {}
         }
@@ -474,16 +541,12 @@ fn build_factory(thumb_size: i32) -> SignalListItemFactory {
         // Observe future texture changes for this bound object.
         let image_weak = image.downgrade();
         let label_weak = label.downgrade();
-        let handler = photo.connect_notify_local(
-            Some("texture"),
-            move |obj: &PhotoObject, _pspec| {
-                if let (Some(image), Some(label)) =
-                    (image_weak.upgrade(), label_weak.upgrade())
-                {
+        let handler =
+            photo.connect_notify_local(Some("texture"), move |obj: &PhotoObject, _pspec| {
+                if let (Some(image), Some(label)) = (image_weak.upgrade(), label_weak.upgrade()) {
                     apply_texture(&image, &label, obj.texture());
                 }
-            },
-        );
+            });
         // Store the handler id so unbind can disconnect it.
         unsafe {
             item.set_data("texture-handler", handler);
@@ -493,9 +556,7 @@ fn build_factory(thumb_size: i32) -> SignalListItemFactory {
         let item = item.downcast_ref::<ListItem>().unwrap();
         if let Some(photo) = item.item().and_downcast::<PhotoObject>() {
             unsafe {
-                if let Some(handler) =
-                    item.steal_data::<glib::SignalHandlerId>("texture-handler")
-                {
+                if let Some(handler) = item.steal_data::<glib::SignalHandlerId>("texture-handler") {
                     photo.disconnect(handler);
                 }
             }

@@ -128,6 +128,10 @@ fn build_ui(app: &Application) {
     let folder_tree = FolderTree::new(state.clone());
     *state.folder_tree.borrow_mut() = Some(folder_tree.clone());
 
+    // Grid right-click: show a context menu to add the selected photos to a
+    // virtual album (or create a new one from the selection).
+    super::vmenu::install_grid_context_menu(&state, &grid, &sidebar);
+
     // Center stack: grid <-> viewer.
     let center_stack = Stack::new();
     center_stack.set_vexpand(true);
@@ -241,7 +245,9 @@ fn populate(state: &Rc<AppState>) {
             .status()
             .set_message("Library is empty. Add a folder in Settings → Library Folders.");
     } else {
-        state.status().set_message(&format!("{} folders", folders.len()));
+        state
+            .status()
+            .set_message(&format!("{} folders", folders.len()));
         if let Some(sidebar) = state.sidebar.borrow().clone() {
             if let Some(folder) = sidebar.select_first_folder() {
                 load_folder_into_grid(state, &folder);
@@ -265,7 +271,11 @@ fn populate(state: &Rc<AppState>) {
 pub fn load_folder_into_grid(state: &Rc<AppState>, folder: &crate::model::Folder) {
     *state.current_folder.borrow_mut() = folder.id;
     state.grid().show_folder(folder.id, &folder.name);
-    let count = state.lib.photos_in_folder(folder.id).map(|p| p.len()).unwrap_or(0);
+    let count = state
+        .lib
+        .photos_in_folder(folder.id)
+        .map(|p| p.len())
+        .unwrap_or(0);
     state
         .status()
         .set_message(&format!("{} — {} photos", folder.path, count));

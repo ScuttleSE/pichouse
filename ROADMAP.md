@@ -136,6 +136,16 @@ should be treated as one photo, not two.
 
 ## Virtual albums
 
+**Status: implemented (manual + rule-based).** Virtual albums group individual
+photos across folders. Storage: `virtual_albums` (nestable, with an AND/OR
+`rule_match`), `virtual_album_photos` (manual pins and exclusions), and
+`virtual_album_rules` (structured tag/date/filename/folder conditions).
+Membership is evaluated live at view time: rule matches combined per the match
+mode, unioned with pins, minus exclusions (see `src/db/virtual_albums.rs`). The
+sidebar shows a "Virtual Albums" section above normal albums; the grid supports
+multi-selection with a right-click menu to add/remove photos and create albums
+from a selection; a rules editor dialog (`src/ui/vrules.rs`) edits smart rules.
+
 Albums whose contents are hand-picked **individual photos** drawn from any
 number of different (normal, folder-backed) albums — not tied to a single
 folder on disk.

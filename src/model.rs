@@ -170,6 +170,130 @@ pub struct Album {
     pub position: i32,
 }
 
+/// A virtual album: an organisation of individual *photos* (not folders) drawn
+/// from anywhere in the library. Virtual albums may nest and do not touch files
+/// on disk. Membership mixes manually pinned photos with rule-matched photos.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct VirtualAlbum {
+    pub id: i64,
+    pub name: String,
+    /// `0` means top-level.
+    pub parent_id: i64,
+    pub position: i32,
+    /// How this album's rules combine.
+    pub rule_match: RuleMatch,
+}
+
+/// How multiple rules of a virtual album combine. The integer values are stable
+/// and are stored directly in the database.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RuleMatch {
+    /// A photo must match every rule.
+    And = 0,
+    /// A photo must match any rule.
+    #[default]
+    Or = 1,
+}
+
+impl RuleMatch {
+    pub fn from_i64(v: i64) -> Self {
+        match v {
+            0 => RuleMatch::And,
+            _ => RuleMatch::Or,
+        }
+    }
+
+    pub fn as_i64(self) -> i64 {
+        self as i64
+    }
+}
+
+/// The attribute a virtual-album rule matches on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuleField {
+    /// A tag the photo carries. `value` is the tag name.
+    Tag,
+    /// Earliest taken date (inclusive). `value` is a Unix timestamp (seconds).
+    DateFrom,
+    /// Latest taken date (inclusive). `value` is a Unix timestamp (seconds).
+    DateTo,
+    /// Filename substring (case-insensitive). `value` is the substring.
+    Filename,
+    /// Owning folder id. `value` is the folder id.
+    Folder,
+}
+
+impl RuleField {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RuleField::Tag => "tag",
+            RuleField::DateFrom => "date_from",
+            RuleField::DateTo => "date_to",
+            RuleField::Filename => "filename",
+            RuleField::Folder => "folder",
+        }
+    }
+
+    /// Parse a database string. Unknown values map to `Tag`.
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "date_from" => RuleField::DateFrom,
+            "date_to" => RuleField::DateTo,
+            "filename" => RuleField::Filename,
+            "folder" => RuleField::Folder,
+            _ => RuleField::Tag,
+        }
+    }
+}
+
+/// The comparison a virtual-album rule applies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuleOp {
+    /// The photo has the tag.
+    Has,
+    /// `taken_at >= value`.
+    Gte,
+    /// `taken_at <= value`.
+    Lte,
+    /// Case-insensitive substring match.
+    Contains,
+    /// Exact equality (folder id).
+    Eq,
+}
+
+impl RuleOp {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RuleOp::Has => "has",
+            RuleOp::Gte => "gte",
+            RuleOp::Lte => "lte",
+            RuleOp::Contains => "contains",
+            RuleOp::Eq => "eq",
+        }
+    }
+
+    /// Parse a database string. Unknown values map to `Has`.
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "gte" => RuleOp::Gte,
+            "lte" => RuleOp::Lte,
+            "contains" => RuleOp::Contains,
+            "eq" => RuleOp::Eq,
+            _ => RuleOp::Has,
+        }
+    }
+}
+
+/// A single condition of a virtual album's smart-membership rules.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VirtualRule {
+    pub id: i64,
+    pub album_id: i64,
+    pub field: RuleField,
+    pub op: RuleOp,
+    pub value: String,
+}
+
 /// The scan state of a folder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ScanStatus {
@@ -239,7 +363,10 @@ mod tests {
     #[test]
     fn tag_source_roundtrip() {
         assert_eq!(TagSource::from_i64(TagSource::Ai.as_i64()), TagSource::Ai);
-        assert_eq!(TagSource::from_i64(TagSource::User.as_i64()), TagSource::User);
+        assert_eq!(
+            TagSource::from_i64(TagSource::User.as_i64()),
+            TagSource::User
+        );
         assert_eq!(TagSource::from_i64(42), TagSource::Ai);
     }
 

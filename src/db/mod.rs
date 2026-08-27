@@ -8,6 +8,7 @@ mod config;
 mod library;
 mod tags;
 mod thumbs;
+mod virtual_albums;
 
 pub use config::{data_dir, write_configured_data_dir};
 pub use library::Library;

@@ -137,6 +137,16 @@ impl AppState {
         }
     }
 
+    /// Load a virtual album's photos into the grid and show it.
+    pub fn show_virtual_album(self: &Rc<Self>, album_id: i64, name: &str) {
+        *self.current_folder.borrow_mut() = 0;
+        self.grid().show_virtual_album(album_id, name);
+        let count = self.lib.virtual_album_photo_count(album_id).unwrap_or(0);
+        self.show_grid();
+        self.status()
+            .set_message(&format!("{name} — {count} photos"));
+    }
+
     /// Clear the grid if the folder it is showing no longer exists (e.g. after
     /// the owning library folder was removed). Resets the current folder and
     /// empties the grid so stale, now-deleted thumbnails cannot be opened.
@@ -162,7 +172,11 @@ impl AppState {
         self.center_stack
             .borrow()
             .as_ref()
-            .map(|s| s.visible_child_name().map(|n| n == "viewer").unwrap_or(false))
+            .map(|s| {
+                s.visible_child_name()
+                    .map(|n| n == "viewer")
+                    .unwrap_or(false)
+            })
             .unwrap_or(false)
     }
 
@@ -171,7 +185,11 @@ impl AppState {
         self.center_stack
             .borrow()
             .as_ref()
-            .map(|s| s.visible_child_name().map(|n| n == "newfiles").unwrap_or(false))
+            .map(|s| {
+                s.visible_child_name()
+                    .map(|n| n == "newfiles")
+                    .unwrap_or(false)
+            })
             .unwrap_or(false)
     }
 
