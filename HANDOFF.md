@@ -2,13 +2,166 @@
 
 This document is for an agent with no memory of the last session. It uses
 Simplified Technical English (ASD-STE100, Strict). Read AGENTS.md first. Read
-ROADMAP.md for planned features. Read section 000 first — it describes the most
-recent work (non-destructive editing and color levels). Then read section 00 —
-it describes four small follow-up features. Then read section 0 — it describes
-the Immich integration. The later sections describe earlier features and are
-still correct.
+ROADMAP.md for planned features. Read section 0000 first — it describes the most
+recent work (four small features, console logging, and a set of scan-time
+performance and freeze fixes). Then read section 000 — it describes
+non-destructive editing and color levels. Then read section 00 — it describes
+four earlier follow-up features. Then read section 0 — it describes the Immich
+integration. The later sections describe earlier features and are still correct.
 
-## 000. Non-destructive editing and color levels (most recent work — read this first)
+## 0000. Timeline, copy, crop overlay, slideshows, logging, and freeze fixes (most recent work — read this first)
+
+This section describes the last session. The work is complete. The application
+builds. `cargo test` passes 43 tests. The work is on `main`. The work is pushed.
+The version is 0.0.54. CI increases the version on each push. Do not change the
+version by hand.
+
+The user confirmed the freeze fixes work. The user gave a `gdb` backtrace that
+found the last freeze.
+
+### 0000.1 Four small features
+
+The session added four features from ROADMAP.md.
+
+1. **Immich Timeline.** Each Immich server in the sidebar has a **Timeline**
+   child node. The node shows every asset on the server, newest first. The new
+   method is `Client::timeline_assets` in `src/immich/client.rs`. It calls
+   `POST /search/metadata` with no `albumIds` filter and pages through the whole
+   library. It shares the `search_assets` helper with `album_assets`. The UI
+   function is `immich::show_timeline` in `src/ui/immich.rs`. It maps the assets
+   to `immich://` photos and shows them with the grid's ad-hoc `show_photos`.
+   The sidebar node uses the id prefix `immichtimeline:<server_id>` and the
+   parser `immich_timeline_id_of` in `src/ui/sidebar.rs`.
+
+2. **Copy image to clipboard.** The grid right-click menu has a **Copy image**
+   item. It bakes the full-resolution edited image on a background thread and
+   sets a `gdk::MemoryTexture` on the clipboard. It works for local and Immich
+   photos. The code is in `src/ui/vmenu.rs` (`copy_photo_to_clipboard`,
+   `bake_source`). `export::rotate_full` is now `pub(crate)`. The menu shows for
+   an Immich-only selection.
+
+3. **Interactive crop overlay.** The Edit tab has a "Crop by dragging on the
+   image" toggle. The viewer wraps its `Picture` in a `gtk4::Overlay` with a
+   transparent `DrawingArea`. The user drags a rectangle. On release the viewer
+   converts the rectangle to a per-mille crop and writes it back to the numeric
+   spin buttons, then commits. The coordinate mapping accounts for the
+   `ContentFit::Contain` letterbox. The code is in `src/ui/viewer.rs`
+   (`set_crop_mode`, `image_rect`, `update_crop_from_drag`) and
+   `src/ui/editor.rs` (`build_crop`).
+
+4. **Slideshows.** The toolbar has a **Play slideshow** button. A right-click on
+   the button opens a popover with the per-image duration, a shuffle toggle, and
+   a loop toggle. The settings persist in `library.db` under the keys
+   `slideshow.secs`, `slideshow.shuffle`, and `slideshow.loop` (see
+   `src/ui/prefs.rs`). The slideshow runs in the viewer
+   (`src/ui/viewer.rs`): it enters fullscreen, hides the control bar, and
+   advances on a `glib::timeout_add_seconds_local` timer. Space pauses. Escape
+   stops. The arrow keys still move between photos. The slideshow plays the
+   current grid view or the current multi-selection.
+
+ROADMAP.md marks Slideshows and the interactive crop as done. Virtual albums
+were already done.
+
+### 0000.2 Console logging with CLI flags
+
+The application now logs to the console (stderr). The crates are `log` and
+`env_logger` (default features off, to keep the link small). `src/main.rs`
+parses the verbosity from the command line before it starts the GUI:
+
+- no flag: `warn` (the default)
+- `-v`: `info`
+- `-vv`: `debug`
+- `-vvv`: `trace`
+- `-q` or `--quiet`: `error`
+- `-h` or `--help`: print usage and exit
+
+`src/ui/app.rs::run` calls `app.run_with_args(&[])`. This stops GTK from parsing
+the flags and rejecting them. The flags are consumed in `main` before the GUI
+starts.
+
+Every log line has the thread name (`main`, `scan`, `enrich0`…). Operations log
+*before* they start, so the last line before a stall names the operation that
+hung. `Library::lock` (in `src/db/library.rs`) wraps the shared
+`Mutex<Connection>` and warns when a lock wait is more than 200 ms. All library
+DB call sites use `self.lock()`. The `Thumbs` and `ImmichThumbs` databases keep
+their own separate connections and do not use this helper.
+
+### 0000.3 Scan-time performance and freeze fixes
+
+The user reported that scanning a new library folder froze the UI. The session
+made these fixes, in order:
+
+1. **Decode each file once (`src/scan.rs`, `src/thumb.rs`, `src/ui/enrich.rs`).**
+   Enrichment read each file three times (hash, dimensions, thumbnail decode).
+   The new `scan::enrich_file_with_image` reads the file one time, hashes the
+   bytes in memory, parses EXIF from the same bytes, and decodes one time.
+   `Generator::cache_from_image` makes the thumbnail from those pixels. The old
+   `enrich_file`, `taken_at`, `dimensions`, and `hash_file` stay for tests and a
+   fallback; they have `#[allow(dead_code)]`.
+
+2. **Fewer enrichment workers.** `ENRICH_WORKERS` is 2 (was 3). Parallel large
+   decodes on a slow disk are net slower.
+
+3. **Pause background work while browsing.** `AppState` has
+   `enrich_pause_until: Arc<AtomicU64>` (a wall-clock millis deadline). The
+   enrichment workers and the scan thread sleep while `now < enrich_pause_until`.
+   Opening a folder sets a 3-second pause (`AppState::pause_enrichment`, called
+   from `enrich::prioritize_folder`). Each thumbnail that lands in the grid
+   re-arms a 2-second pause (in the grid's done handler, `src/ui/grid.rs`, using
+   the constant `BROWSE_PAUSE_MS`). So the scan and enrichment stay paused while
+   the visible folder still makes thumbnails. `Scanner::scan_folder` takes the
+   pause flag as a parameter.
+
+4. **No grid flash and no focus theft (`src/ui/grid.rs`).** A background reload
+   used `rebuild()`, which does `store.remove_all()` and re-appends. That reset
+   the selection and focus, so a click was almost impossible during a scan. The
+   new `set_photos_preserving` diffs the incoming photos against the current
+   store by file path (a stable id that does not change when a photo gains its
+   hash). When the set matches in order, it updates the existing objects in
+   place and keeps the selection. It falls back to a full `rebuild` only when
+   the set changes. `reload_from_source` uses `set_photos_preserving`.
+   `rebuild` also carries over each cell's texture by file path so a cell never
+   blanks.
+
+5. **Histogram off the main thread (`src/ui/editor.rs`).** `EditPanel::load`
+   computed the histogram on the main thread. That decodes the full image and
+   blocked the UI. The new `load_histogram_async` computes the histogram on a
+   background thread and posts the result back, with a generation guard. The new
+   `histogram_from_source` and `HistSource` do the work without the non-`Send`
+   `AppState`.
+
+6. **The hard freeze: infinite recursion (`src/ui/viewer.rs`,
+   `src/ui/editor.rs`).** A `gdb` backtrace of the frozen application showed
+   about 700 nested frames of `Viewer::show → Properties::show →
+   EditPanel::load → Viewer::set_show_original → Viewer::show`. The cause:
+   `EditPanel::load` called `viewer.set_show_original`, and `set_show_original`
+   always re-rendered with `viewer.show`, which re-shows the properties panel,
+   which re-loads the editor. Two guards fix it:
+   - `EditPanel::load` returns early when the photo is the same (same `id` and
+     `path`).
+   - `Viewer::set_show_original` re-renders only when the flag changes.
+
+### 0000.4 Not done in this session
+
+- The user asked to document the exact Immich API-key permissions in README.md.
+  This is not done yet. The needed permissions are: `album.read`, `asset.read`,
+  `asset.view`, `timeline.read` for browse and view; and `asset.upload`,
+  `album.create`, `album.update` for upload and two-way folder sync. The
+  application never deletes on the server. Add this to README.md.
+- ROADMAP.md has a new item: "Move to llama.cpp instead of Ollama". This is a
+  plan only. No code exists for it.
+
+### 0000.5 Verification
+
+- `cargo build` — builds. The remaining warnings are deprecation warnings from
+  the glib channel API and the GTK dialogs. Section 8 describes this future
+  migration. Do not treat the deprecation warnings as new work.
+- `cargo test` — 43 tests pass.
+- To debug a future freeze: run the frozen process through `gdb -p <pid> -batch
+  -ex "thread apply all bt"` and read the **main** thread (Thread 1). The worker
+  threads are often only idle on a channel receive and are not the cause.
+
+## 000. Non-destructive editing and color levels
 
 This section describes the last session. The session added non-destructive
 image editing and color levels. The work is complete. The application builds.

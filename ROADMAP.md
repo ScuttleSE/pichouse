@@ -335,7 +335,40 @@ folder view, Immich albums/timeline, or the current selection.
 
 ### Open questions / to decide
 - Transitions between images (none/crossfade) and whether that is configurable.
-- Optional Ken Burns / pan-zoom effect (nice-to-have).
+ - Optional Ken Burns / pan-zoom effect (nice-to-have).
+
+## Move to llama.cpp instead of Ollama
+
+Replace the Ollama backend for local AI tagging with a direct llama.cpp
+integration. The application uses Ollama today (see `src/ai/`, an HTTP client to
+a local Ollama server). llama.cpp is the engine under Ollama. A direct
+integration removes the Ollama layer.
+
+### Reasons
+- Fewer dependencies. The user does not install and run a separate Ollama server.
+- More control. The application selects the model file, the context size, the
+  GPU offload, and the thread count directly.
+- Better packaging. The application can ship or point to one model file.
+
+### Options to decide
+- **Bundled server:** the application starts a `llama-server` process and talks
+  to it over HTTP (the same request pattern as the current Ollama client). This
+  is the smallest change to `src/ai/`.
+- **In-process bindings:** link llama.cpp through a Rust crate (for example
+  `llama-cpp-2` or `llama_cpp`). This removes the HTTP layer but adds a native
+  build dependency and complicates the Debian 13 / CI build.
+
+### Open questions
+- Which vision models work with llama.cpp for tagging (the model plus its
+  `mmproj` projector file), and where the user gets them.
+- How the application finds or downloads the model file (no automatic download
+  today).
+- GPU support on the target machines, and the CPU fallback.
+- The build and packaging effect on Debian 13 and the Gitea runner if the
+  in-process option is chosen (a C++ toolchain and CUDA/Vulkan libraries).
+- Migration of the existing AI settings (`src/ui/settings_ai.rs`, the `ai.*`
+  keys in `library.db`) to the new backend's settings.
+- Keep all processing local, as the current design requires.
 
 ## Facial detection & recognition
 
