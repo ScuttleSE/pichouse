@@ -996,3 +996,55 @@ pub fn show_album(state: &Rc<AppState>, server_id: i64, album_id: &str, name: &s
         glib::ControlFlow::Break
     });
 }
+
+/// Open an Immich server's whole-library timeline in the grid. Fetches every
+/// asset (newest first) in the background, maps them to `Photo` values with
+/// `immich://` paths, and shows them as an ad-hoc grid list.
+pub fn show_timeline(state: &Rc<AppState>, server_id: i64, name: &str) {
+    let Ok(Some(server)) = state.lib.immich_server(server_id) else {
+        return;
+    };
+    *state.current_folder.borrow_mut() = 0;
+    state.show_grid();
+    state
+        .status()
+        .set_message(&format!("{name} — loading from Immich…"));
+
+    let name = name.to_string();
+    let page_size = state
+        .lib
+        .get_setting(
+            super::prefs::KEY_IMMICH_PAGE_SIZE,
+            &super::prefs::DEFAULT_IMMICH_PAGE_SIZE.to_string(),
+        )
+        .ok()
+        .and_then(|s| s.parse::<i32>().ok())
+        .unwrap_or(super::prefs::DEFAULT_IMMICH_PAGE_SIZE);
+    let (tx, rx) = glib::MainContext::channel::<Vec<ImmichAsset>>(glib::Priority::DEFAULT);
+    std::thread::spawn(move || {
+        let client = crate::immich::Client::new(&server.base_url, &server.api_key);
+        let assets = client.timeline_assets(page_size).unwrap_or_default();
+        let _ = tx.send(assets);
+    });
+
+    let state = state.clone();
+    rx.attach(None, move |assets| {
+        let photos: Vec<Photo> = assets
+            .iter()
+            .map(|a| Photo {
+                path: super::grid::immich_path(server_id, &a.id),
+                filename: a.filename.clone(),
+                width: a.width,
+                height: a.height,
+                taken_at: a.taken_at,
+                ..Default::default()
+            })
+            .collect();
+        let count = photos.len();
+        state.grid().show_photos(&name, &photos);
+        state
+            .status()
+            .set_message(&format!("{name} — {count} photos (Immich)"));
+        glib::ControlFlow::Break
+    });
+}

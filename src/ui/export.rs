@@ -256,7 +256,7 @@ fn write_image(
 }
 
 /// Rotate a full-resolution image clockwise by 0/90/180/270 degrees.
-fn rotate_full(img: image::RgbaImage, degrees: i32) -> image::RgbaImage {
+pub(crate) fn rotate_full(img: image::RgbaImage, degrees: i32) -> image::RgbaImage {
     let d = ((degrees % 360) + 360) % 360;
     match d {
         90 => image::imageops::rotate90(&img),

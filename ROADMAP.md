@@ -76,6 +76,9 @@ implemented; linked folders with auto-upload (Phase 4a) are.
 ### Phase 1 — Browse (done)
 - When connected to an Immich server, its albums appear as a **separate
   section** in the Libraries tab (distinct from local library folders/albums).
+- Each server node also has a **Timeline** child that shows every asset on the
+  server (newest first), fetched with `POST /search/metadata` and no album
+  filter (`Client::timeline_assets`, `immich::show_timeline`).
 - Browse Immich albums from within pichouse.
 - View the contents of an Immich album (photos/assets) inside the app.
 - Right-click the Immich header or a server row → "Refresh Albums" re-fetches
@@ -178,7 +181,8 @@ export lives in `src/ui/export.rs`.
 ### Edits (implemented)
 - Flip horizontal / vertical.
 - Straighten (arbitrary small angle, with auto-crop of the empty corners).
-- Crop (numeric per-mille rectangle; an interactive drag overlay is a follow-up).
+- Crop (numeric per-mille rectangle, plus an interactive drag overlay — see
+  "Interactive crop" below).
 - Brightness / contrast.
 - Per-channel color levels (see "Color levels" below).
 - 90-degree rotation stays on `photos.orientation` (pre-existing) and is applied
@@ -222,9 +226,17 @@ images scanned from negatives that have skewed color casts.
   crop/rotate/flip/brightness (`Library::apply_levels_to_folder`).
 
 ### Open questions / to decide
-- Interactive crop overlay (drag rectangle) instead of numeric per-mille.
 - Whether edits should sync back to Immich (currently local-only; export bakes
   a new file the user can re-upload).
+
+### Interactive crop (implemented)
+The editor has a "Crop by dragging on the image" toggle. When on, the viewer
+shows the image uncropped and overlays a draggable rectangle (a `DrawingArea`
+stacked on the viewer `Picture`). Dragging selects the crop; releasing writes
+the per-mille rectangle back into the numeric spin buttons and commits. The
+overlay maps pointer coordinates to image coordinates accounting for
+`ContentFit::Contain` letterboxing. See `src/ui/viewer.rs` (`set_crop_mode`,
+`image_rect`, `update_crop_from_drag`) and `src/ui/editor.rs` (`build_crop`).
 
 ## RAW + JPEG pairing
 
@@ -302,23 +314,28 @@ Virtual albums are a distinct concept that groups individual *photos*.
 
 ## Slideshows
 
-Play an album (or any photo set) as a full-screen slideshow.
+**Status: implemented.** Play the current grid view (or the current
+multi-selection) as a full-screen slideshow. A "Play slideshow" button in the
+toolbar starts it; right-click the button for options (per-image duration,
+shuffle, loop), which persist in `library.db` settings
+(`slideshow.secs`/`shuffle`/`loop`). The slideshow runs in the viewer
+(`src/ui/viewer.rs`): it enters fullscreen, hides the control bar, and advances
+on a `glib::timeout_add_seconds_local` timer. Keys: Space pauses/resumes,
+Escape (or the Close binding) stops and leaves fullscreen; the arrow keys still
+navigate. Non-destructive edits show in the slideshow (the viewer renders the
+edited view). Any set the grid can show plays: normal albums, virtual albums,
+folder view, Immich albums/timeline, or the current selection.
 
-### Behaviour
-- Slideshow of an album's images.
-- Adjustable per-image duration (how long each image is shown).
-- Shuffle mode (random order).
-- Repeat/loop mode.
-- Standard playback controls: play/pause, next/previous, exit.
+### Behaviour (implemented)
+- Slideshow of an album's images (or any current photo set).
+- Adjustable per-image duration.
+- Shuffle mode (random order via an in-process Fisher–Yates, no extra dep).
+- Repeat/loop mode; with loop off the show stops on the last image.
+- Playback controls: pause/resume (Space), next/previous (arrows), exit (Esc).
 
 ### Open questions / to decide
 - Transitions between images (none/crossfade) and whether that is configurable.
-- Whether edits (non-destructive) are shown in the slideshow (expected: yes).
-- Which sets can be played (normal albums, virtual albums, folder view,
-  current selection).
-- Fit/scale handling for mixed aspect ratios and portrait/landscape.
 - Optional Ken Burns / pan-zoom effect (nice-to-have).
-- Behaviour on the last image when repeat is off (stop vs. exit).
 
 ## Facial detection & recognition
 

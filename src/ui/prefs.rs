@@ -42,6 +42,13 @@ pub const KEY_EXPORT_JPEG_QUALITY: &str = "export.jpeg_quality";
 pub const DEFAULT_EXPORT_FORMAT: &str = "jpeg";
 pub const DEFAULT_EXPORT_JPEG_QUALITY: i32 = 90;
 
+/// Slideshow setting keys stored in `library.db`.
+pub const KEY_SLIDESHOW_SECS: &str = "slideshow.secs";
+pub const KEY_SLIDESHOW_SHUFFLE: &str = "slideshow.shuffle";
+pub const KEY_SLIDESHOW_LOOP: &str = "slideshow.loop";
+/// Default per-image slideshow duration in seconds.
+pub const DEFAULT_SLIDESHOW_SECS: i32 = 4;
+
 /// The four slider preset sizes in pixels.
 pub const DEFAULT_THUMB_SIZES: [i32; 4] = [96, 160, 240, 320];
 

@@ -165,6 +165,22 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
         group.add_action(&act);
     }
 
+    // Copy the selected photo (baked, full resolution) to the clipboard.
+    {
+        let act = gio::SimpleAction::new("copy", None);
+        let state = state.clone();
+        let grid = grid.clone();
+        let pop = pop.clone();
+        act.connect_activate(move |_, _| {
+            dismiss(&pop);
+            let Some(photo) = grid.selected_photos().into_iter().next() else {
+                return;
+            };
+            copy_photo_to_clipboard(&state, &grid, photo);
+        });
+        group.add_action(&act);
+    }
+
     grid.grid_view().insert_action_group("grid", Some(&group));
 
     // On right-click, build the menu from the current virtual albums and pop it
@@ -175,10 +191,10 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
         let Some(grid) = grid_weak.upgrade() else {
             return;
         };
-        // Only local library photos can join a virtual album. Immich photos
-        // (id 0) are not rows in `photos`, so skip the menu when the selection
-        // has no local photos.
-        if local_photo_ids(&grid).is_empty() {
+        // The menu offers "Copy image" for any selected photo (local or
+        // Immich), plus virtual-album and edit/export actions for local photos.
+        // Show it whenever at least one photo is selected.
+        if grid.selected_photos().is_empty() {
             return;
         }
         let menu = build_menu(&state, &grid);
@@ -199,14 +215,28 @@ fn build_menu(state: &Rc<AppState>, grid: &Rc<Grid>) -> gio::Menu {
     let menu = gio::Menu::new();
     let albums = state.lib.virtual_albums().unwrap_or_default();
 
-    // Edit / export apply to the selection regardless of virtual albums.
+    let selected_all = grid.selected_photos();
+    let selected_local = selected_all.iter().filter(|p| p.id != 0).count();
+
+    // Tools apply to the selection. Copy works for any single photo (local or
+    // Immich); Edit/Export need a local photo.
     let tools = gio::Menu::new();
-    let selected = grid.selected_photos().iter().filter(|p| p.id != 0).count();
-    if selected == 1 {
+    if selected_all.len() == 1 {
+        tools.append(Some("Copy image"), Some("grid.copy"));
+    }
+    if selected_local == 1 {
         tools.append(Some("Edit…"), Some("grid.edit"));
     }
-    tools.append(Some("Export edited copy…"), Some("grid.export"));
+    if selected_local >= 1 {
+        tools.append(Some("Export edited copy…"), Some("grid.export"));
+    }
     menu.append_section(None, &tools);
+
+    // The remaining sections are virtual-album operations, which apply only to
+    // local photos. Skip them for an Immich-only selection.
+    if selected_local == 0 {
+        return menu;
+    }
 
     let album_menu = gio::Menu::new();
     if albums.is_empty() {
@@ -277,4 +307,101 @@ fn dismiss(pop: &Rc<RefCell<Option<PopoverMenu>>>) {
             p.unparent();
         }
     }
+}
+
+/// The bytes needed to bake a photo off the main thread. Extracted on the main
+/// thread (which owns the non-`Send` `AppState`), then moved to a worker.
+enum CopySource {
+    /// A local file on disk at this path.
+    Local(String),
+    /// An Immich asset: server base URL, API key, and asset id.
+    Immich(String, String, String),
+}
+
+/// Bake the given photo (edits + orientation) at full resolution and put the
+/// result on the system clipboard as an image. The load/decode/bake runs on a
+/// background thread; the clipboard is set on the GTK main thread.
+fn copy_photo_to_clipboard(state: &Rc<AppState>, grid: &Rc<Grid>, photo: crate::model::Photo) {
+    // Resolve the source and the edit on the main thread.
+    let source = if let Some(rest) = photo.path.strip_prefix("immich://") {
+        let Some((sid, asset)) = rest.split_once('/') else {
+            return;
+        };
+        let Ok(server_id) = sid.parse::<i64>() else {
+            return;
+        };
+        let Ok(Some(server)) = state.lib.immich_server(server_id) else {
+            return;
+        };
+        CopySource::Immich(server.base_url, server.api_key, asset.to_string())
+    } else {
+        CopySource::Local(photo.path.clone())
+    };
+    // Local photos carry a stored edit; Immich photos (id 0) have none.
+    let edit = if photo.id != 0 {
+        state.lib.photo_edit(photo.id).unwrap_or_default()
+    } else {
+        crate::model::PhotoEdit::default()
+    };
+    let orientation = photo.orientation;
+
+    state.status().set_message("Copying image to clipboard…");
+    let clipboard = grid.grid_view().clipboard();
+
+    let (tx, rx) =
+        glib::MainContext::channel::<Option<(Vec<u8>, i32, i32)>>(glib::Priority::DEFAULT);
+    std::thread::spawn(move || {
+        let baked = bake_source(&source, orientation, &edit);
+        let payload = baked.map(|img| {
+            let (w, h) = (img.width() as i32, img.height() as i32);
+            (img.into_raw(), w, h)
+        });
+        let _ = tx.send(payload);
+    });
+
+    let state = state.clone();
+    rx.attach(None, move |payload| {
+        match payload {
+            Some((raw, w, h)) => {
+                let bytes = glib::Bytes::from_owned(raw);
+                let texture = gdk::MemoryTexture::new(
+                    w,
+                    h,
+                    gdk::MemoryFormat::R8g8b8a8,
+                    &bytes,
+                    (w * 4) as usize,
+                );
+                clipboard.set_texture(&texture);
+                state.status().set_message("Image copied to clipboard.");
+            }
+            None => state
+                .status()
+                .set_message("Could not copy the image to the clipboard."),
+        }
+        glib::ControlFlow::Break
+    });
+}
+
+/// Load a copy source, apply orientation and edits, and return baked RGBA.
+fn bake_source(
+    source: &CopySource,
+    orientation: i32,
+    edit: &crate::model::PhotoEdit,
+) -> Option<image::RgbaImage> {
+    let img = match source {
+        CopySource::Local(path) => image::ImageReader::open(path)
+            .ok()?
+            .with_guessed_format()
+            .ok()?
+            .decode()
+            .ok()?
+            .to_rgba8(),
+        CopySource::Immich(base_url, api_key, asset_id) => {
+            let client = crate::immich::Client::new(base_url, api_key);
+            let bytes = client.asset_original(asset_id).ok()?;
+            image::load_from_memory(&bytes).ok()?.to_rgba8()
+        }
+    };
+    let img = super::export::rotate_full(img, orientation);
+    Some(crate::edit::apply_edits(img, edit))
 }

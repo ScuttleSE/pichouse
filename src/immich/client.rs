@@ -141,6 +141,22 @@ impl Client {
     /// method uses `POST /search/metadata` with an `albumIds` filter instead.
     /// It reads pages of `page_size` until the server reports no next page.
     pub fn album_assets(&self, album_id: &str, page_size: i32) -> Result<Vec<ImmichAsset>> {
+        self.search_assets(Some(album_id), page_size)
+    }
+
+    /// List every asset on the server, newest first, as a timeline. Uses
+    /// `POST /search/metadata` with no `albumIds` filter and pages through the
+    /// whole library, then sorts by capture time descending.
+    pub fn timeline_assets(&self, page_size: i32) -> Result<Vec<ImmichAsset>> {
+        let mut out = self.search_assets(None, page_size)?;
+        // Newest first. Assets with no EXIF date (taken_at == 0) sort last.
+        out.sort_by(|a, b| b.taken_at.cmp(&a.taken_at));
+        Ok(out)
+    }
+
+    /// Paged `POST /search/metadata`. With `album_id`, filters to that album;
+    /// without it, returns every asset in the library.
+    fn search_assets(&self, album_id: Option<&str>, page_size: i32) -> Result<Vec<ImmichAsset>> {
         #[derive(Deserialize)]
         struct Exif {
             #[serde(rename = "exifImageWidth", default)]
@@ -174,16 +190,17 @@ impl Client {
         let mut out: Vec<ImmichAsset> = Vec::new();
         let mut page = 1;
         loop {
-            let body = serde_json::json!({
-                "albumIds": [album_id],
-                "size": size,
-                "page": page,
-            });
+            let mut body = serde_json::Map::new();
+            if let Some(id) = album_id {
+                body.insert("albumIds".into(), serde_json::json!([id]));
+            }
+            body.insert("size".into(), serde_json::json!(size));
+            body.insert("page".into(), serde_json::json!(page));
             let resp = self
                 .http
                 .post(format!("{}/search/metadata", self.api_base))
                 .header("x-api-key", &self.api_key)
-                .json(&body)
+                .json(&serde_json::Value::Object(body))
                 .send()?;
             if !resp.status().is_success() {
                 return Err(Error::Status(resp.status().as_u16()));

@@ -34,6 +34,8 @@ const IMMICH_HEADER_ID: &str = "immichheader";
 const IMMICH_SERVER_PREFIX: &str = "immichserver:";
 /// A single Immich album node: `immichalbum:<server_id>:<album_uuid>`.
 const IMMICH_ALBUM_PREFIX: &str = "immichalbum:";
+/// The whole-library timeline node for a server: `immichtimeline:<server_id>`.
+const IMMICH_TIMELINE_PREFIX: &str = "immichtimeline:";
 /// `library.db` settings key for the persisted set of expanded tree node ids.
 const EXPANDED_SETTING_KEY: &str = "sidebar_expanded";
 
@@ -228,12 +230,15 @@ impl Sidebar {
                 .map(|(sid, _)| format!("{IMMICH_SERVER_PREFIX}{sid}"))
                 .collect()
         } else if let Some(sid) = immich_server_id_of(id) {
-            data.immich_albums
-                .get(&sid)
-                .into_iter()
-                .flatten()
-                .map(|(uuid, _, _)| format!("{IMMICH_ALBUM_PREFIX}{sid}:{uuid}"))
-                .collect()
+            let mut out = vec![format!("{IMMICH_TIMELINE_PREFIX}{sid}")];
+            out.extend(
+                data.immich_albums
+                    .get(&sid)
+                    .into_iter()
+                    .flatten()
+                    .map(|(uuid, _, _)| format!("{IMMICH_ALBUM_PREFIX}{sid}:{uuid}")),
+            );
+            out
         } else if let Some(vid) = valbum_id_of(id) {
             data.valbum_children
                 .get(&vid)
@@ -336,6 +341,8 @@ impl Sidebar {
             ("Virtual Albums".to_string(), "starred-symbolic")
         } else if id == IMMICH_HEADER_ID {
             ("Immich".to_string(), "network-server-symbolic")
+        } else if immich_timeline_id_of(id).is_some() {
+            ("Timeline".to_string(), "x-office-calendar-symbolic")
         } else if let Some(sid) = immich_server_id_of(id) {
             let name = data
                 .immich_servers
@@ -419,6 +426,12 @@ impl Sidebar {
                     .unwrap_or_default();
                 if let Some(state) = self.state() {
                     state.show_virtual_album(vid, &name);
+                    return;
+                }
+            }
+            if let Some(sid) = immich_timeline_id_of(&id) {
+                if let Some(state) = self.state() {
+                    super::immich::show_timeline(&state, sid, "Timeline");
                     return;
                 }
             }
@@ -1508,6 +1521,12 @@ fn valbum_id_of(id: &str) -> Option<i64> {
 
 fn immich_server_id_of(id: &str) -> Option<i64> {
     id.strip_prefix(IMMICH_SERVER_PREFIX)
+        .and_then(|n| n.parse().ok())
+}
+
+/// Parse an `immichtimeline:<server_id>` node id.
+fn immich_timeline_id_of(id: &str) -> Option<i64> {
+    id.strip_prefix(IMMICH_TIMELINE_PREFIX)
         .and_then(|n| n.parse().ok())
 }
 

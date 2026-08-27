@@ -475,8 +475,7 @@ impl Grid {
 
     /// The photos currently selected in the grid (multi-selection), in view
     /// order. Empty when nothing is selected.
-    pub fn selected_photos(&self) -> Vec<Photo> {
-        let photos = self.filtered_photos();
+    pub fn selected_photos(&self) -> Vec<Photo> {        let photos = self.filtered_photos();
         let bitset = self.selection.selection();
         let mut out = Vec::new();
         for i in 0..bitset.size() {
@@ -486,6 +485,12 @@ impl Grid {
             }
         }
         out
+    }
+
+    /// All photos currently visible in the grid (after any search filter), in
+    /// view order. Used to play a slideshow of the whole current view.
+    pub fn visible_photos(&self) -> Vec<Photo> {
+        self.filtered_photos()
     }
 
     /// Re-query the current source (folder or raw dir) from the database/disk

@@ -65,6 +65,8 @@ pub struct EditPanel {
     histogram: RefCell<[Vec<u32>; 3]>,
     channels: RefCell<Vec<ChannelWidgets>>,
     controls: RefCell<Option<Controls>>,
+    /// The interactive "crop by dragging" toggle, so `load` can reset it.
+    crop_btn: RefCell<Option<CheckButton>>,
 }
 
 impl EditPanel {
@@ -102,6 +104,7 @@ impl EditPanel {
             histogram: RefCell::new([vec![0; 256], vec![0; 256], vec![0; 256]]),
             channels: RefCell::new(Vec::new()),
             controls: RefCell::new(None),
+            crop_btn: RefCell::new(None),
         });
 
         panel.build_body();
@@ -128,6 +131,12 @@ impl EditPanel {
     /// control. Pass `None` to clear the panel (show the empty hint).
     pub fn load(self: &Rc<Self>, photo: Option<Photo>) {
         let Some(state) = self.state() else { return };
+        // Leaving crop mode on across photos would be confusing; reset it.
+        if let Some(b) = self.crop_btn.borrow().as_ref() {
+            if b.is_active() {
+                b.set_active(false);
+            }
+        }
         match photo {
             None => {
                 *self.photo.borrow_mut() = None;
@@ -285,7 +294,46 @@ impl EditPanel {
                 this.commit();
             });
         }
-        self.stash_crop(cx, cy, cw, ch);
+        self.stash_crop(cx.clone(), cy.clone(), cw.clone(), ch.clone());
+
+        // Interactive drag-to-crop toggle. When on, the viewer shows the image
+        // uncropped with a draggable rectangle overlay; finishing a drag writes
+        // the crop back into the spin buttons (and commits).
+        let crop_btn = CheckButton::with_label("Crop by dragging on the image");
+        self.body.append(&crop_btn);
+        *self.crop_btn.borrow_mut() = Some(crop_btn.clone());
+        let this = self.clone();
+        crop_btn.connect_toggled(move |b| {
+            let Some(state) = this.state() else { return };
+            let on = b.is_active();
+            if on {
+                // Register the callback that receives the new per-mille crop.
+                let this2 = this.clone();
+                state.viewer().set_crop_callback(move |(x, y, w, h)| {
+                    {
+                        let mut e = this2.edit.borrow_mut();
+                        e.crop_x = x;
+                        e.crop_y = y;
+                        e.crop_w = w;
+                        e.crop_h = h;
+                    }
+                    // Reflect in the spin buttons without retriggering commit.
+                    this2.loading.set(true);
+                    if let Some(c) = this2.controls.borrow().as_ref() {
+                        c.crop_x.set_value(x as f64);
+                        c.crop_y.set_value(y as f64);
+                        c.crop_w.set_value(w as f64);
+                        c.crop_h.set_value(h as f64);
+                    }
+                    this2.loading.set(false);
+                    this2.commit();
+                });
+            }
+            let e = this.edit.borrow();
+            let initial = (e.crop_x, e.crop_y, e.crop_w, e.crop_h);
+            drop(e);
+            state.viewer().set_crop_mode(on, initial);
+        });
     }
 
     fn build_levels(self: &Rc<Self>) {

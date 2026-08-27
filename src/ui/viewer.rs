@@ -6,17 +6,28 @@ use std::rc::Rc;
 use gtk4::gdk_pixbuf::{Pixbuf, PixbufRotation};
 use gtk4::glib;
 use gtk4::prelude::*;
-use gtk4::{Box as GtkBox, Button, Label, Orientation, Picture, Separator};
+use gtk4::{
+    Box as GtkBox, Button, DrawingArea, GestureDrag, Label, Orientation, Overlay, Picture,
+    Separator,
+};
 
 use crate::model::Photo;
 
 use super::shortcuts::Action;
 use super::state::{show_error, AppState};
 
+/// A crop rectangle in per-mille of the image (x, y, w, h). `w == 0 || h == 0`
+/// means "no crop".
+type CropPermille = (i32, i32, i32, i32);
+
 /// The full-image viewer.
 pub struct Viewer {
     root: GtkBox,
     picture: Picture,
+    /// The top control bar, hidden while a slideshow runs fullscreen.
+    bar: GtkBox,
+    /// Transparent drawing surface stacked on the picture for the crop overlay.
+    crop_area: DrawingArea,
     header: Label,
     close_btn: Button,
     prev_btn: Button,
@@ -32,6 +43,29 @@ pub struct Viewer {
     /// Bumped on every `show()` so a late async image load for a previous photo
     /// is discarded instead of flashing on screen.
     generation: std::cell::Cell<u64>,
+    /// True while the interactive crop overlay is active.
+    crop_mode: std::cell::Cell<bool>,
+    /// The crop rectangle being edited, in per-mille.
+    crop_rect: RefCell<CropPermille>,
+    /// Called with a new per-mille crop when the user finishes a drag.
+    crop_cb: RefCell<Option<Box<dyn Fn(CropPermille)>>>,
+    /// Drag start point in widget coordinates.
+    drag_start: std::cell::Cell<(f64, f64)>,
+
+    // --- slideshow ---
+    /// The running slideshow timer, if any.
+    slideshow_source: RefCell<Option<glib::SourceId>>,
+    /// The order to play photos in (indices into `photos`). Identity unless
+    /// shuffle is on.
+    slideshow_order: RefCell<Vec<usize>>,
+    /// Position within `slideshow_order`.
+    slideshow_pos: std::cell::Cell<usize>,
+    /// Per-image duration in seconds.
+    slideshow_secs: std::cell::Cell<u32>,
+    /// Loop back to the start after the last image.
+    slideshow_loop: std::cell::Cell<bool>,
+    /// True while paused.
+    slideshow_paused: std::cell::Cell<bool>,
 }
 
 impl Viewer {
@@ -66,14 +100,26 @@ impl Viewer {
         picture.set_vexpand(true);
         picture.set_hexpand(true);
 
+        // A transparent drawing area is stacked over the picture for the
+        // interactive crop overlay. It stays hidden and pass-through until crop
+        // mode is turned on.
+        let crop_area = DrawingArea::new();
+        crop_area.set_visible(false);
+        crop_area.set_can_target(true);
+        let overlay = Overlay::new();
+        overlay.set_child(Some(&picture));
+        overlay.add_overlay(&crop_area);
+
         let root = GtkBox::new(Orientation::Vertical, 0);
         root.append(&bar);
         root.append(&Separator::new(Orientation::Horizontal));
-        root.append(&picture);
+        root.append(&overlay);
 
-        Rc::new(Viewer {
+        let viewer = Rc::new(Viewer {
             root,
             picture,
+            bar,
+            crop_area,
             header,
             close_btn,
             prev_btn,
@@ -85,7 +131,19 @@ impl Viewer {
             state: RefCell::new(None),
             show_original: std::cell::Cell::new(false),
             generation: std::cell::Cell::new(0),
-        })
+            crop_mode: std::cell::Cell::new(false),
+            crop_rect: RefCell::new((0, 0, 0, 0)),
+            crop_cb: RefCell::new(None),
+            drag_start: std::cell::Cell::new((0.0, 0.0)),
+            slideshow_source: RefCell::new(None),
+            slideshow_order: RefCell::new(Vec::new()),
+            slideshow_pos: std::cell::Cell::new(0),
+            slideshow_secs: std::cell::Cell::new(4),
+            slideshow_loop: std::cell::Cell::new(true),
+            slideshow_paused: std::cell::Cell::new(false),
+        });
+        viewer.setup_crop_overlay();
+        viewer
     }
 
     /// Give the viewer access to shared state and wire the buttons.
@@ -134,6 +192,18 @@ impl Viewer {
 
     /// Handle a key press while the viewer is active. Returns true if consumed.
     pub fn handle_key(self: &Rc<Self>, keyval: u32) -> bool {
+        // Slideshow controls take priority while a show runs.
+        if self.slideshow_active() {
+            // Space (0x20) toggles pause; Escape stops the slideshow.
+            if keyval == 0x20 {
+                self.toggle_slideshow_pause();
+                return true;
+            }
+            if keyval == glib::translate::IntoGlib::into_glib(gtk4::gdk::Key::Escape) {
+                self.stop_slideshow();
+                return true;
+            }
+        }
         let Some(state) = self.state.borrow().clone() else {
             return false;
         };
@@ -152,6 +222,7 @@ impl Viewer {
                 true
             }
             Some(Action::Close) => {
+                self.stop_slideshow();
                 state.close_viewer();
                 true
             }
@@ -216,6 +287,269 @@ impl Viewer {
     /// Re-render the current photo (for example after edits change).
     pub fn reload_current(self: &Rc<Self>) {
         self.show();
+    }
+
+    /// Set up the crop overlay's draw function and drag gesture. Called once at
+    /// construction.
+    fn setup_crop_overlay(self: &Rc<Self>) {
+        // Draw the dimmed outside region and the crop rectangle.
+        let this = self.clone();
+        self.crop_area.set_draw_func(move |_, cr, w, h| {
+            if !this.crop_mode.get() {
+                return;
+            }
+            let Some((ix, iy, iw, ih)) = this.image_rect(w, h) else {
+                return;
+            };
+            let (px, py, pw, ph) = *this.crop_rect.borrow();
+            let (rx, ry, rw, rh) = if pw > 0 && ph > 0 {
+                (
+                    ix + iw * px as f64 / 1000.0,
+                    iy + ih * py as f64 / 1000.0,
+                    iw * pw as f64 / 1000.0,
+                    ih * ph as f64 / 1000.0,
+                )
+            } else {
+                (ix, iy, iw, ih)
+            };
+            // Dim the whole image, then clear the crop rectangle.
+            cr.set_source_rgba(0.0, 0.0, 0.0, 0.5);
+            let _ = cr.rectangle(ix, iy, iw, ih);
+            let _ = cr.fill();
+            cr.set_operator(gtk4::cairo::Operator::Clear);
+            let _ = cr.rectangle(rx, ry, rw, rh);
+            let _ = cr.fill();
+            cr.set_operator(gtk4::cairo::Operator::Over);
+            // Outline the crop rectangle.
+            cr.set_source_rgba(1.0, 1.0, 1.0, 0.9);
+            cr.set_line_width(1.5);
+            let _ = cr.rectangle(rx, ry, rw, rh);
+            let _ = cr.stroke();
+        });
+
+        let drag = GestureDrag::new();
+        let this = self.clone();
+        drag.connect_drag_begin(move |_, x, y| {
+            if this.crop_mode.get() {
+                this.drag_start.set((x, y));
+            }
+        });
+        let this = self.clone();
+        drag.connect_drag_update(move |_, ox, oy| {
+            if !this.crop_mode.get() {
+                return;
+            }
+            let (sx, sy) = this.drag_start.get();
+            this.update_crop_from_drag(sx, sy, sx + ox, sy + oy);
+        });
+        let this = self.clone();
+        drag.connect_drag_end(move |_, ox, oy| {
+            if !this.crop_mode.get() {
+                return;
+            }
+            let (sx, sy) = this.drag_start.get();
+            this.update_crop_from_drag(sx, sy, sx + ox, sy + oy);
+            let rect = *this.crop_rect.borrow();
+            if let Some(cb) = this.crop_cb.borrow().as_ref() {
+                cb(rect);
+            }
+        });
+        self.crop_area.add_controller(drag);
+    }
+
+    /// The displayed image rectangle inside the crop_area, honouring
+    /// `ContentFit::Contain` letterboxing. Returns `(x, y, w, h)` in widget
+    /// pixels, or `None` when no image is shown.
+    fn image_rect(&self, area_w: i32, area_h: i32) -> Option<(f64, f64, f64, f64)> {
+        let paintable = self.picture.paintable()?;
+        let iw = paintable.intrinsic_width() as f64;
+        let ih = paintable.intrinsic_height() as f64;
+        if iw <= 0.0 || ih <= 0.0 {
+            return None;
+        }
+        let (aw, ah) = (area_w as f64, area_h as f64);
+        let scale = (aw / iw).min(ah / ih);
+        let dw = iw * scale;
+        let dh = ih * scale;
+        Some(((aw - dw) / 2.0, (ah - dh) / 2.0, dw, dh))
+    }
+
+    /// Convert a drag from `(x0,y0)` to `(x1,y1)` (widget pixels) into a
+    /// per-mille crop rectangle and redraw.
+    fn update_crop_from_drag(&self, x0: f64, y0: f64, x1: f64, y1: f64) {
+        let w = self.crop_area.width();
+        let h = self.crop_area.height();
+        let Some((ix, iy, iw, ih)) = self.image_rect(w, h) else {
+            return;
+        };
+        let clamp = |v: f64, lo: f64, hi: f64| v.max(lo).min(hi);
+        let ax = clamp(x0.min(x1), ix, ix + iw);
+        let ay = clamp(y0.min(y1), iy, iy + ih);
+        let bx = clamp(x0.max(x1), ix, ix + iw);
+        let by = clamp(y0.max(y1), iy, iy + ih);
+        let to_mille = |v: f64, origin: f64, span: f64| {
+            (((v - origin) / span) * 1000.0).round().clamp(0.0, 1000.0) as i32
+        };
+        let px = to_mille(ax, ix, iw);
+        let py = to_mille(ay, iy, ih);
+        let pw = to_mille(bx, ix, iw) - px;
+        let ph = to_mille(by, iy, ih) - py;
+        // Ignore a too-small drag (treat as a click, no change).
+        if pw < 10 || ph < 10 {
+            return;
+        }
+        *self.crop_rect.borrow_mut() = (px, py, pw, ph);
+        self.crop_area.queue_draw();
+    }
+
+    /// Turn the interactive crop overlay on or off. When turning on, seed it
+    /// with the current per-mille crop so the existing rectangle shows. While
+    /// crop mode is active the picture renders with crop suppressed, so the
+    /// user drags the rectangle over the whole (uncropped) image.
+    pub fn set_crop_mode(self: &Rc<Self>, on: bool, initial: CropPermille) {
+        self.crop_mode.set(on);
+        *self.crop_rect.borrow_mut() = initial;
+        self.crop_area.set_visible(on);
+        // Re-render so the picture shows with/without the crop applied.
+        self.show();
+        self.crop_area.queue_draw();
+    }
+
+    /// Whether the crop overlay is active.
+    #[allow(dead_code)]
+    pub fn crop_mode_active(&self) -> bool {
+        self.crop_mode.get()
+    }
+
+    /// Set the callback invoked with the new per-mille crop after a drag.
+    pub fn set_crop_callback(self: &Rc<Self>, f: impl Fn(CropPermille) + 'static) {
+        *self.crop_cb.borrow_mut() = Some(Box::new(f));
+    }
+
+    // --- slideshow ---
+
+    /// Whether a slideshow is currently running.
+    pub fn slideshow_active(&self) -> bool {
+        self.slideshow_source.borrow().is_some()
+    }
+
+    /// Start a full-screen slideshow of the current photo set.
+    ///
+    /// `secs` is the per-image duration, `shuffle` randomises the order, and
+    /// `do_loop` restarts after the last image. The viewer must already hold the
+    /// photo set (via `open`).
+    pub fn start_slideshow(self: &Rc<Self>, secs: u32, shuffle: bool, do_loop: bool) {
+        let len = self.photos.borrow().len();
+        if len == 0 {
+            return;
+        }
+        self.stop_slideshow();
+        self.slideshow_secs.set(secs.max(1));
+        self.slideshow_loop.set(do_loop);
+        self.slideshow_paused.set(false);
+
+        // Build the play order, starting from the currently shown photo.
+        let mut order: Vec<usize> = (0..len).collect();
+        if shuffle {
+            shuffle_indices(&mut order);
+        }
+        let cur = *self.index.borrow();
+        if let Some(p) = order.iter().position(|&i| i == cur) {
+            order.swap(0, p);
+        }
+        *self.slideshow_order.borrow_mut() = order;
+        self.slideshow_pos.set(0);
+        self.goto_slideshow_pos();
+
+        // Enter fullscreen and hide the control bar for an immersive view.
+        if let Some(state) = self.state.borrow().clone() {
+            if let Some(w) = state.window() {
+                w.fullscreen();
+            }
+        }
+        self.bar.set_visible(false);
+
+        self.arm_slideshow_timer();
+    }
+
+    /// (Re)arm the per-image advance timer.
+    fn arm_slideshow_timer(self: &Rc<Self>) {
+        let secs = self.slideshow_secs.get();
+        let this = self.clone();
+        let id = glib::timeout_add_seconds_local(secs, move || {
+            if this.slideshow_paused.get() {
+                return glib::ControlFlow::Continue;
+            }
+            if this.advance_slideshow() {
+                glib::ControlFlow::Continue
+            } else {
+                // Reached the end with loop off: stop.
+                this.stop_slideshow();
+                glib::ControlFlow::Break
+            }
+        });
+        *self.slideshow_source.borrow_mut() = Some(id);
+    }
+
+    /// Advance to the next slideshow image. Returns false when the show should
+    /// end (last image reached with loop off).
+    fn advance_slideshow(self: &Rc<Self>) -> bool {
+        let len = self.slideshow_order.borrow().len();
+        if len == 0 {
+            return false;
+        }
+        let mut pos = self.slideshow_pos.get() + 1;
+        if pos >= len {
+            if self.slideshow_loop.get() {
+                pos = 0;
+            } else {
+                return false;
+            }
+        }
+        self.slideshow_pos.set(pos);
+        self.goto_slideshow_pos();
+        true
+    }
+
+    /// Show the photo at the current slideshow position.
+    fn goto_slideshow_pos(self: &Rc<Self>) {
+        let idx = self
+            .slideshow_order
+            .borrow()
+            .get(self.slideshow_pos.get())
+            .copied();
+        if let Some(idx) = idx {
+            *self.index.borrow_mut() = idx;
+            self.show();
+        }
+    }
+
+    /// Pause or resume a running slideshow.
+    pub fn toggle_slideshow_pause(self: &Rc<Self>) {
+        if !self.slideshow_active() {
+            return;
+        }
+        let paused = !self.slideshow_paused.get();
+        self.slideshow_paused.set(paused);
+        if let Some(state) = self.state.borrow().clone() {
+            state
+                .status()
+                .set_message(if paused { "Slideshow paused" } else { "Slideshow" });
+        }
+    }
+
+    /// Stop the slideshow, leave fullscreen, and restore the control bar.
+    pub fn stop_slideshow(self: &Rc<Self>) {
+        if let Some(id) = self.slideshow_source.borrow_mut().take() {
+            id.remove();
+        }
+        self.slideshow_paused.set(false);
+        self.bar.set_visible(true);
+        if let Some(state) = self.state.borrow().clone() {
+            if let Some(w) = state.window() {
+                w.unfullscreen();
+            }
+        }
     }
 
     fn rotate(self: &Rc<Self>) {
@@ -288,7 +622,7 @@ impl Viewer {
         let this = self.clone();
         // The non-destructive edit to apply on the decoded pixels, unless the
         // user asked to see the original.
-        let edit = if self.show_original.get() {
+        let mut edit = if self.show_original.get() {
             crate::model::PhotoEdit::default()
         } else {
             self.state
@@ -297,6 +631,14 @@ impl Viewer {
                 .and_then(|s| s.lib.photo_edit(photo.id).ok())
                 .unwrap_or_default()
         };
+        // While the crop overlay is active, show the image uncropped so the
+        // user drags the rectangle over the whole frame.
+        if self.crop_mode.get() {
+            edit.crop_x = 0;
+            edit.crop_y = 0;
+            edit.crop_w = 0;
+            edit.crop_h = 0;
+        }
         rx.attach(None, move |bytes| {
             // Drop stale results from an earlier show().
             if this.generation.get() != generation {
@@ -306,6 +648,7 @@ impl Viewer {
                 Some(pb) => picture.set_pixbuf(Some(&pb)),
                 None => picture.set_paintable(gtk4::gdk::Paintable::NONE),
             }
+            this.crop_area.queue_draw();
             glib::ControlFlow::Break
         });
     }
@@ -391,6 +734,28 @@ fn decode_pixbuf(bytes: &[u8]) -> Option<Pixbuf> {
         h,
         w * 4,
     ))
+}
+
+/// Shuffle a slice in place with a Fisher–Yates pass seeded from the wall
+/// clock. This needs no extra dependency and is good enough for a slideshow.
+fn shuffle_indices(v: &mut [usize]) {
+    let mut seed = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0x9e3779b9)
+        | 1;
+    let mut next = || {
+        // xorshift64*
+        seed ^= seed >> 12;
+        seed ^= seed << 25;
+        seed ^= seed >> 27;
+        seed.wrapping_mul(0x2545F4914F6CDD1D)
+    };
+    let n = v.len();
+    for i in (1..n).rev() {
+        let j = (next() % (i as u64 + 1)) as usize;
+        v.swap(i, j);
+    }
 }
 
 /// If `path` is an `immich://<server_id>/<asset_id>` URL and the server exists,
