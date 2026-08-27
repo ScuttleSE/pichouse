@@ -63,6 +63,10 @@ pub struct Sidebar {
     menu_pop: RefCell<Option<PopoverMenu>>,
     /// A weak self-reference, used to hook per-row signal handlers.
     weak_self: std::rc::Weak<Sidebar>,
+    /// When true, per-row expand/collapse notifications do not change the saved
+    /// expansion set. Set during a reload so tree teardown/rebuild does not wipe
+    /// the state.
+    suppress_expand_notify: std::cell::Cell<bool>,
 }
 
 impl Sidebar {
@@ -105,6 +109,7 @@ impl Sidebar {
                 if let Some(sidebar) = weak_setup.upgrade() {
                     sidebar.attach_row_menu(&expander);
                     sidebar.attach_row_drag(&expander);
+                    sidebar.attach_row_activate(&expander);
                 }
             });
             let weak_bind = weak.clone();
@@ -153,6 +158,7 @@ impl Sidebar {
                 state: RefCell::new(None),
                 menu_pop: RefCell::new(None),
                 weak_self: weak.clone(),
+                suppress_expand_notify: std::cell::Cell::new(false),
             }
         });
 
@@ -257,6 +263,10 @@ impl Sidebar {
         let sidebar_weak = self.weak_self.clone();
         let handler = row.connect_expanded_notify(move |r| {
             if let Some(sidebar) = sidebar_weak.upgrade() {
+                // Ignore notifications caused by a reload's teardown/rebuild.
+                if sidebar.suppress_expand_notify.get() {
+                    return;
+                }
                 if let Some(so) = r.item().and_downcast::<StringObject>() {
                     let id = so.string().to_string();
                     if r.is_expanded() {
@@ -392,6 +402,9 @@ impl Sidebar {
     /// Rebuild the tree from the current database state.
     pub fn reload(self: &Rc<Self>) {
         let Some(state) = self.state() else { return };
+        // Suppress per-row expand/collapse persistence while the tree is torn
+        // down and rebuilt, so teardown notifications do not wipe the saved set.
+        self.suppress_expand_notify.set(true);
         let mut folders = state.lib.folders().unwrap_or_default();
         let counts = state.lib.folder_photo_counts().unwrap_or_default();
         let mut albums = state.lib.albums().unwrap_or_default();
@@ -465,6 +478,10 @@ impl Sidebar {
         self.list_root.splice(0, n, &root_refs);
 
         self.restore_expansion();
+        self.suppress_expand_notify.set(false);
+        // The expansion set may have changed during this reload (e.g. a newly
+        // created album's parent was marked expanded). Persist the final state.
+        self.persist_expansion();
     }
 
     fn save_expansion(&self) {
@@ -1012,6 +1029,39 @@ impl Sidebar {
                 let id = expander.widget_name().to_string();
                 if !id.is_empty() {
                     this.show_row_menu(&id, &expander, x, y);
+                }
+            }
+        });
+        expander.add_controller(click);
+    }
+
+    /// Double-click an album (folder-album, virtual album, or the Virtual
+    /// Albums header) to expand or collapse its children.
+    fn attach_row_activate(self: &Rc<Self>, expander: &TreeExpander) {
+        let click = GestureClick::new();
+        click.set_button(gdk::BUTTON_PRIMARY);
+        let expander_weak = expander.downgrade();
+        click.connect_pressed(move |gesture, n_press, _, _| {
+            if n_press < 2 {
+                return;
+            }
+            let Some(expander) = expander_weak.upgrade() else {
+                return;
+            };
+            let id = expander.widget_name().to_string();
+            // Only nodes with children toggle: albums, virtual albums, and the
+            // virtual header. Folders and leaf rows are ignored.
+            let toggles = album_id_of(&id).is_some()
+                || valbum_id_of(&id).is_some()
+                || id == VIRTUAL_HEADER_ID;
+            if !toggles {
+                return;
+            }
+            if let Some(row) = expander.list_row() {
+                if row.is_expandable() {
+                    row.set_expanded(!row.is_expanded());
+                    // Consume the event so it does not also select/activate.
+                    gesture.set_state(gtk4::EventSequenceState::Claimed);
                 }
             }
         });
