@@ -55,6 +55,9 @@ pub struct AppState {
     pub center_stack: RefCell<Option<Stack>>,
     /// The id of the folder currently shown in the grid (0 = none / raw view).
     pub current_folder: RefCell<i64>,
+    /// Cached Immich albums per server id, filled by a background refresh. The
+    /// sidebar reads this cache. HTTP never runs on the GTK main thread.
+    pub immich_albums: RefCell<std::collections::HashMap<i64, Vec<crate::model::ImmichAlbum>>>,
 }
 
 impl AppState {

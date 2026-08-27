@@ -42,6 +42,30 @@ struct Done {
     generation: u64,
 }
 
+/// An Immich thumbnail job sent from the UI thread to an Immich worker.
+struct ImmichJob {
+    key: String,
+    server_id: i64,
+    asset_id: String,
+    generation: u64,
+}
+
+/// Parse an `immich://<server_id>/<asset_id>` path into its parts.
+fn parse_immich_path(path: &str) -> Option<(i64, String)> {
+    let rest = path.strip_prefix("immich://")?;
+    let (sid, asset) = rest.split_once('/')?;
+    let server_id: i64 = sid.parse().ok()?;
+    if asset.is_empty() {
+        return None;
+    }
+    Some((server_id, asset.to_string()))
+}
+
+/// Build an `immich://<server_id>/<asset_id>` path for a `Photo`.
+pub fn immich_path(server_id: i64, asset_id: &str) -> String {
+    format!("immich://{server_id}/{asset_id}")
+}
+
 /// The center thumbnail grid.
 pub struct Grid {
     root: gtk4::Box,
@@ -52,6 +76,8 @@ pub struct Grid {
     thumb_size: std::cell::Cell<i32>,
     generation: Arc<AtomicU64>,
     jobs: mpsc::Sender<Job>,
+    /// Job channel to the Immich thumbnail worker pool.
+    immich_jobs: mpsc::Sender<ImmichJob>,
     /// Maps a cell key to its `PhotoObject` for the current generation, so a
     /// worker result can find the object to update on the UI thread.
     pending: Rc<RefCell<HashMap<String, PhotoObject>>>,
@@ -87,6 +113,9 @@ enum Source {
     RawDir(String),
     /// A virtual album (id, display name).
     VirtualAlbum(i64, String),
+    /// An Immich album (server id, album uuid, display name). Not re-queryable
+    /// from the local database; a reload refetches over HTTP through the caller.
+    Immich(i64, String, String),
 }
 
 impl Grid {
@@ -138,6 +167,51 @@ impl Grid {
             });
         }
 
+        // Immich thumbnail worker pool: download asset thumbnails over HTTP and
+        // feed the decoded bytes back through the same `done_tx` channel. Each
+        // worker caches one `immich::Client` per server id it has seen.
+        let (immich_tx, immich_rx) = mpsc::channel::<ImmichJob>();
+        let immich_rx = Arc::new(std::sync::Mutex::new(immich_rx));
+        for _ in 0..THUMB_WORKERS {
+            let immich_rx = immich_rx.clone();
+            let done_tx = done_tx.clone();
+            let lib = lib.clone();
+            std::thread::spawn(move || {
+                let mut clients: HashMap<i64, crate::immich::Client> = HashMap::new();
+                loop {
+                    let job = {
+                        let rx = immich_rx.lock().unwrap();
+                        match rx.recv() {
+                            Ok(j) => j,
+                            Err(_) => return,
+                        }
+                    };
+                    let client = match clients.get(&job.server_id) {
+                        Some(c) => c,
+                        None => {
+                            let Ok(Some(s)) = lib.immich_server(job.server_id) else {
+                                continue;
+                            };
+                            clients.insert(
+                                job.server_id,
+                                crate::immich::Client::new(&s.base_url, &s.api_key),
+                            );
+                            clients.get(&job.server_id).unwrap()
+                        }
+                    };
+                    if let Ok(blob) = client.asset_thumbnail(&job.asset_id) {
+                        if !blob.is_empty() {
+                            let _ = done_tx.send(Done {
+                                key: job.key,
+                                blob,
+                                generation: job.generation,
+                            });
+                        }
+                    }
+                }
+            });
+        }
+
         let factory = build_factory(thumb_size);
         let grid_view = GridView::new(Some(selection.clone()), Some(factory));
         grid_view.set_min_columns(1);
@@ -182,6 +256,7 @@ impl Grid {
             thumb_size: std::cell::Cell::new(thumb_size),
             generation,
             jobs: job_tx,
+            immich_jobs: immich_tx,
             pending,
             all_photos: RefCell::new(Vec::new()),
             title: RefCell::new(String::new()),
@@ -351,9 +426,17 @@ impl Grid {
         self.set_photos(name, photos);
     }
 
+    /// Show an Immich album's assets. The caller passes the already-fetched
+    /// photos (each with an `immich://<server_id>/<asset_id>` path). The grid
+    /// downloads each thumbnail over HTTP through the Immich worker pool.
+    pub fn show_immich_album(&self, server_id: i64, album_id: &str, name: &str, photos: Vec<Photo>) {
+        *self.source.borrow_mut() =
+            Source::Immich(server_id, album_id.to_string(), name.to_string());
+        self.set_photos(name, photos);
+    }
+
     /// The virtual album id the grid is currently showing, if any.
-    pub fn current_virtual_album(&self) -> Option<i64> {
-        match &*self.source.borrow() {
+    pub fn current_virtual_album(&self) -> Option<i64> {        match &*self.source.borrow() {
             Source::VirtualAlbum(id, _) => Some(*id),
             _ => None,
         }
@@ -393,6 +476,9 @@ impl Grid {
                 self.set_photos(&name, photos);
             }
             Source::None => {}
+            // Immich albums refetch over HTTP. The grid keeps the last-shown
+            // photos; the caller re-drives the fetch when it needs fresh data.
+            Source::Immich(..) => {}
         }
     }
 
@@ -493,6 +579,15 @@ impl Grid {
                 continue;
             }
             self.pending.borrow_mut().insert(key.clone(), obj);
+            if let Some((server_id, asset_id)) = parse_immich_path(&p.path) {
+                let _ = self.immich_jobs.send(ImmichJob {
+                    key,
+                    server_id,
+                    asset_id,
+                    generation: gen,
+                });
+                continue;
+            }
             let _ = self.jobs.send(Job {
                 key,
                 hash: p.hash.clone(),

@@ -39,6 +39,11 @@ pub fn show_settings(state: &Rc<AppState>) {
         Some("ai"),
         "AI Tagging",
     );
+    stack.add_titled(
+        &super::settings_immich::immich_pane(state),
+        Some("immich"),
+        "Immich",
+    );
     stack.add_titled(&storage_pane(state, &window), Some("storage"), "Data Location");
     stack.add_titled(
         &shortcut_pane(state, &window),

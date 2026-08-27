@@ -79,6 +79,7 @@ fn build_ui(app: &Application) {
         folder_tree: RefCell::new(None),
         center_stack: RefCell::new(None),
         current_folder: RefCell::new(0),
+        immich_albums: RefCell::new(std::collections::HashMap::new()),
     });
     state.apply_thumb_prefs();
 
@@ -238,6 +239,9 @@ pub fn reload_folders(state: &Rc<AppState>) {
 
 fn populate(state: &Rc<AppState>) {
     reload_folders(state);
+
+    // Load Immich albums in the background so the sidebar section fills in.
+    super::immich::refresh_albums(state);
 
     let folders = state.lib.folders().unwrap_or_default();
     if folders.is_empty() {

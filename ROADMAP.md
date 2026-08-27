@@ -54,6 +54,15 @@ separate **Folders** tab.
 Interface with an [Immich](https://immich.app/) server so the library can work
 alongside a self-hosted Immich instance.
 
+**Status: Phase 1 (browse) implemented.** pichouse connects to one or more
+Immich servers (Settings → Immich; API-key auth; servers stored in the
+`immich_servers` table). Each server appears as a section in the Library
+sidebar, expanding to its albums with asset counts. Opening an album fetches its
+assets over HTTP and shows them in the grid; thumbnails download from the server
+(keyed by asset id) through a dedicated worker pool. See `src/immich/` (blocking
+HTTP client) and `src/ui/immich.rs` (background fetch + channel to the GTK main
+thread). Upload (Phase 2) and Sync (Phase 3) are not yet implemented.
+
 ### Browse
 - When connected to an Immich server, its albums appear as a **separate
   section** in the Libraries tab (distinct from local library folders/albums).

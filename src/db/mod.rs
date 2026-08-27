@@ -5,6 +5,7 @@
 
 mod albums;
 mod config;
+mod immich;
 mod library;
 mod tags;
 mod thumbs;

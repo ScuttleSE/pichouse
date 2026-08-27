@@ -294,6 +294,42 @@ pub struct VirtualRule {
     pub value: String,
 }
 
+/// A remote Immich server the user connects to. pichouse reads albums and
+/// assets from the server over HTTP with the API key.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ImmichServer {
+    pub id: i64,
+    pub name: String,
+    /// The base URL, for example `http://host:2283`. No trailing slash.
+    pub base_url: String,
+    pub api_key: String,
+    /// Unix timestamp (seconds) when the server was added.
+    pub added_at: i64,
+}
+
+/// An album on an Immich server.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ImmichAlbum {
+    /// The Immich album id (a UUID string).
+    pub id: String,
+    pub name: String,
+    /// Number of assets in the album, as reported by the server.
+    pub asset_count: i64,
+}
+
+/// An asset (photo) on an Immich server.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ImmichAsset {
+    /// The Immich asset id (a UUID string).
+    pub id: String,
+    /// The original file name on the server.
+    pub filename: String,
+    pub width: i32,
+    pub height: i32,
+    /// EXIF taken date as a Unix timestamp (seconds); `0` if unknown.
+    pub taken_at: i64,
+}
+
 /// The scan state of a folder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ScanStatus {

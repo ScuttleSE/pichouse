@@ -147,3 +147,14 @@ CREATE TABLE IF NOT EXISTS virtual_album_rules (
 );
 
 CREATE INDEX IF NOT EXISTS idx_var_album ON virtual_album_rules(album_id);
+
+-- Immich servers the user connects to. Each server is a remote Immich instance
+-- reached over HTTP with an API key. pichouse supports more than one server.
+-- The API key is stored in plain text, the same way the AI host and port are.
+CREATE TABLE IF NOT EXISTS immich_servers (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    name     TEXT NOT NULL,
+    base_url TEXT NOT NULL,
+    api_key  TEXT NOT NULL DEFAULT '',
+    added_at INTEGER NOT NULL DEFAULT 0
+);

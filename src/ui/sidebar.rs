@@ -18,7 +18,6 @@ use gtk4::{
 };
 
 use crate::model::{Album, Folder, VirtualAlbum};
-
 use super::dialogs::{confirm, prompt_text};
 use super::state::{show_error, AppState};
 
@@ -29,6 +28,12 @@ const FOLDER_PREFIX: &str = "folder:";
 const VALBUM_PREFIX: &str = "valbum:";
 /// Header row that groups all virtual albums, shown above normal albums.
 const VIRTUAL_HEADER_ID: &str = "virtualheader";
+/// Header row that groups all Immich servers, shown below normal albums.
+const IMMICH_HEADER_ID: &str = "immichheader";
+/// A single Immich server node: `immichserver:<server_id>`.
+const IMMICH_SERVER_PREFIX: &str = "immichserver:";
+/// A single Immich album node: `immichalbum:<server_id>:<album_uuid>`.
+const IMMICH_ALBUM_PREFIX: &str = "immichalbum:";
 /// `library.db` settings key for the persisted set of expanded tree node ids.
 const EXPANDED_SETTING_KEY: &str = "sidebar_expanded";
 
@@ -48,6 +53,10 @@ struct TreeData {
     virtual_albums: HashMap<i64, VirtualAlbum>,
     valbum_children: HashMap<i64, Vec<i64>>,
     valbum_counts: HashMap<i64, i64>,
+    /// Immich servers, ordered as shown. Each is `(id, name)`.
+    immich_servers: Vec<(i64, String)>,
+    /// Cached albums per Immich server id, as `(album_uuid, name, count)`.
+    immich_albums: HashMap<i64, Vec<(String, String, i64)>>,
 }
 
 /// The Library-tab album tree sidebar.
@@ -193,6 +202,18 @@ impl Sidebar {
                 .flatten()
                 .map(|vid| format!("{VALBUM_PREFIX}{vid}"))
                 .collect()
+        } else if id == IMMICH_HEADER_ID {
+            data.immich_servers
+                .iter()
+                .map(|(sid, _)| format!("{IMMICH_SERVER_PREFIX}{sid}"))
+                .collect()
+        } else if let Some(sid) = immich_server_id_of(id) {
+            data.immich_albums
+                .get(&sid)
+                .into_iter()
+                .flatten()
+                .map(|(uuid, _, _)| format!("{IMMICH_ALBUM_PREFIX}{sid}:{uuid}"))
+                .collect()
         } else if let Some(vid) = valbum_id_of(id) {
             data.valbum_children
                 .get(&vid)
@@ -293,6 +314,30 @@ impl Sidebar {
             )
         } else if id == VIRTUAL_HEADER_ID {
             ("Virtual Albums".to_string(), "starred-symbolic")
+        } else if id == IMMICH_HEADER_ID {
+            ("Immich".to_string(), "network-server-symbolic")
+        } else if let Some(sid) = immich_server_id_of(id) {
+            let name = data
+                .immich_servers
+                .iter()
+                .find(|(x, _)| *x == sid)
+                .map(|(_, n)| n.clone())
+                .unwrap_or_default();
+            let count = data.immich_albums.get(&sid).map(|a| a.len()).unwrap_or(0);
+            (format!("{name} ({count})"), "network-server-symbolic")
+        } else if let Some((sid, uuid)) = immich_album_of(id) {
+            let entry = data
+                .immich_albums
+                .get(&sid)
+                .into_iter()
+                .flatten()
+                .find(|(u, _, _)| *u == uuid);
+            match entry {
+                Some((_, name, count)) => {
+                    (format!("{name} ({count})"), "folder-remote-symbolic")
+                }
+                None => (uuid, "folder-remote-symbolic"),
+            }
         } else if let Some(vid) = valbum_id_of(id) {
             let name = data
                 .virtual_albums
@@ -345,6 +390,22 @@ impl Sidebar {
                     .unwrap_or_default();
                 if let Some(state) = self.state() {
                     state.show_virtual_album(vid, &name);
+                    return;
+                }
+            }
+            if let Some((sid, uuid)) = immich_album_of(&id) {
+                let name = self
+                    .data
+                    .borrow()
+                    .immich_albums
+                    .get(&sid)
+                    .into_iter()
+                    .flatten()
+                    .find(|(u, _, _)| *u == uuid)
+                    .map(|(_, n, _)| n.clone())
+                    .unwrap_or_default();
+                if let Some(state) = self.state() {
+                    super::immich::show_album(&state, sid, &uuid, &name);
                     return;
                 }
             }
@@ -453,6 +514,25 @@ impl Sidebar {
             }
         }
 
+        // Immich servers and their cached albums. The album cache is filled by
+        // a background refresh in `super::immich::refresh_albums`.
+        let servers = state.lib.immich_servers().unwrap_or_default();
+        for s in &servers {
+            data.immich_servers.push((s.id, s.name.clone()));
+        }
+        {
+            let cache = state.immich_albums.borrow();
+            for s in &servers {
+                if let Some(albums) = cache.get(&s.id) {
+                    let list = albums
+                        .iter()
+                        .map(|a| (a.id.clone(), a.name.clone(), a.asset_count))
+                        .collect();
+                    data.immich_albums.insert(s.id, list);
+                }
+            }
+        }
+
         self.save_expansion();
         *self.data.borrow_mut() = data;
 
@@ -471,6 +551,11 @@ impl Sidebar {
             roots.push(VIRTUAL_HEADER_ID.to_string());
             for &aid in data.album_children.get(&0).into_iter().flatten() {
                 roots.push(format!("{ALBUM_PREFIX}{aid}"));
+            }
+            // Immich section, shown below normal albums, only when the user has
+            // added at least one server.
+            if !data.immich_servers.is_empty() {
+                roots.push(IMMICH_HEADER_ID.to_string());
             }
         }
         let n = self.list_root.n_items();
@@ -1053,7 +1138,9 @@ impl Sidebar {
             // virtual header. Folders and leaf rows are ignored.
             let toggles = album_id_of(&id).is_some()
                 || valbum_id_of(&id).is_some()
-                || id == VIRTUAL_HEADER_ID;
+                || id == VIRTUAL_HEADER_ID
+                || id == IMMICH_HEADER_ID
+                || immich_server_id_of(&id).is_some();
             if !toggles {
                 return;
             }
@@ -1198,6 +1285,22 @@ fn folder_id_of(id: &str) -> Option<i64> {
 
 fn valbum_id_of(id: &str) -> Option<i64> {
     id.strip_prefix(VALBUM_PREFIX).and_then(|n| n.parse().ok())
+}
+
+fn immich_server_id_of(id: &str) -> Option<i64> {
+    id.strip_prefix(IMMICH_SERVER_PREFIX)
+        .and_then(|n| n.parse().ok())
+}
+
+/// Parse an `immichalbum:<server_id>:<album_uuid>` node id.
+fn immich_album_of(id: &str) -> Option<(i64, String)> {
+    let rest = id.strip_prefix(IMMICH_ALBUM_PREFIX)?;
+    let (sid, uuid) = rest.split_once(':')?;
+    let server_id: i64 = sid.parse().ok()?;
+    if uuid.is_empty() {
+        return None;
+    }
+    Some((server_id, uuid.to_string()))
 }
 
 /// Parse a grid drag payload `photos:<id>,<id>,...` into photo ids. Returns

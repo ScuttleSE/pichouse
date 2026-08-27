@@ -2,6 +2,7 @@
 
 mod ai;
 mod db;
+mod immich;
 mod model;
 mod reconcile;
 mod scan;

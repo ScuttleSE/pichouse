@@ -102,11 +102,12 @@ GTK4 (>= 4.10) must be present at runtime; Debian 13 ships GTK 4.18.
     src/reconcile.rs     library freshness: diff disk against the DB per folder
     src/thumb.rs         thumbnail generation + cache
     src/ai/              local AI tagging backend (Ollama HTTP client, tagger)
+    src/immich/          Immich server integration (blocking HTTP client)
     src/ui/              GTK4 UI (app, state, grid, sidebar, viewer, properties,
-                         toolbar, status, settings, settings_ai, aitag,
-                         tagmanager, shortcuts, dialogs, actions, controller,
-                         prefs, photo_object, util, enrich, freshness, watcher,
-                         newfiles, vrules, vmenu)
+                         toolbar, status, settings, settings_ai, settings_immich,
+                         aitag, immich, tagmanager, shortcuts, dialogs, actions,
+                         controller, prefs, photo_object, util, enrich, freshness,
+                         watcher, newfiles, vrules, vmenu)
     .gitea/workflows/    CI (build/test/release on push to main)
 
 ## Architecture patterns
