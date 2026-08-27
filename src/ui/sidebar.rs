@@ -682,6 +682,16 @@ impl Sidebar {
             show_error(&state, &e.to_string());
             return;
         }
+        // A drop leaves the target row selected, so a following click on it
+        // would not fire selection-changed and the album would not open. Clear
+        // the selection so the next click is a real change.
+        if let Some(sel) = self
+            .list_view
+            .model()
+            .and_downcast::<gtk4::MultiSelection>()
+        {
+            sel.unselect_all();
+        }
         self.reload_deferred();
         // If the target album is being viewed, refresh the grid so the added
         // photos appear immediately.
