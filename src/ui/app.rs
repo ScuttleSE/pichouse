@@ -33,7 +33,11 @@ const APP_ID: &str = "se.hemmalab.pichouse";
 pub fn run() -> glib::ExitCode {
     let app = Application::builder().application_id(APP_ID).build();
     app.connect_activate(build_ui);
-    app.run()
+    // Our own CLI flags (-v/-vv/-vvv/-q) are parsed in `main` before this call.
+    // Pass GTK an empty argument list so its own parser does not see — and
+    // reject — those flags (e.g. "Unknown option -vvv").
+    let no_args: [&str; 0] = [];
+    app.run_with_args(&no_args)
 }
 
 fn build_ui(app: &Application) {
