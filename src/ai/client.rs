@@ -179,6 +179,7 @@ pub struct GenOptions {
 
 /// The model text plus Ollama's timing breakdown (nanoseconds).
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)] // Duration fields mirror the Ollama response; kept for completeness.
 pub struct GenResult {
     pub response: String,
     pub total_duration: i64,

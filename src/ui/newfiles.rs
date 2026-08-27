@@ -142,6 +142,7 @@ impl NewFilesView {
     }
 
     /// Update the active thumbnail size for subsequent rebuilds.
+    #[allow(dead_code)] // Kept API; the New Files view uses a fixed size today.
     pub fn set_thumb_size(&self, size: i32) {
         self.thumb_size.set(size);
     }

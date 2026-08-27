@@ -115,6 +115,7 @@ enum Source {
     VirtualAlbum(i64, String),
     /// An Immich album (server id, album uuid, display name). Not re-queryable
     /// from the local database; a reload refetches over HTTP through the caller.
+    #[allow(dead_code)] // Fields document the album payload.
     Immich(i64, String, String),
 }
 
@@ -391,6 +392,7 @@ impl Grid {
     }
 
     /// The active thumbnail size in pixels.
+    #[allow(dead_code)] // Kept API accessor.
     pub fn thumb_size(&self) -> i32 {
         self.thumb_size.get()
     }

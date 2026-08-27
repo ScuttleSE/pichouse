@@ -81,6 +81,7 @@ impl Generator {
     }
 
     /// The active thumbnail size.
+    #[allow(dead_code)] // Kept API accessor.
     pub fn size(&self) -> i32 {
         self.inner.lock().unwrap().size
     }

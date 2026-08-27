@@ -284,6 +284,7 @@ impl Library {
     /// Insert or update a photo by path and return its id. Does not modify an
     /// existing photo's `orientation` or `ai_status`. Sets `scan_state` from the
     /// photo (a fully populated photo should pass `PhotoScanState::Done`).
+    #[allow(dead_code)] // Kept API for single-photo upsert.
     pub fn upsert_photo(&self, p: &Photo) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
@@ -625,6 +626,7 @@ impl Library {
     }
 
     /// Mark whether a photo's thumbnail has been generated.
+    #[allow(dead_code)] // Kept API; thumbnails are cached by hash, not by this flag.
     pub fn set_thumb_ready(&self, photo_id: i64, ready: bool) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(

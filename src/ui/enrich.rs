@@ -33,6 +33,7 @@ const REFRESH_EVERY: usize = 12;
 /// A status update posted from a worker coordinator to the UI thread.
 enum Msg {
     /// One photo finished; carries its folder id so the UI can refresh.
+    #[allow(dead_code)] // `folder_id` documents the message payload.
     Progress { folder_id: i64, done: usize, total: usize },
     /// A folder's photos are all enriched; refine its year and reload sidebars.
     FolderDone(i64),

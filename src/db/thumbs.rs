@@ -82,6 +82,7 @@ impl Thumbs {
     }
 
     /// Remove all cached thumbnails.
+    #[allow(dead_code)] // Kept API; cache is cleared via file removal in Generator.
     pub fn clear(&self) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM thumbnails", [])?;

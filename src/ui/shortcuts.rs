@@ -4,7 +4,6 @@ use std::collections::HashMap;
 
 use gtk4::gdk;
 use gtk4::glib::translate::{FromGlib, IntoGlib};
-use gtk4::prelude::*;
 
 use crate::db::Library;
 

@@ -342,6 +342,7 @@ pub struct ImmichAsset {
 
 /// The scan state of a folder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[allow(dead_code)] // `Error`/`from_str` complete the DB-mapping API.
 pub enum ScanStatus {
     /// Queued but not yet scanned.
     #[default]
@@ -366,6 +367,7 @@ impl ScanStatus {
     }
 
     /// Parse a database string. Unknown values map to `Pending`.
+    #[allow(dead_code)]
     pub fn from_str(s: &str) -> Self {
         match s {
             "running" => ScanStatus::Running,
