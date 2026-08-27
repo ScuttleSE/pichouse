@@ -37,7 +37,7 @@ fn map_preset(r: &Row) -> rusqlite::Result<LevelPreset> {
 impl Library {
     /// All saved levels presets, ordered by name.
     pub fn level_presets(&self) -> Result<Vec<LevelPreset>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         let sql = format!("SELECT {PRESET_COLS} FROM level_presets ORDER BY name COLLATE NOCASE");
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map([], map_preset)?;
@@ -50,7 +50,7 @@ impl Library {
 
     /// Save (create or overwrite by name) a levels preset. Returns its id.
     pub fn save_level_preset(&self, name: &str, levels: &Levels) -> Result<i64> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         conn.execute(
             "INSERT INTO level_presets(\
                 name, lv_r_black, lv_r_white, lv_r_gamma_mille, \
@@ -85,7 +85,7 @@ impl Library {
 
     /// Delete a levels preset by id.
     pub fn delete_level_preset(&self, id: i64) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         conn.execute("DELETE FROM level_presets WHERE id = ?1", params![id])?;
         Ok(())
     }

@@ -19,7 +19,7 @@ const PHOTO_COLS: &str = "id, folder_id, path, filename, size, mod_time, taken_a
 impl Library {
     /// Insert a new virtual album. `parent_id` of 0 creates a top-level album.
     pub fn create_virtual_album(&self, name: &str, parent_id: i64) -> Result<i64> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         let pos: i64 = if parent_id == 0 {
             conn.query_row(
                 "SELECT COALESCE(MAX(position), -1) FROM virtual_albums WHERE parent_id IS NULL",
@@ -47,7 +47,7 @@ impl Library {
 
     /// Change a virtual album's display name.
     pub fn rename_virtual_album(&self, id: i64, name: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         conn.execute(
             "UPDATE virtual_albums SET name = ?1 WHERE id = ?2",
             params![name, id],
@@ -57,7 +57,7 @@ impl Library {
 
     /// Remove a virtual album. Sub-albums, membership, and rules cascade.
     pub fn delete_virtual_album(&self, id: i64) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         conn.execute("DELETE FROM virtual_albums WHERE id = ?1", params![id])?;
         Ok(())
     }
@@ -68,7 +68,7 @@ impl Library {
         if id == parent_id {
             return Ok(());
         }
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         let mut cur = parent_id;
         while cur != 0 {
             if cur == id {
@@ -98,7 +98,7 @@ impl Library {
 
     /// All virtual albums ordered by position then name.
     pub fn virtual_albums(&self) -> Result<Vec<VirtualAlbum>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         let mut stmt = conn.prepare(
             "SELECT id, name, COALESCE(parent_id, 0), position, rule_match
              FROM virtual_albums ORDER BY position ASC, name ASC",
@@ -118,7 +118,7 @@ impl Library {
     /// Pin photos into a virtual album (manual membership). Any existing
     /// exclusion for the same photo is replaced by a pin.
     pub fn add_photos_to_virtual_album(&self, album_id: i64, photo_ids: &[i64]) -> Result<()> {
-        let mut conn = self.conn.lock().unwrap();
+        let mut conn = self.lock();
         let tx = conn.transaction()?;
         for &pid in photo_ids {
             let pos: i64 = tx.query_row(
@@ -140,7 +140,7 @@ impl Library {
     /// Remove photos from a virtual album. A pinned photo is unpinned. A
     /// rule-matched photo is excluded (kind = 1) so it stays hidden.
     pub fn remove_photos_from_virtual_album(&self, album_id: i64, photo_ids: &[i64]) -> Result<()> {
-        let mut conn = self.conn.lock().unwrap();
+        let mut conn = self.lock();
         let tx = conn.transaction()?;
         let has_rules: bool = tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM virtual_album_rules WHERE album_id = ?1)",
@@ -169,7 +169,7 @@ impl Library {
 
     /// The rules of a virtual album, in id order.
     pub fn virtual_album_rules(&self, album_id: i64) -> Result<Vec<VirtualRule>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         let mut stmt = conn.prepare(
             "SELECT id, album_id, field, op, value
              FROM virtual_album_rules WHERE album_id = ?1 ORDER BY id ASC",
@@ -194,7 +194,7 @@ impl Library {
         rule_match: RuleMatch,
         rules: &[VirtualRule],
     ) -> Result<()> {
-        let mut conn = self.conn.lock().unwrap();
+        let mut conn = self.lock();
         let tx = conn.transaction()?;
         tx.execute(
             "UPDATE virtual_albums SET rule_match = ?1 WHERE id = ?2",
@@ -220,7 +220,7 @@ impl Library {
     /// date then filename.
     pub fn photos_in_virtual_album(&self, album_id: i64) -> Result<Vec<Photo>> {
         let rule_match = {
-            let conn = self.conn.lock().unwrap();
+            let conn = self.lock();
             let m: Option<i64> = conn
                 .query_row(
                     "SELECT rule_match FROM virtual_albums WHERE id = ?1",
@@ -241,7 +241,7 @@ impl Library {
             "SELECT {PHOTO_COLS} FROM photos WHERE id IN ({member_sql})
              ORDER BY taken_at ASC, filename ASC"
         );
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         let mut stmt = conn.prepare(&sql)?;
         let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|b| b.as_ref()).collect();
         let rows = stmt.query_map(param_refs.as_slice(), map_photo)?;

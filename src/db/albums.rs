@@ -9,7 +9,7 @@ use super::{Library, Result};
 impl Library {
     /// Insert a new album. `parent_id` of 0 creates a top-level album.
     pub fn create_album(&self, name: &str, parent_id: i64) -> Result<i64> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         let pos: i64 = if parent_id == 0 {
             conn.query_row(
                 "SELECT COALESCE(MAX(position), -1) FROM albums WHERE parent_id IS NULL",
@@ -33,7 +33,7 @@ impl Library {
 
     /// Change an album's display name.
     pub fn rename_album(&self, id: i64, name: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         conn.execute("UPDATE albums SET name = ?1 WHERE id = ?2", params![name, id])?;
         Ok(())
     }
@@ -41,7 +41,7 @@ impl Library {
     /// Remove an album. Sub-albums cascade; member folders revert to the Library
     /// root ("New folders").
     pub fn delete_album(&self, id: i64) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         conn.execute("DELETE FROM albums WHERE id = ?1", params![id])?;
         Ok(())
     }
@@ -52,7 +52,7 @@ impl Library {
         if id == parent_id {
             return Ok(());
         }
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         // Walk up from the proposed parent; if we reach id, this would create a
         // cycle, so refuse.
         let mut cur = parent_id;
@@ -78,7 +78,7 @@ impl Library {
 
     /// All albums ordered by position then name.
     pub fn albums(&self) -> Result<Vec<Album>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         let mut stmt = conn.prepare(
             "SELECT id, name, COALESCE(parent_id, 0), position
              FROM albums ORDER BY position ASC, name ASC",
@@ -97,7 +97,7 @@ impl Library {
     /// Place a folder into an album, removing it from any other album first (a
     /// folder belongs to at most one album in the tree).
     pub fn add_folder_to_album(&self, folder_id: i64, album_id: i64) -> Result<()> {
-        let mut conn = self.conn.lock().unwrap();
+        let mut conn = self.lock();
         let tx = conn.transaction()?;
         tx.execute(
             "DELETE FROM album_folders WHERE folder_id = ?1",
@@ -118,7 +118,7 @@ impl Library {
 
     /// Detach a folder from any album, returning it to the Library root.
     pub fn remove_folder_from_album(&self, folder_id: i64) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         conn.execute(
             "DELETE FROM album_folders WHERE folder_id = ?1",
             params![folder_id],
@@ -129,7 +129,7 @@ impl Library {
     /// A map of folder id to the album id it belongs to. Folders not in any
     /// album are absent from the map.
     pub fn folder_albums(&self) -> Result<std::collections::HashMap<i64, i64>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         let mut stmt = conn.prepare("SELECT folder_id, album_id FROM album_folders")?;
         let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?;
         let mut out = std::collections::HashMap::new();
@@ -143,7 +143,7 @@ impl Library {
     /// Every photo in an album, across all its member folders. Ordered by taken
     /// date then filename. Used by the Immich upload path.
     pub fn photos_in_album(&self, album_id: i64) -> Result<Vec<crate::model::Photo>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         let mut stmt = conn.prepare(
             "SELECT p.id, p.folder_id, p.path, p.filename, p.size, p.mod_time, p.taken_at, \
                     p.width, p.height, p.hash, p.thumb_ready, p.orientation, p.ai_status, \

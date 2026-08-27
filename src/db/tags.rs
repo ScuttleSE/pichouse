@@ -16,7 +16,7 @@ impl Library {
         if tags.is_empty() {
             return Ok(());
         }
-        let mut conn = self.conn.lock().unwrap();
+        let mut conn = self.lock();
         let tx = conn.transaction()?;
         let created = now();
         for raw in tags {
@@ -54,7 +54,7 @@ impl Library {
 
     /// Unlink a tag (by name) from a photo and rebuild the FTS row.
     pub fn remove_photo_tag(&self, photo_id: i64, name: &str) -> Result<()> {
-        let mut conn = self.conn.lock().unwrap();
+        let mut conn = self.lock();
         let tx = conn.transaction()?;
         tx.execute(
             "DELETE FROM photo_tags WHERE photo_id = ?1
@@ -68,7 +68,7 @@ impl Library {
 
     /// Mark an AI tag on a photo as confirmed by the user.
     pub fn confirm_photo_tag(&self, photo_id: i64, name: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         conn.execute(
             "UPDATE photo_tags SET confirmed = 1
              WHERE photo_id = ?1 AND tag_id = (SELECT id FROM tags WHERE name = ?2)",
@@ -79,7 +79,7 @@ impl Library {
 
     /// The tags on a photo ordered by source then name.
     pub fn photo_tags(&self, photo_id: i64) -> Result<Vec<Tag>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         let mut stmt = conn.prepare(
             "SELECT t.name, pt.source, pt.confirmed
              FROM photo_tags pt JOIN tags t ON t.id = pt.tag_id
@@ -97,7 +97,7 @@ impl Library {
 
     /// Update a photo's AI tagging status.
     pub fn set_ai_status(&self, photo_id: i64, status: AiStatus) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         conn.execute(
             "UPDATE photos SET ai_status = ?1 WHERE id = ?2",
             params![status.as_i64(), photo_id],
@@ -109,7 +109,7 @@ impl Library {
     /// is limited to that folder. Photos marked done or skipped are excluded
     /// unless `include_done` is true.
     pub fn photos_needing_tags(&self, folder_id: i64, include_done: bool) -> Result<Vec<i64>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         let mut sql = String::from("SELECT id FROM photos WHERE 1=1");
         if folder_id > 0 {
             sql.push_str(" AND folder_id = ?1");
@@ -142,7 +142,7 @@ impl Library {
             return Ok(std::collections::HashSet::new());
         }
         let match_expr = fts_query(query);
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         let mut stmt =
             conn.prepare("SELECT rowid FROM photo_tags_fts WHERE photo_tags_fts MATCH ?1")?;
         let rows = stmt.query_map(params![match_expr], |r| r.get::<_, i64>(0))?;
@@ -155,7 +155,7 @@ impl Library {
 
     /// Every tag with the number of photos carrying it.
     pub fn all_tags(&self) -> Result<Vec<TagCount>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         let mut stmt = conn.prepare(
             "SELECT t.name, COUNT(pt.photo_id)
              FROM tags t LEFT JOIN photo_tags pt ON pt.tag_id = t.id
@@ -177,7 +177,7 @@ impl Library {
         if new_name.is_empty() || old_name.eq_ignore_ascii_case(new_name) {
             return Ok(());
         }
-        let mut conn = self.conn.lock().unwrap();
+        let mut conn = self.lock();
         let tx = conn.transaction()?;
         let old_id: Option<i64> = tx
             .query_row("SELECT id FROM tags WHERE name = ?1", params![old_name], |r| {
@@ -217,7 +217,7 @@ impl Library {
         if src_name.eq_ignore_ascii_case(dst_name) {
             return Ok(());
         }
-        let mut conn = self.conn.lock().unwrap();
+        let mut conn = self.lock();
         let tx = conn.transaction()?;
         let src_id: i64 =
             tx.query_row("SELECT id FROM tags WHERE name = ?1", params![src_name], |r| {
@@ -238,7 +238,7 @@ impl Library {
 
     /// Remove a tag globally and rebuild affected FTS rows.
     pub fn delete_tag(&self, name: &str) -> Result<()> {
-        let mut conn = self.conn.lock().unwrap();
+        let mut conn = self.lock();
         let tx = conn.transaction()?;
         let id: Option<i64> = tx
             .query_row("SELECT id FROM tags WHERE name = ?1", params![name], |r| {

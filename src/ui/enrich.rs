@@ -170,7 +170,7 @@ fn start_workers(state: &Rc<AppState>) {
             Arc::new(Mutex::new(std::collections::HashSet::new()));
 
         let mut handles = Vec::new();
-        for _ in 0..ENRICH_WORKERS {
+        for w in 0..ENRICH_WORKERS {
             let lib = lib.clone();
             let gen = gen.clone();
             let queue = queue.clone();
@@ -178,7 +178,8 @@ fn start_workers(state: &Rc<AppState>) {
             let tx = tx.clone();
             let done = done.clone();
             let folder_seen = folder_seen.clone();
-            handles.push(std::thread::spawn(move || loop {
+            let builder = std::thread::Builder::new().name(format!("enrich{w}"));
+            if let Ok(h) = builder.spawn(move || loop {
                 if cancel.load(Ordering::Relaxed) {
                     return;
                 }
@@ -222,7 +223,9 @@ fn start_workers(state: &Rc<AppState>) {
                         }
                     }
                 }
-            }));
+            }) {
+                handles.push(h);
+            }
         }
         for h in handles {
             let _ = h.join();
@@ -239,11 +242,24 @@ fn enrich_one(lib: &Library, gen: &Generator, id: i64) -> i64 {
         _ => return 0,
     };
     let _ = lib.set_photo_scan_state(id, PhotoScanState::Enriching);
+    log::trace!("enrich {} ({}) …", id, p.path);
+    let t = std::time::Instant::now();
     match scan::enrich_file(std::path::Path::new(&p.path)) {
         Some(enr) => {
+            let hash_ms = t.elapsed();
             let _ = lib.enrich_photo(id, enr.taken_at, enr.width, enr.height, &enr.hash);
             // Generate (and cache) the thumbnail now that the hash exists.
+            let t_thumb = std::time::Instant::now();
             let _ = gen.get(&enr.hash, std::path::Path::new(&p.path), p.orientation);
+            if hash_ms.as_millis() >= 500 || t_thumb.elapsed().as_millis() >= 500 {
+                log::debug!(
+                    "enrich {} slow: enrich_file {:.2?}, thumbnail {:.2?} ({})",
+                    id,
+                    hash_ms,
+                    t_thumb.elapsed(),
+                    p.path
+                );
+            }
         }
         None => {
             // File could not be read; leave it structured so a later pass (or a

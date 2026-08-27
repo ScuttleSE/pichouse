@@ -29,6 +29,36 @@ pub(super) fn now() -> i64 {
         .unwrap_or(0)
 }
 
+impl Library {
+    /// Acquire the shared connection lock, logging when the wait is long.
+    ///
+    /// Every DB method funnels through here, so a stall waiting on the single
+    /// `Mutex<Connection>` (the main source of multi-second UI freezes during a
+    /// scan) is visible in the log instead of being invisible. A `debug!` line
+    /// is emitted before waiting and a `warn!` when the wait exceeds ~200 ms,
+    /// tagged with the caller so a hang points at the exact operation.
+    #[track_caller]
+    pub(super) fn lock(&self) -> std::sync::MutexGuard<'_, Connection> {
+        let caller = std::panic::Location::caller();
+        // Fast path: try to take the lock without blocking or logging.
+        if let Ok(g) = self.conn.try_lock() {
+            return g;
+        }
+        // The lock is held elsewhere; this call will block. Log before waiting
+        // so a hang shows this "waiting" line with no matching "acquired".
+        log::debug!("db lock: waiting for connection ({caller})");
+        let t = std::time::Instant::now();
+        let g = self.conn.lock().unwrap();
+        let waited = t.elapsed();
+        if waited.as_millis() >= 200 {
+            log::warn!("db lock: waited {:.2?} ({caller})", waited);
+        } else {
+            log::debug!("db lock: acquired after {:.2?} ({caller})", waited);
+        }
+        g
+    }
+}
+
 /// Add columns introduced after the first release to an existing `photos`
 /// table, so a database created by an older build gains them without a rebuild.
 /// Each `ALTER TABLE ... ADD COLUMN` is idempotent here because we first read
@@ -111,7 +141,7 @@ impl Library {
 
     /// Record a user-added root folder. Idempotent.
     pub fn add_library_folder(&self, path: &str) -> Result<LibraryFolder> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         conn.execute(
             "INSERT INTO library_folders(path, added_at) VALUES(?1, ?2)
              ON CONFLICT(path) DO NOTHING",
@@ -135,7 +165,7 @@ impl Library {
     /// Delete a user-added root folder and all folders/photos scanned beneath it
     /// (matched by path prefix).
     pub fn remove_library_folder(&self, path: &str) -> Result<()> {
-        let mut conn = self.conn.lock().unwrap();
+        let mut conn = self.lock();
         let tx = conn.transaction()?;
         let prefix = format!("{}{}%", path, std::path::MAIN_SEPARATOR);
         tx.execute(
@@ -149,7 +179,7 @@ impl Library {
 
     /// All user-added root folders.
     pub fn library_folders(&self) -> Result<Vec<LibraryFolder>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         let mut stmt = conn.prepare(
             "SELECT id, path, added_at, first_scan_done_at FROM library_folders ORDER BY path",
         )?;
@@ -168,7 +198,7 @@ impl Library {
     /// which added files count as "new"). No-op if already stamped, so a rescan
     /// does not move the boundary forward.
     pub fn mark_first_scan_done(&self, root_path: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         conn.execute(
             "UPDATE library_folders SET first_scan_done_at = ?1
              WHERE path = ?2 AND first_scan_done_at = 0",
@@ -179,7 +209,7 @@ impl Library {
 
     /// Insert or update a scanned folder and return its id.
     pub fn upsert_folder(&self, f: &Folder) -> Result<i64> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         conn.execute(
             "INSERT INTO folders(path, name, mtime, year) VALUES(?1, ?2, ?3, ?4)
              ON CONFLICT(path) DO UPDATE SET name=excluded.name, mtime=excluded.mtime, year=excluded.year",
@@ -195,7 +225,7 @@ impl Library {
     /// The id of a scanned folder by path, without creating it. `None` if no
     /// such folder row exists.
     pub fn folder_id_by_path(&self, path: &str) -> Result<Option<i64>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         let id: Option<i64> = conn
             .query_row("SELECT id FROM folders WHERE path = ?1", params![path], |r| {
                 r.get(0)
@@ -207,14 +237,14 @@ impl Library {
     /// Delete a scanned folder row (and, by cascade, its photos and album
     /// membership). Used to drop a folder that no longer holds any images.
     pub fn delete_folder(&self, folder_id: i64) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         conn.execute("DELETE FROM folders WHERE id = ?1", params![folder_id])?;
         Ok(())
     }
 
     /// Count photos currently marked missing (soft-deleted from disk).
     pub fn missing_photo_count(&self) -> Result<i64> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         let n: i64 = conn.query_row("SELECT COUNT(*) FROM photos WHERE missing = 1", [], |r| {
             r.get(0)
         })?;
@@ -225,14 +255,14 @@ impl Library {
     /// memberships are removed by ON DELETE CASCADE. Returns the number of rows
     /// deleted.
     pub fn delete_missing_photos(&self) -> Result<usize> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         let n = conn.execute("DELETE FROM photos WHERE missing = 1", [])?;
         Ok(n)
     }
 
     /// All scanned folders ordered by year (desc) then name.
     pub fn folders(&self) -> Result<Vec<Folder>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         let mut stmt = conn.prepare(
             "SELECT id, path, name, mtime, year FROM folders ORDER BY year DESC, name ASC",
         )?;
@@ -250,7 +280,7 @@ impl Library {
 
     /// Load a single folder by id.
     pub fn folder_by_id(&self, id: i64) -> Result<Option<Folder>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         let f = conn
             .query_row(
                 "SELECT id, path, name, mtime, year FROM folders WHERE id = ?1",
@@ -270,7 +300,7 @@ impl Library {
     }
 
     /// A map of folder id to its photo count.
-    pub fn folder_photo_counts(&self) -> Result<std::collections::HashMap<i64, i64>> {        let conn = self.conn.lock().unwrap();
+    pub fn folder_photo_counts(&self) -> Result<std::collections::HashMap<i64, i64>> {        let conn = self.lock();
         let mut stmt = conn.prepare("SELECT folder_id, COUNT(*) FROM photos GROUP BY folder_id")?;
         let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?;
         let mut out = std::collections::HashMap::new();
@@ -286,7 +316,7 @@ impl Library {
     /// photo (a fully populated photo should pass `PhotoScanState::Done`).
     #[allow(dead_code)] // Kept API for single-photo upsert.
     pub fn upsert_photo(&self, p: &Photo) -> Result<i64> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         conn.execute(
             "INSERT INTO photos(folder_id, path, filename, size, mod_time, taken_at, width, height, hash, thumb_ready, orientation, scan_state, missing, added_at)
              VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 0, ?11, 0, ?12)
@@ -314,7 +344,7 @@ impl Library {
     /// preserves prior enrichment; it only clears the `missing` flag and updates
     /// size/mod_time.
     pub fn upsert_photo_structure(&self, p: &Photo) -> Result<i64> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         conn.execute(
             "INSERT INTO photos(folder_id, path, filename, size, mod_time, scan_state, missing, added_at)
              VALUES(?1, ?2, ?3, ?4, ?5, 0, 0, ?6)
@@ -341,7 +371,7 @@ impl Library {
             return Ok(());
         }
         let ts = now();
-        let mut conn = self.conn.lock().unwrap();
+        let mut conn = self.lock();
         let tx = conn.transaction()?;
         {
             let mut stmt = tx.prepare(
@@ -363,7 +393,7 @@ impl Library {
     /// Pass `Some(folder_id)` to limit to one folder, `None` for the whole
     /// library. Ordered by folder then filename for a stable worklist.
     pub fn photos_needing_enrichment(&self, folder_id: Option<i64>) -> Result<Vec<i64>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         let mut out = Vec::new();
         match folder_id {
             Some(fid) => {
@@ -400,7 +430,7 @@ impl Library {
         height: i32,
         hash: &str,
     ) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         conn.execute(
             "UPDATE photos SET taken_at = ?1, width = ?2, height = ?3, hash = ?4, scan_state = 2
              WHERE id = ?5",
@@ -411,7 +441,7 @@ impl Library {
 
     /// Set a photo's two-phase import state.
     pub fn set_photo_scan_state(&self, id: i64, state: PhotoScanState) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         conn.execute(
             "UPDATE photos SET scan_state = ?1 WHERE id = ?2",
             params![state.as_i64(), id],
@@ -422,7 +452,7 @@ impl Library {
     /// Mark a photo missing (file gone from disk) or present again. The row and
     /// its tags/edits are kept regardless.
     pub fn set_photo_missing(&self, id: i64, missing: bool) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         conn.execute(
             "UPDATE photos SET missing = ?1 WHERE id = ?2",
             params![missing as i64, id],
@@ -432,7 +462,7 @@ impl Library {
 
     /// Set a folder's year (refined from the earliest enriched `taken_at`).
     pub fn set_folder_year(&self, folder_id: i64, year: i32) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         conn.execute(
             "UPDATE folders SET year = ?1 WHERE id = ?2",
             params![year, folder_id],
@@ -443,7 +473,7 @@ impl Library {
     /// The earliest known EXIF taken date among a folder's enriched photos, if
     /// any (ignores the `0` "unknown" sentinel).
     pub fn earliest_taken_at(&self, folder_id: i64) -> Result<Option<i64>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         let v: Option<i64> = conn.query_row(
             "SELECT MIN(taken_at) FROM photos WHERE folder_id = ?1 AND taken_at > 0",
             params![folder_id],
@@ -466,7 +496,7 @@ impl Library {
         let now_ts = now();
         let age_threshold = now_ts - max_age_secs;
 
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         // Candidate photos: recent, not missing. Join the folder for its path.
         let mut stmt = conn.prepare(
             "SELECT p.id, p.folder_id, p.path, p.filename, p.size, p.mod_time, p.taken_at,
@@ -546,7 +576,7 @@ impl Library {
 
     /// All photos for a folder ordered by taken date then name.
     pub fn photos_in_folder(&self, folder_id: i64) -> Result<Vec<Photo>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         let mut stmt = conn.prepare(
             "SELECT id, folder_id, path, filename, size, mod_time, taken_at, width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing, added_at
              FROM photos WHERE folder_id = ?1 ORDER BY taken_at ASC, filename ASC",
@@ -557,7 +587,7 @@ impl Library {
 
     /// Load a single photo by id.
     pub fn photo_by_id(&self, id: i64) -> Result<Option<Photo>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         let p = conn
             .query_row(
                 "SELECT id, folder_id, path, filename, size, mod_time, taken_at, width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing, added_at
@@ -575,7 +605,7 @@ impl Library {
         &self,
         folder_id: i64,
     ) -> Result<std::collections::HashMap<String, (i64, i64, bool)>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         let mut stmt = conn
             .prepare("SELECT path, id, size, missing FROM photos WHERE folder_id = ?1")?;
         let rows = stmt.query_map(params![folder_id], |r| {
@@ -597,7 +627,7 @@ impl Library {
     /// Re-point a photo row at a new path (used when a missing file reappears
     /// under a new name/location — a move/rename — so tags and edits follow it).
     pub fn move_photo_path(&self, id: i64, new_folder_id: i64, new_path: &str, new_name: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         conn.execute(
             "UPDATE photos SET folder_id = ?1, path = ?2, filename = ?3, missing = 0 WHERE id = ?4",
             params![new_folder_id, new_path, new_name, id],
@@ -608,7 +638,7 @@ impl Library {
     /// A map of file path to content hash for all photos whose parent directory
     /// is `dir`. Used by the raw folder view to reuse scanned thumbnails.
     pub fn hashes_by_dir(&self, dir: &str) -> Result<std::collections::HashMap<String, String>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         let mut stmt = conn.prepare(
             "SELECT p.path, p.hash FROM photos p
              JOIN folders f ON f.id = p.folder_id
@@ -628,7 +658,7 @@ impl Library {
     /// Mark whether a photo's thumbnail has been generated.
     #[allow(dead_code)] // Kept API; thumbnails are cached by hash, not by this flag.
     pub fn set_thumb_ready(&self, photo_id: i64, ready: bool) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         conn.execute(
             "UPDATE photos SET thumb_ready = ?1 WHERE id = ?2",
             params![ready as i64, photo_id],
@@ -640,7 +670,7 @@ impl Library {
     /// 0/90/180/270). Never written to disk; lives only in the database.
     pub fn set_orientation(&self, photo_id: i64, degrees: i32) -> Result<()> {
         let degrees = ((degrees % 360) + 360) % 360;
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         conn.execute(
             "UPDATE photos SET orientation = ?1 WHERE id = ?2",
             params![degrees, photo_id],
@@ -650,7 +680,7 @@ impl Library {
 
     /// The stored value for `key`, or `def` if unset.
     pub fn get_setting(&self, key: &str, def: &str) -> Result<String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         let v: Option<String> = conn
             .query_row(
                 "SELECT value FROM settings WHERE key = ?1",
@@ -663,7 +693,7 @@ impl Library {
 
     /// Store a value for `key`.
     pub fn set_setting(&self, key: &str, value: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         conn.execute(
             "INSERT INTO settings(key, value) VALUES(?1, ?2)
              ON CONFLICT(key) DO UPDATE SET value=excluded.value",
@@ -674,7 +704,7 @@ impl Library {
 
     /// Record the scan status for a folder.
     pub fn set_scan_state(&self, folder_id: i64, status: ScanStatus) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         conn.execute(
             "INSERT INTO scan_state(folder_id, last_scanned, status) VALUES(?1, ?2, ?3)
              ON CONFLICT(folder_id) DO UPDATE SET last_scanned=excluded.last_scanned, status=excluded.status",

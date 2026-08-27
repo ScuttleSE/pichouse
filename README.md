@@ -159,10 +159,16 @@ the shipped binary:
     pichouse --help     # show usage
 
 The `-vv` level is the one to use when the UI stalls for several seconds while
-scanning a new library folder. It prints, for example, how long `collect_images`
-took, per-directory `insert_batch` timings, and a `sidebar.reload` line broken
-down into its slow queries (`folder_counts`, `new_photos_count`, `va_counts`) —
-which pinpoints where the time goes.
+scanning a new library folder. Every log line is tagged with the thread that
+emitted it (`main`, `scan`, `enrich0`…), and operations log *before* they start,
+so a freeze is easy to attribute: the last line before a stall names the thread
+and the exact operation that hung (for example a `db lock: waiting for
+connection` with no following `acquired`, or a `sidebar.reload: new_photos_count`
+with no following timing). It also prints how long `collect_images` took,
+per-directory `insert_batch` timings, a `sidebar.reload` breakdown
+(`folder_counts`/`new_photos_count`/`va_counts`), and warns when acquiring the
+shared database lock takes more than 200 ms — the usual cause of scan-time
+freezes.
 
 ## Test
 

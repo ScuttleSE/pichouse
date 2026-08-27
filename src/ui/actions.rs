@@ -84,6 +84,7 @@ fn start_scan_worker(state: &Rc<AppState>) {
                 Msg::Progress(p) => status.set_progress(p),
                 Msg::Scanning(s) => status.set_scanning(s),
                 Msg::ReloadOnly => {
+                    log::debug!("ReloadOnly: reload_folders start (main thread)");
                     let t = std::time::Instant::now();
                     super::app::reload_folders(&state);
                     let reload_ms = t.elapsed();
@@ -114,7 +115,8 @@ fn start_scan_worker(state: &Rc<AppState>) {
 
     let lib = state.lib.clone();
     let queue = state.scan_queue_arc();
-    std::thread::spawn(move || {
+    let spawn = std::thread::Builder::new().name("scan".into());
+    let _ = spawn.spawn(move || {
         let scanner = Scanner::new(&lib);
         let mut scan_err: Option<String> = None;
         let mut cancelled = false;

@@ -70,6 +70,7 @@ impl<'a> Scanner<'a> {
         // First pass: collect image files grouped by directory.
         let mut by_dir: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
         let mut total = 0usize;
+        log::info!("collect_images: walking {} …", root.display());
         let t_collect = std::time::Instant::now();
         collect_images(root, cancel, &mut by_dir, &mut total)?;
         log::info!(
@@ -82,10 +83,18 @@ impl<'a> Scanner<'a> {
 
         let t_scan = std::time::Instant::now();
         let mut done = 0usize;
-        for (dir, files) in &by_dir {
+        let ndirs = by_dir.len();
+        for (i, (dir, files)) in by_dir.iter().enumerate() {
             if cancel.load(Ordering::Relaxed) {
                 return Err(ScanError::Cancelled(done));
             }
+            log::debug!(
+                "scan dir [{}/{}] {} ({} files): start",
+                i + 1,
+                ndirs,
+                dir.display(),
+                files.len()
+            );
             let t_dir = std::time::Instant::now();
             let t_upsert = std::time::Instant::now();
             let fid = self.upsert_folder_for(dir)?;
@@ -100,11 +109,17 @@ impl<'a> Scanner<'a> {
                 .iter()
                 .filter_map(|path| structure_photo(fid, path))
                 .collect();
+            log::debug!(
+                "scan dir {}: inserting {} photos …",
+                dir.display(),
+                batch.len()
+            );
             let t_batch = std::time::Instant::now();
             self.lib.insert_structure_batch(&batch)?;
             let batch_ms = t_batch.elapsed();
 
             // File this folder into the Library album tree right away.
+            log::trace!("scan dir {}: on_folder …", dir.display());
             on_folder(fid, dir);
 
             for path in files {
@@ -121,7 +136,7 @@ impl<'a> Scanner<'a> {
             }
             self.lib.set_scan_state(fid, ScanStatus::Done)?;
             log::debug!(
-                "scan dir {}: {} photos, upsert_folder {:.2?}, insert_batch {:.2?}, dir total {:.2?}",
+                "scan dir {}: done ({} photos, upsert_folder {:.2?}, insert_batch {:.2?}, dir total {:.2?})",
                 dir.display(),
                 batch.len(),
                 upsert_ms,
@@ -214,9 +229,13 @@ fn collect_images(
     if cancel.load(Ordering::Relaxed) {
         return Err(ScanError::Cancelled(0));
     }
+    log::trace!("read_dir {}", dir.display());
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
-        Err(_) => return Ok(()), // skip unreadable directories
+        Err(e) => {
+            log::debug!("skip unreadable dir {}: {e}", dir.display());
+            return Ok(()); // skip unreadable directories
+        }
     };
     for entry in entries.flatten() {
         if cancel.load(Ordering::Relaxed) {

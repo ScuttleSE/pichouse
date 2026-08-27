@@ -50,7 +50,7 @@ impl Library {
     /// The edit record for a photo. Returns the identity edit (with the given
     /// `photo_id`) when the photo has no `photo_edits` row.
     pub fn photo_edit(&self, photo_id: i64) -> Result<PhotoEdit> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         let sql = format!("SELECT {EDIT_COLS} FROM photo_edits WHERE photo_id = ?1");
         let edit = conn
             .query_row(&sql, params![photo_id], map_edit)
@@ -69,7 +69,7 @@ impl Library {
             self.clear_photo_edit(edit.photo_id)?;
             return Ok(0);
         }
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         let next_rev: i64 = conn
             .query_row(
                 "SELECT edit_rev FROM photo_edits WHERE photo_id = ?1",
@@ -123,7 +123,7 @@ impl Library {
 
     /// Discard all edits for a photo (revert to the original view).
     pub fn clear_photo_edit(&self, photo_id: i64) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock();
         conn.execute(
             "DELETE FROM photo_edits WHERE photo_id = ?1",
             params![photo_id],
@@ -143,7 +143,7 @@ impl Library {
         // Collect the photos (id + hash) up front to return them for thumb
         // invalidation.
         let photos: Vec<(i64, String)> = {
-            let conn = self.conn.lock().unwrap();
+            let conn = self.lock();
             let mut stmt =
                 conn.prepare("SELECT id, hash FROM photos WHERE folder_id = ?1")?;
             let rows = stmt.query_map(params![folder_id], |r| {

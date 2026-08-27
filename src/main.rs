@@ -57,9 +57,25 @@ fn parse_log_level() -> Result<LevelFilter, gtk4::glib::ExitCode> {
 
 /// Initialize console logging at the given level for the `pichouse` crate.
 fn init_logging(level: LevelFilter) {
+    use std::io::Write;
     env_logger::Builder::new()
         // Only our own crate's records; keep third-party noise out.
         .filter_module("pichouse", level)
+        // Include an elapsed timestamp and the thread name on every line, so a
+        // freeze is easy to attribute: the last line before a stall names the
+        // thread and operation that hung.
+        .format(|buf, record| {
+            let thread = std::thread::current();
+            let name = thread.name().unwrap_or("main");
+            writeln!(
+                buf,
+                "[{:>7}] [{}] {}: {}",
+                record.level(),
+                name,
+                record.target(),
+                record.args()
+            )
+        })
         .init();
 }
 
