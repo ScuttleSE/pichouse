@@ -995,6 +995,18 @@ impl Sidebar {
         {
             let this = self.clone();
             add(
+                "refresh-immich",
+                &group,
+                Rc::new(move |_| {
+                    if let Some(state) = this.state() {
+                        super::immich::refresh_albums(&state);
+                    }
+                }),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
                 "upload-to-immich",
                 &group,
                 Rc::new(move |t| {
@@ -1289,6 +1301,11 @@ impl Sidebar {
             }
         } else if id == NEW_FOLDERS_ID {
             menu.append(Some("New Album…"), Some(&detailed("new-album", id)));
+        } else if id == IMMICH_HEADER_ID || immich_server_id_of(id).is_some() {
+            menu.append(
+                Some("Refresh Albums"),
+                Some(&detailed("refresh-immich", id)),
+            );
         } else {
             return None;
         }

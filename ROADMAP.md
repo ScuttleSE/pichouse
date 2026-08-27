@@ -77,6 +77,8 @@ fetch + channel to the GTK main thread). Sync (Phase 4) is not yet implemented.
   section** in the Libraries tab (distinct from local library folders/albums).
 - Browse Immich albums from within pichouse.
 - View the contents of an Immich album (photos/assets) inside the app.
+- Right-click the Immich header or a server row → "Refresh Albums" re-fetches
+  the album list (picks up albums added or deleted on the server directly).
 
 ### Phase 2 — Full image viewer (done)
 - Double-click an Immich thumbnail to open the full image viewer.
