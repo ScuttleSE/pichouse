@@ -268,6 +268,7 @@ fn populate(state: &Rc<AppState>) {
     super::freshness::reconcile_now(state);
     super::freshness::start_periodic(state);
     super::immich::start_periodic_refresh(state);
+    super::immich::sync_all_down(state);
     // inotify fast-path for local folders (optional; periodic reconcile is the
     // reliable path and covers network drives where inotify is silent).
     super::watcher::start(state);

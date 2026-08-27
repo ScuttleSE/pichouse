@@ -221,6 +221,20 @@ impl Client {
         self.asset_image(asset_id, "preview")
     }
 
+    /// Download the original file bytes for one asset. Used by reverse sync to
+    /// bring an Immich-only asset into a local folder.
+    pub fn asset_original(&self, asset_id: &str) -> Result<Vec<u8>> {
+        let resp = self
+            .http
+            .get(format!("{}/assets/{asset_id}/original", self.api_base))
+            .header("x-api-key", &self.api_key)
+            .send()?;
+        if !resp.status().is_success() {
+            return Err(Error::Status(resp.status().as_u16()));
+        }
+        Ok(resp.bytes()?.to_vec())
+    }
+
     /// Download an asset image at the given size (`thumbnail` or `preview`).
     fn asset_image(&self, asset_id: &str, size: &str) -> Result<Vec<u8>> {
         let resp = self

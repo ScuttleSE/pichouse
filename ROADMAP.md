@@ -103,19 +103,26 @@ implemented; linked folders with auto-upload (Phase 4a) are.
   target album, so re-uploading is safe.
 - Virtual albums are not yet uploadable.
 
-### Phase 4a — Sync: linked folders + auto-upload (done)
+### Phase 4a — Sync: linked folders, two-way (done)
 - **No global sync by default** — only folders the user explicitly links are
   synced.
-- Right-click a scanned folder → "Sync with Immich album…" links it to a chosen
-  server and album (stored in `immich_folder_links`). The folder's current
-  photos upload immediately, and a synced folder is marked with `⇅` in the tree.
-- When new photos are scanned into a linked folder (by the freshness reconcile
-  or the inotify watcher), they auto-upload to the linked album in the
-  background (see `immich::autoupload_added`).
-- "Unsync from Immich" removes the link (does not touch the server album).
+- Right-click a scanned folder → "Sync with Immich album…" links it to a
+  chosen server and either a **new album** (created on the server) or an
+  **existing album** (stored in `immich_folder_links`). A synced folder is
+  marked with `⇅` in the tree.
+- **Two-way.** On linking, and on a periodic timer and startup:
+  - **Up:** new local photos in a linked folder upload to its album (from the
+    freshness reconcile or the inotify watcher, via `immich::autoupload_added`).
+  - **Down:** assets in the album that are not yet local download into the
+    folder (`immich::sync_folder_down` / `sync_all_down`), then a reconcile
+    turns them into local photos.
+- Matching is by original filename: it stops re-download loops (a downloaded
+  file is present next cycle) and re-upload (the forward path finds a
+  server-side duplicate).
+- "Sync Now" forces a two-way sync of a folder; "Unsync from Immich" removes the
+  link (does not touch the server album).
 - The Immich album list auto-refreshes every 5 minutes (plus the manual
-  "Refresh Albums" action), so albums added or deleted on the server appear
-  without a restart.
+  "Refresh Albums" action).
 
 ### Phase 4b — Two-way tag sync (future)
 - Sync tags back and forth between pichouse and Immich (two-way tag sync).

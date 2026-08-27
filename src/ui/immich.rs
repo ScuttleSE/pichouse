@@ -333,12 +333,12 @@ pub fn upload_photos(
 }
 
 /// Show the "Sync folder with Immich album" dialog. Links the folder to a
-/// chosen server and existing album so new photos auto-upload. An initial
-/// upload of the folder's current photos runs immediately after linking.
+/// chosen album so photos sync both ways. An initial two-way sync runs right
+/// after linking. The user may create a new album or use an existing one.
 pub fn show_sync_dialog(state: &Rc<AppState>, folder_id: i64, folder_name: &str) {
     use gtk4::prelude::*;
     use gtk4::{
-        Box as GtkBox, Button, DropDown, Label, Orientation, StringList, Window,
+        Box as GtkBox, Button, CheckButton, DropDown, Entry, Label, Orientation, StringList, Window,
     };
 
     let servers = state.lib.immich_servers().unwrap_or_default();
@@ -356,7 +356,8 @@ pub fn show_sync_dialog(state: &Rc<AppState>, folder_id: i64, folder_name: &str)
     root.set_margin_end(12);
     root.append(&Label::new(Some(&format!(
         "Keep folder \"{folder_name}\" synced with an Immich album.\n\
-         New photos scanned into it will upload automatically."
+         Photos sync both ways: new local photos upload, and new Immich\n\
+         photos download into this folder."
     ))));
 
     let server_names: Vec<&str> = servers.iter().map(|s| s.name.as_str()).collect();
@@ -367,12 +368,24 @@ pub fn show_sync_dialog(state: &Rc<AppState>, folder_id: i64, folder_name: &str)
     server_row.append(&server_drop);
     root.append(&server_row);
 
+    // New vs. existing album.
+    let new_radio = CheckButton::with_label("Create new album");
+    new_radio.set_active(true);
+    let existing_radio = CheckButton::with_label("Use existing album");
+    existing_radio.set_group(Some(&new_radio));
+    root.append(&new_radio);
+
+    let name_entry = Entry::new();
+    name_entry.set_text(folder_name);
+    name_entry.set_hexpand(true);
+    root.append(&name_entry);
+
+    root.append(&existing_radio);
+
     let album_list = StringList::new(&[]);
     let album_drop = DropDown::new(Some(album_list.clone()), gtk4::Expression::NONE);
-    let album_row = GtkBox::new(Orientation::Horizontal, 6);
-    album_row.append(&Label::new(Some("Album")));
-    album_row.append(&album_drop);
-    root.append(&album_row);
+    album_drop.set_sensitive(false);
+    root.append(&album_drop);
 
     let album_ids: Rc<std::cell::RefCell<Vec<String>>> =
         Rc::new(std::cell::RefCell::new(Vec::new()));
@@ -405,6 +418,15 @@ pub fn show_sync_dialog(state: &Rc<AppState>, folder_id: i64, folder_name: &str)
         let fill = fill.clone();
         server_drop.connect_selected_notify(move |d| fill(d.selected()));
     }
+    {
+        let name_entry = name_entry.clone();
+        let album_drop = album_drop.clone();
+        new_radio.connect_toggled(move |b| {
+            let new_mode = b.is_active();
+            name_entry.set_sensitive(new_mode);
+            album_drop.set_sensitive(!new_mode);
+        });
+    }
 
     let ok = Button::with_label("Sync");
     ok.add_css_class("suggested-action");
@@ -435,42 +457,88 @@ pub fn show_sync_dialog(state: &Rc<AppState>, folder_id: i64, folder_name: &str)
         let album_ids = album_ids.clone();
         let album_drop = album_drop.clone();
         let server_drop = server_drop.clone();
+        let new_radio = new_radio.clone();
+        let name_entry = name_entry.clone();
         let folder_name = folder_name.to_string();
         ok.connect_clicked(move |_| {
             let Some(server) = servers.get(server_drop.selected() as usize) else {
                 return;
             };
-            let idx = album_drop.selected() as usize;
-            let Some(album_id) = album_ids.borrow().get(idx).cloned() else {
-                state
-                    .status()
-                    .set_message("Choose an Immich album to sync with.");
-                return;
-            };
-            if let Err(e) =
-                state
-                    .lib
-                    .set_immich_folder_link(folder_id, server.id, &album_id)
-            {
-                super::state::show_error(&state, &e.to_string());
-                return;
+            let server = server.clone();
+            if new_radio.is_active() {
+                let name = name_entry.text().to_string();
+                if name.trim().is_empty() {
+                    return;
+                }
+                // Create the album in the background, then link and sync.
+                let (tx, rx) =
+                    glib::MainContext::channel::<Option<String>>(glib::Priority::DEFAULT);
+                let server_c = server.clone();
+                let name_c = name.clone();
+                std::thread::spawn(move || {
+                    let client =
+                        crate::immich::Client::new(&server_c.base_url, &server_c.api_key);
+                    let _ = tx.send(client.create_album(&name_c, &[]).ok());
+                });
+                let state2 = state.clone();
+                let folder_name2 = folder_name.clone();
+                rx.attach(None, move |album_id| {
+                    match album_id {
+                        Some(id) => {
+                            link_and_sync(&state2, folder_id, &folder_name2, &server, &id);
+                            refresh_albums(&state2);
+                        }
+                        None => state2
+                            .status()
+                            .set_message("Immich: could not create the album."),
+                    }
+                    glib::ControlFlow::Break
+                });
+            } else {
+                let idx = album_drop.selected() as usize;
+                let Some(album_id) = album_ids.borrow().get(idx).cloned() else {
+                    state
+                        .status()
+                        .set_message("Choose an Immich album to sync with.");
+                    return;
+                };
+                link_and_sync(&state, folder_id, &folder_name, &server, &album_id);
             }
-            if let Some(sb) = state.sidebar.borrow().as_ref() {
-                sb.reload();
-            }
-            // Upload the folder's current photos to the linked album now.
-            upload_photos(
-                &state,
-                UploadSource::Folder(folder_id),
-                &folder_name,
-                server.id,
-                UploadTarget::ExistingAlbum(album_id),
-            );
             window.close();
         });
     }
 
     window.set_visible(true);
+}
+
+/// Store the folder→album link, refresh the tree, and run an initial two-way
+/// sync (download Immich-only assets, then upload local-only photos).
+fn link_and_sync(
+    state: &Rc<AppState>,
+    folder_id: i64,
+    folder_name: &str,
+    server: &crate::model::ImmichServer,
+    album_id: &str,
+) {
+    if let Err(e) = state
+        .lib
+        .set_immich_folder_link(folder_id, server.id, album_id)
+    {
+        super::state::show_error(state, &e.to_string());
+        return;
+    }
+    if let Some(sb) = state.sidebar.borrow().as_ref() {
+        sb.reload();
+    }
+    // Pull first (bring down Immich-only assets), then push local photos.
+    sync_folder_down(state, folder_id);
+    upload_photos(
+        state,
+        UploadSource::Folder(folder_id),
+        folder_name,
+        server.id,
+        UploadTarget::ExistingAlbum(album_id.to_string()),
+    );
 }
 
 /// Auto-upload newly added photos that live in a folder linked to an Immich
@@ -508,6 +576,111 @@ pub fn autoupload_added(state: &Rc<AppState>, added: &[i64]) {
             UploadTarget::ExistingAlbum(link.immich_album_id),
         );
     }
+}
+
+/// Download Immich-only assets of every linked folder's album into that folder.
+/// Called from the periodic refresh so remote additions arrive automatically.
+pub fn sync_all_down(state: &Rc<AppState>) {
+    let linked = state.lib.linked_immich_folders().unwrap_or_default();
+    for folder_id in linked {
+        sync_folder_down(state, folder_id);
+    }
+}
+
+/// Download the assets that exist in a linked folder's Immich album but not yet
+/// in the local folder, then reconcile the folder so the new files become local
+/// photos. Matching is by original filename, which also stops re-download loops
+/// (a downloaded file exists locally next cycle) and re-upload (the forward
+/// path finds a server-side duplicate).
+pub fn sync_folder_down(state: &Rc<AppState>, folder_id: i64) {
+    let Ok(Some(link)) = state.lib.immich_folder_link(folder_id) else {
+        return;
+    };
+    let Ok(Some(server)) = state.lib.immich_server(link.server_id) else {
+        return;
+    };
+    let Ok(Some(folder)) = state.lib.folder_by_id(folder_id) else {
+        return;
+    };
+    let folder_path = folder.path.clone();
+
+    // Filenames already present locally (from the DB) — the set to skip.
+    let local: std::collections::HashSet<String> = state
+        .lib
+        .photos_in_folder(folder_id)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|p| p.filename.to_lowercase())
+        .collect();
+
+    let page_size = state
+        .lib
+        .get_setting(
+            super::prefs::KEY_IMMICH_PAGE_SIZE,
+            &super::prefs::DEFAULT_IMMICH_PAGE_SIZE.to_string(),
+        )
+        .ok()
+        .and_then(|s| s.parse::<i32>().ok())
+        .unwrap_or(super::prefs::DEFAULT_IMMICH_PAGE_SIZE);
+
+    let album_id = link.immich_album_id.clone();
+    let (tx, rx) = glib::MainContext::channel::<usize>(glib::Priority::DEFAULT);
+    std::thread::spawn(move || {
+        let client = crate::immich::Client::new(&server.base_url, &server.api_key);
+        let assets = client.album_assets(&album_id, page_size).unwrap_or_default();
+        let mut downloaded = 0usize;
+        for a in assets {
+            if a.filename.is_empty() || local.contains(&a.filename.to_lowercase()) {
+                continue;
+            }
+            let dest = unique_dest(&folder_path, &a.filename);
+            match client.asset_original(&a.id) {
+                Ok(bytes) if !bytes.is_empty() => {
+                    if std::fs::write(&dest, &bytes).is_ok() {
+                        downloaded += 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let _ = tx.send(downloaded);
+    });
+
+    let state = state.clone();
+    rx.attach(None, move |downloaded| {
+        if downloaded > 0 {
+            state.status().set_message(&format!(
+                "Downloaded {downloaded} photo(s) from Immich."
+            ));
+            // Reconcile so the new files become local photos and show in the grid.
+            super::freshness::reconcile_now(&state);
+        }
+        glib::ControlFlow::Break
+    });
+}
+
+/// Choose a destination path in `dir` for `filename`, adding a numeric suffix if
+/// a different file already occupies that name.
+fn unique_dest(dir: &str, filename: &str) -> std::path::PathBuf {
+    let base = std::path::Path::new(dir).join(filename);
+    if !base.exists() {
+        return base;
+    }
+    let stem = std::path::Path::new(filename)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| filename.to_string());
+    let ext = std::path::Path::new(filename)
+        .extension()
+        .map(|e| format!(".{}", e.to_string_lossy()))
+        .unwrap_or_default();
+    for n in 1..10000 {
+        let cand = std::path::Path::new(dir).join(format!("{stem} ({n}){ext}"));
+        if !cand.exists() {
+            return cand;
+        }
+    }
+    base
 }
 
 /// Background upload of an explicit photo list to a target album. Shared by the
@@ -622,11 +795,13 @@ pub fn refresh_albums(state: &Rc<AppState>) {
 const REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(300);
 
 /// Start the periodic Immich album refresh timer. Runs on the GLib main loop
-/// and simply calls `refresh_albums` on each tick.
+/// and simply calls `refresh_albums` on each tick, then pulls any new remote
+/// assets of linked folders down.
 pub fn start_periodic_refresh(state: &Rc<AppState>) {
     let state = state.clone();
     glib::timeout_add_local(REFRESH_INTERVAL, move || {
         refresh_albums(&state);
+        sync_all_down(&state);
         glib::ControlFlow::Continue
     });
 }

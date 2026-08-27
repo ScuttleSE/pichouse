@@ -230,9 +230,29 @@ impl Library {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
-    /// A map of folder id to its photo count.
-    pub fn folder_photo_counts(&self) -> Result<std::collections::HashMap<i64, i64>> {
+    /// Load a single folder by id.
+    pub fn folder_by_id(&self, id: i64) -> Result<Option<Folder>> {
         let conn = self.conn.lock().unwrap();
+        let f = conn
+            .query_row(
+                "SELECT id, path, name, mtime, year FROM folders WHERE id = ?1",
+                params![id],
+                |r| {
+                    Ok(Folder {
+                        id: r.get(0)?,
+                        path: r.get(1)?,
+                        name: r.get(2)?,
+                        mtime: r.get(3)?,
+                        year: r.get(4)?,
+                    })
+                },
+            )
+            .optional()?;
+        Ok(f)
+    }
+
+    /// A map of folder id to its photo count.
+    pub fn folder_photo_counts(&self) -> Result<std::collections::HashMap<i64, i64>> {        let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare("SELECT folder_id, COUNT(*) FROM photos GROUP BY folder_id")?;
         let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?;
         let mut out = std::collections::HashMap::new();

@@ -1054,6 +1054,38 @@ impl Sidebar {
         {
             let this = self.clone();
             add(
+                "syncnow-immich",
+                &group,
+                Rc::new(move |t| {
+                    let Some(fid) = folder_id_of(t) else { return };
+                    let Some(state) = this.state() else { return };
+                    super::immich::sync_folder_down(&state, fid);
+                    if let Ok(Some(link)) = state.lib.immich_folder_link(fid) {
+                        if let Ok(Some(server)) = state.lib.immich_server(link.server_id) {
+                            let name = state
+                                .lib
+                                .folder_by_id(fid)
+                                .ok()
+                                .flatten()
+                                .map(|f| f.name)
+                                .unwrap_or_default();
+                            super::immich::upload_photos(
+                                &state,
+                                super::immich::UploadSource::Folder(fid),
+                                &name,
+                                server.id,
+                                super::immich::UploadTarget::ExistingAlbum(
+                                    link.immich_album_id,
+                                ),
+                            );
+                        }
+                    }
+                }),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
                 "upload-to-immich",
                 &group,
                 Rc::new(move |t| {
@@ -1348,6 +1380,10 @@ impl Sidebar {
                 // Sync (link) the folder to an Immich album for auto-upload.
                 if !data.immich_servers.is_empty() {
                     if data.immich_linked_folders.contains(&fid) {
+                        menu.append(
+                            Some("Sync Now"),
+                            Some(&detailed("syncnow-immich", id)),
+                        );
                         menu.append(
                             Some("Unsync from Immich"),
                             Some(&detailed("unsync-immich", id)),
