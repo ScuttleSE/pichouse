@@ -11,12 +11,16 @@ application. The Go code is deleted. All work is on `main`. The temporary
 `rust-port` branch is deleted.
 
 The application builds, tests pass, and the UI runs on the target machine
-(Debian 13, GTK 4.18). `cargo test` passes 28 tests.
+(Debian 13, GTK 4.18). `cargo test` passes 33 tests.
 
 Two roadmap features are complete: fast two-phase import and library freshness.
 A New Files view is complete. Section 10 describes them. Section 11 describes
-the fixes from the most recent session. Read section 11 first if you continue
-recent work.
+the fixes from an earlier session.
+
+The Virtual albums roadmap feature is complete. It is manual and rule-based.
+Section 12 describes it. Section 12 also describes two related additions:
+drag-and-drop of photos onto a virtual album, and persistence of the sidebar
+tree view. Read section 12 first if you continue recent work.
 
 ## 10. Fast two-phase import and library freshness
 
@@ -180,13 +184,96 @@ scan, the album tree, or reconciliation.
 - Status bar: the scan counter is cumulative across all queued folders, not per
   folder.
 
+## 12. Recent session: virtual albums, drag-drop, tree persistence
+
+This section records work made after section 11. Read it before you change the
+virtual albums, the grid selection, or the sidebar tree state.
+
+### 12.1 Virtual albums (manual + rule-based)
+- Purpose: a virtual album groups individual photos. The photos come from any
+  folder. A virtual album can nest under another virtual album. A photo can
+  belong to many virtual albums.
+- The code is in `src/db/virtual_albums.rs` (data) and several UI files.
+- Storage: three tables in `library.db`.
+  - `virtual_albums` — id, name, parent_id, position, rule_match. `rule_match`
+    is 0 for AND, 1 for OR.
+  - `virtual_album_photos` — album_id, photo_id, position, kind. `kind` is 0 for
+    a manual pin, 1 for an exclusion.
+  - `virtual_album_rules` — id, album_id, field, op, value. `field` is one of
+    `tag`, `date_from`, `date_to`, `filename`, `folder`.
+- Membership is computed live at view time. `photos_in_virtual_album` builds SQL
+  from the rules, combines the rules with AND or OR per `rule_match`, unions the
+  manual pins, then subtracts the exclusions.
+- IMPORTANT: the membership subqueries select `photo_id AS id`. The alias is
+  required. A missing alias caused a past bug where removals did not take effect.
+- The three tables use `CREATE TABLE IF NOT EXISTS`. An older database gains them
+  on open. There is no separate migration step.
+- Model types are in `src/model.rs`: `VirtualAlbum`, `RuleMatch`, `RuleField`,
+  `RuleOp`, `VirtualRule`.
+- Sidebar (`src/ui/sidebar.rs`): a "Virtual Albums" section shows above the
+  normal folder-albums. The section icon is `starred-symbolic`. Node ids use the
+  prefix `valbum:`. The section header id is `virtualheader`. The row context
+  menu creates, renames, deletes, adds a sub-album, and opens the rules editor.
+  Drag one virtual album onto another to nest it.
+- Grid (`src/ui/grid.rs`): the grid now uses `MultiSelection`. `selected_photos`
+  returns the current selection. A right-click raises a context menu.
+- Grid context menu (`src/ui/vmenu.rs`): it adds the selection to a virtual
+  album, removes the selection from the album that is open, or makes a new album
+  from the selection.
+- Rules editor (`src/ui/vrules.rs`): a dialog with an AND/OR mode and a list of
+  rule rows. Dates are typed as `YYYY-MM-DD`. The dialog converts a date to a
+  Unix timestamp and back. `AppState::show_virtual_album` loads an album into the
+  grid.
+
+### 12.2 Drag-and-drop of photos onto a virtual album
+- The grid is a drag source. The payload is a string `photos:<id>,<id>,...`. The
+  ids are the current selection. GTK selects the pressed cell before the drag
+  starts. So a drag over an unselected cell carries only that cell.
+- A virtual-album sidebar row accepts the payload. `photo_ids_of` parses it. The
+  row then adds the photos to the album.
+- The sidebar drop target accepts both MOVE and COPY actions. The grid drag
+  source uses COPY. The drop fails if the actions do not overlap.
+- Fix recorded: a drop leaves the target row selected. A following click on that
+  row did not fire `selection-changed`, so the album did not open. The add path
+  now calls `unselect_all` after the drop. The next click is a real change and
+  opens the album.
+
+### 12.3 The sidebar tree view survives a restart
+- The set of expanded node ids is saved in `library.db`. The settings key is
+  `sidebar_expanded` (`EXPANDED_SETTING_KEY`). The value is the ids joined by
+  newline.
+- `bind_state` calls `load_expansion` before the first reload.
+  `restore_expansion` then expands the saved rows.
+- `save_expansion` now removes collapsed ids too. Before, it only inserted, so an
+  id stayed "expanded" forever. It runs at the start of each reload.
+- `persist_expansion` writes the set to `library.db`. It runs after each reload.
+  It also runs on every manual expand or collapse. `bind_row` connects
+  `connect_expanded_notify` on each row for this. The handler is stored on the
+  list item and is disconnected when the item is recycled.
+
+### 12.4 Note: the grid selection model changed
+- The grid changed from `SingleSelection` to `MultiSelection`. This was needed
+  for the drag and the "add to album" menu.
+- The viewer and the properties panel act on the first selected photo.
+- This change did not get a hands-on multi-select test pass. It is not a known
+  bug. Test viewer, properties, and rotation with a multi-selection if you touch
+  this area.
+
+### 12.5 Open follow-ups (not done)
+- Give the grid selection model a hands-on test pass (see 12.4).
+- Clean up pre-existing dead-code warnings. `cargo build` prints about 29
+  warnings. None come from the virtual albums work. Examples: unused thumbnail
+  size helpers, Ollama response duration fields, `upsert_photo`,
+  `set_thumb_ready`. Some may be kept API. Do not delete without a check.
+
 ## 2. What is ported
 
 All Go modules are ported to Rust:
 
 - `src/model.rs` — domain types.
 - `src/db/` — rusqlite over `library.db` and per-size `thumbs-<N>.db`. Albums,
-  tags, FTS5 search. Each connection is behind a `Mutex`.
+  virtual albums (`virtual_albums.rs`), tags, FTS5 search. Each connection is
+  behind a `Mutex`.
 - `src/scan.rs` — recursive image walk, EXIF date, dimensions, SHA-256 hash,
   cancellation.
 - `src/thumb.rs` — decode, rotate, resize (fast_image_resize Catmull-Rom),
@@ -200,7 +287,8 @@ All Go modules are ported to Rust:
   `viewer.rs`, `properties.rs`, `toolbar.rs`, `status.rs`, `settings.rs`,
   `settings_ai.rs`, `tagmanager.rs`, `shortcuts.rs`, `dialogs.rs`,
   `controller.rs` (cancel token), `thumbcache.rs` (LRU texture cache),
-  `prefs.rs`, `photo_object.rs`, `util.rs`.
+  `prefs.rs`, `photo_object.rs`, `util.rs`, `vmenu.rs` (grid virtual-album
+  context menu), `vrules.rs` (virtual-album rules editor).
 
 ## 3. Parity and post-parity work
 
