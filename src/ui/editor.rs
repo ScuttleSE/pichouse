@@ -134,8 +134,27 @@ impl EditPanel {
 
     /// Bind the panel to `photo`, reading its edit record and refreshing every
     /// control. Pass `None` to clear the panel (show the empty hint).
+    ///
+    /// Re-binding the *same* photo is a no-op. This matters because the viewer's
+    /// `show()` refreshes the properties panel (and thus this editor) on every
+    /// render, and this method resets the viewer's "view original" flag; without
+    /// the guard, re-showing the same photo would loop (`viewer.show →
+    /// properties.show → editor.load → viewer.set_show_original → viewer.show →
+    /// …`) and also needlessly re-decode the image for the histogram.
     pub fn load(self: &Rc<Self>, photo: Option<Photo>) {
         let Some(state) = self.state() else { return };
+
+        // Skip if this is the same photo already bound (id, or path for Immich
+        // photos whose id is 0).
+        {
+            let cur = self.photo.borrow();
+            match (&*cur, &photo) {
+                (Some(a), Some(b)) if a.id == b.id && a.path == b.path => return,
+                (None, None) => return,
+                _ => {}
+            }
+        }
+
         // Leaving crop mode on across photos would be confusing; reset it.
         if let Some(b) = self.crop_btn.borrow().as_ref() {
             if b.is_active() {

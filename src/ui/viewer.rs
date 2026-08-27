@@ -279,7 +279,16 @@ impl Viewer {
 
     /// Show the untouched original (true) versus the edited view (false), then
     /// re-render the current photo.
+    ///
+    /// Re-rendering only happens when the flag actually changes. This is
+    /// important because `show()` refreshes the properties panel, whose Edit tab
+    /// calls back into `set_show_original(false)` on load; without this guard
+    /// that path recurses (`show → properties → editor → set_show_original →
+    /// show → …`) and hangs the UI.
     pub fn set_show_original(self: &Rc<Self>, original: bool) {
+        if self.show_original.get() == original {
+            return;
+        }
         self.show_original.set(original);
         self.show();
     }
