@@ -93,7 +93,12 @@ fn build_ui(app: &Application) {
     let status = StatusBar::new(&state);
     *state.status.borrow_mut() = Some(status.clone());
 
-    let grid = Grid::new(lib.clone(), gen.clone(), prefs.active_size());
+    let grid = Grid::new(
+        lib.clone(),
+        gen.clone(),
+        prefs.active_size(),
+        state.enrich_pause_until.clone(),
+    );
     *state.grid.borrow_mut() = Some(grid.clone());
 
     let new_files = super::newfiles::NewFilesView::new(gen.clone(), prefs.active_size());

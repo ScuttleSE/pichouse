@@ -25,7 +25,9 @@ use super::photo_object::PhotoObject;
 
 /// How many thumbnails are generated concurrently.
 const THUMB_WORKERS: usize = 4;
-
+/// How long (ms) each landed thumbnail keeps background scan/enrichment paused,
+/// so the visible folder always wins the disk while it is still rendering.
+const BROWSE_PAUSE_MS: u64 = 2000;
 /// A thumbnail job sent from the UI thread to a worker.
 struct Job {
     key: String,
@@ -123,7 +125,12 @@ enum Source {
 impl Grid {
     /// Build the grid, starting the worker pool. `lib` supplies photo data;
     /// `gen` renders thumbnails. Both are shared with the workers.
-    pub fn new(lib: Arc<Library>, gen: Arc<Generator>, thumb_size: i32) -> Rc<Grid> {
+    pub fn new(
+        lib: Arc<Library>,
+        gen: Arc<Generator>,
+        thumb_size: i32,
+        pause_until: Arc<AtomicU64>,
+    ) -> Rc<Grid> {
         let header = Label::new(None);
         header.set_xalign(0.0);
         header.set_margin_start(8);
@@ -263,6 +270,7 @@ impl Grid {
         let gen_for_apply = generation.clone();
         let pending_for_apply = pending.clone();
         let cache_for_apply = tex_cache.clone();
+        let pause_for_apply = pause_until.clone();
         done_rx.attach(None, move |done: Done| {
             if done.generation == gen_for_apply.load(Ordering::Relaxed) {
                 if let Some(obj) = pending_for_apply.borrow_mut().remove(&done.key) {
@@ -271,6 +279,14 @@ impl Grid {
                             .borrow_mut()
                             .put(done.key.clone(), texture.clone());
                         obj.set_texture(Some(texture));
+                        // A thumbnail for the current view just landed: keep the
+                        // background scan/enrichment paused so the UI keeps the
+                        // disk while the visible folder is still rendering.
+                        let now = super::state::now_millis();
+                        let until = now.saturating_add(BROWSE_PAUSE_MS);
+                        if until > pause_for_apply.load(Ordering::Relaxed) {
+                            pause_for_apply.store(until, Ordering::Relaxed);
+                        }
                     }
                 }
             }

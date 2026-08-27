@@ -37,6 +37,7 @@ fn wait_while_paused(
     pause_until: &Arc<std::sync::atomic::AtomicU64>,
     cancel: &Arc<AtomicBool>,
 ) {
+    let mut logged = false;
     loop {
         if cancel.load(Ordering::Relaxed) {
             return;
@@ -44,7 +45,14 @@ fn wait_while_paused(
         let until = pause_until.load(Ordering::Relaxed);
         let now = now_millis();
         if now >= until {
+            if logged {
+                log::debug!("scan: resuming after browse pause");
+            }
             return;
+        }
+        if !logged {
+            log::debug!("scan: paused for browsing ({}ms left)", until - now);
+            logged = true;
         }
         let wait = (until - now).min(200);
         std::thread::sleep(std::time::Duration::from_millis(wait));

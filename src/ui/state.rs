@@ -112,6 +112,7 @@ impl AppState {
         let cur = self.enrich_pause_until.load(Ordering::Relaxed);
         if until > cur {
             self.enrich_pause_until.store(until, Ordering::Relaxed);
+            log::debug!("enrichment/scan paused for {secs}s (browsing)");
         }
     }
 
