@@ -12,10 +12,11 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{
     Box as GtkBox, Button, Entry, Label, ListItem, ListView, Orientation, ScrolledWindow,
-    Separator, SignalListItemFactory, SingleSelection, StringList, StringObject,
+    Separator, SignalListItemFactory, SingleSelection, SpinButton, StringList, StringObject,
 };
 
-use super::state::{show_error, AppState};
+use super::prefs;
+use super::state::{show_error, show_message, AppState};
 
 /// Build the Immich settings pane.
 pub fn immich_pane(state: &Rc<AppState>) -> GtkBox {
@@ -196,6 +197,8 @@ pub fn immich_pane(state: &Rc<AppState>) -> GtkBox {
                 show_error(&state, &e.to_string());
                 return;
             }
+            // Remove the server's persistent thumbnail cache file.
+            let _ = crate::db::remove_immich_thumbs_for_server(id);
             *editing_id.borrow_mut() = 0;
             name_entry.set_text("");
             url_entry.set_text("");
@@ -249,6 +252,58 @@ pub fn immich_pane(state: &Rc<AppState>) -> GtkBox {
     buttons.append(&test_btn);
     root.append(&buttons);
     root.append(&status);
+
+    root.append(&Separator::new(Orientation::Horizontal));
+
+    // Album page size: how many assets pichouse fetches per request.
+    let page_row = GtkBox::new(Orientation::Horizontal, 6);
+    let page_label = Label::new(Some("Album page size"));
+    page_label.set_xalign(0.0);
+    page_label.set_size_request(120, -1);
+    let page_spin = SpinButton::with_range(10.0, 1000.0, 10.0);
+    let current_page = state
+        .lib
+        .get_setting(
+            prefs::KEY_IMMICH_PAGE_SIZE,
+            &prefs::DEFAULT_IMMICH_PAGE_SIZE.to_string(),
+        )
+        .ok()
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or(prefs::DEFAULT_IMMICH_PAGE_SIZE as f64);
+    page_spin.set_value(current_page);
+    {
+        let state = state.clone();
+        page_spin.connect_value_changed(move |s| {
+            let v = s.value() as i32;
+            let _ = state
+                .lib
+                .set_setting(prefs::KEY_IMMICH_PAGE_SIZE, &v.to_string());
+        });
+    }
+    page_row.append(&page_label);
+    page_row.append(&page_spin);
+    root.append(&page_row);
+
+    // Clear only the Immich thumbnail caches (separate from the local cache).
+    let clear = Button::with_label("Clear Immich Thumbnail Cache");
+    clear.add_css_class("destructive-action");
+    {
+        let state = state.clone();
+        clear.connect_clicked(move |_| {
+            if let Err(e) = crate::db::remove_all_immich_thumb_databases() {
+                show_error(&state, &e.to_string());
+                return;
+            }
+            state.grid().clear_texture_cache();
+            state.grid().refresh_current();
+            show_message(
+                &state,
+                "Immich",
+                "Immich thumbnail cache cleared. Thumbnails re-download on demand.",
+            );
+        });
+    }
+    root.append(&clear);
 
     root
 }

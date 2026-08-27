@@ -134,7 +134,11 @@ impl Client {
     }
 
     /// List the assets in one album.
-    pub fn album_assets(&self, album_id: &str) -> Result<Vec<ImmichAsset>> {
+    ///
+    /// Recent Immich servers do not return assets from `GET /albums/{id}`. This
+    /// method uses `POST /search/metadata` with an `albumIds` filter instead.
+    /// It reads pages of `page_size` until the server reports no next page.
+    pub fn album_assets(&self, album_id: &str, page_size: i32) -> Result<Vec<ImmichAsset>> {
         #[derive(Deserialize)]
         struct Exif {
             #[serde(rename = "exifImageWidth", default)]
@@ -153,36 +157,56 @@ impl Client {
             exif_info: Option<Exif>,
         }
         #[derive(Deserialize)]
-        struct Album {
+        struct Bucket {
             #[serde(default)]
-            assets: Vec<Asset>,
+            items: Vec<Asset>,
+            #[serde(rename = "nextPage", default)]
+            next_page: Option<String>,
         }
-        let resp = self
-            .http
-            .get(format!("{}/albums/{album_id}", self.api_base))
-            .header("x-api-key", &self.api_key)
-            .send()?;
-        if !resp.status().is_success() {
-            return Err(Error::Status(resp.status().as_u16()));
+        #[derive(Deserialize)]
+        struct SearchResponse {
+            assets: Bucket,
         }
-        let album: Album = resp.json()?;
-        Ok(album
-            .assets
-            .into_iter()
-            .map(|a| {
+
+        let size = if page_size <= 0 { 100 } else { page_size };
+        let mut out: Vec<ImmichAsset> = Vec::new();
+        let mut page = 1;
+        loop {
+            let body = serde_json::json!({
+                "albumIds": [album_id],
+                "size": size,
+                "page": page,
+            });
+            let resp = self
+                .http
+                .post(format!("{}/search/metadata", self.api_base))
+                .header("x-api-key", &self.api_key)
+                .json(&body)
+                .send()?;
+            if !resp.status().is_success() {
+                return Err(Error::Status(resp.status().as_u16()));
+            }
+            let sr: SearchResponse = resp.json()?;
+            for a in sr.assets.items {
                 let (w, h, taken) = match a.exif_info {
                     Some(e) => (e.width, e.height, parse_taken_at(&e.date_time_original)),
                     None => (0, 0, 0),
                 };
-                ImmichAsset {
+                out.push(ImmichAsset {
                     id: a.id,
                     filename: a.original_file_name,
                     width: w,
                     height: h,
                     taken_at: taken,
-                }
-            })
-            .collect())
+                });
+            }
+            // `nextPage` is a string page number, or null when done.
+            match sr.assets.next_page.and_then(|s| s.parse::<i32>().ok()) {
+                Some(n) if n > page => page = n,
+                _ => break,
+            }
+        }
+        Ok(out)
     }
 
     /// Download the thumbnail JPEG bytes for one asset.
@@ -265,5 +289,51 @@ mod tests {
         assert_eq!(parse_rfc3339_seconds("2021-01-01T00:00:00.000Z"), Some(1609459200));
         assert_eq!(parse_rfc3339_seconds("1970-01-01T00:00:00Z"), Some(0));
         assert_eq!(parse_rfc3339_seconds("bad"), None);
+    }
+
+    #[test]
+    fn search_response_deserializes() {
+        // The exact shape POST /search/metadata returns. Confirms the nested
+        // `assets.items` and `assets.nextPage` parse into our structs.
+        #[derive(serde::Deserialize)]
+        struct Exif {
+            #[serde(rename = "exifImageWidth", default)]
+            width: i32,
+        }
+        #[derive(serde::Deserialize)]
+        struct Asset {
+            id: String,
+            #[serde(rename = "originalFileName", default)]
+            original_file_name: String,
+            #[serde(rename = "exifInfo", default)]
+            exif_info: Option<Exif>,
+        }
+        #[derive(serde::Deserialize)]
+        struct Bucket {
+            #[serde(default)]
+            items: Vec<Asset>,
+            #[serde(rename = "nextPage", default)]
+            next_page: Option<String>,
+        }
+        #[derive(serde::Deserialize)]
+        struct SearchResponse {
+            assets: Bucket,
+        }
+        let json = r#"{
+            "albums": {"items": [], "total": 0, "count": 0},
+            "assets": {
+                "total": 1, "count": 1, "nextPage": "2",
+                "items": [
+                    {"id": "abc", "originalFileName": "IMG_1.jpg",
+                     "exifInfo": {"exifImageWidth": 4000, "exifImageHeight": 3000}}
+                ]
+            }
+        }"#;
+        let sr: SearchResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(sr.assets.items.len(), 1);
+        assert_eq!(sr.assets.items[0].id, "abc");
+        assert_eq!(sr.assets.items[0].original_file_name, "IMG_1.jpg");
+        assert_eq!(sr.assets.items[0].exif_info.as_ref().unwrap().width, 4000);
+        assert_eq!(sr.assets.next_page.as_deref(), Some("2"));
     }
 }

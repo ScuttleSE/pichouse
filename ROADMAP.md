@@ -57,10 +57,15 @@ alongside a self-hosted Immich instance.
 **Status: Phase 1 (browse) implemented.** pichouse connects to one or more
 Immich servers (Settings → Immich; API-key auth; servers stored in the
 `immich_servers` table). Each server appears as a section in the Library
-sidebar, expanding to its albums with asset counts. Opening an album fetches its
-assets over HTTP and shows them in the grid; thumbnails download from the server
-(keyed by asset id) through a dedicated worker pool. See `src/immich/` (blocking
-HTTP client) and `src/ui/immich.rs` (background fetch + channel to the GTK main
+sidebar, expanding to its albums with asset counts. Opening an album lists its
+assets with `POST /search/metadata` (`albumIds` filter, paged; the page size is
+configurable, default 100) and shows them in the grid. Thumbnails download from
+the server and are cached on disk in a per-server SQLite file
+(`immich-thumbs-<server_id>.db`, keyed by asset id); a dedicated worker pool
+serves them disk-first, then over HTTP. Deleting a server removes its thumbnail
+file; a separate "Clear Immich Thumbnail Cache" button clears all of them. See
+`src/immich/` (blocking HTTP client), `src/db/immich_thumbs.rs` (thumbnail
+cache), and `src/ui/immich.rs` (background fetch + channel to the GTK main
 thread). Upload (Phase 2) and Sync (Phase 3) are not yet implemented.
 
 ### Browse

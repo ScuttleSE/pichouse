@@ -94,9 +94,11 @@ GTK4 (>= 4.10) must be present at runtime; Debian 13 ships GTK 4.18.
     src/main.rs          entry point
     src/version.rs       Version constant (mirrors Cargo.toml, read by CI)
     src/model.rs         shared types
-    src/db/              SQLite schema + access (library.db, thumbs-<N>.db);
-                         includes virtual_albums.rs (virtual album CRUD,
-                         membership, and rule evaluation)
+    src/db/              SQLite schema + access (library.db, thumbs-<N>.db,
+                         immich-thumbs-<server_id>.db); includes
+                         virtual_albums.rs (virtual album CRUD, membership, and
+                         rule evaluation) and immich_thumbs.rs (per-server Immich
+                         thumbnail cache)
     src/scan.rs          filesystem scanner (Phase 1 structure walk + Phase 2
                          per-file enrich helper)
     src/reconcile.rs     library freshness: diff disk against the DB per folder

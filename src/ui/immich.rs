@@ -62,12 +62,21 @@ pub fn show_album(state: &Rc<AppState>, server_id: i64, album_id: &str, name: &s
 
     let album_id = album_id.to_string();
     let name = name.to_string();
+    let page_size = state
+        .lib
+        .get_setting(
+            super::prefs::KEY_IMMICH_PAGE_SIZE,
+            &super::prefs::DEFAULT_IMMICH_PAGE_SIZE.to_string(),
+        )
+        .ok()
+        .and_then(|s| s.parse::<i32>().ok())
+        .unwrap_or(super::prefs::DEFAULT_IMMICH_PAGE_SIZE);
     let (tx, rx) = glib::MainContext::channel::<Vec<ImmichAsset>>(glib::Priority::DEFAULT);
     {
         let album_id = album_id.clone();
         std::thread::spawn(move || {
             let client = crate::immich::Client::new(&server.base_url, &server.api_key);
-            let assets = client.album_assets(&album_id).unwrap_or_default();
+            let assets = client.album_assets(&album_id, page_size).unwrap_or_default();
             let _ = tx.send(assets);
         });
     }

@@ -178,6 +178,7 @@ impl Grid {
             let lib = lib.clone();
             std::thread::spawn(move || {
                 let mut clients: HashMap<i64, crate::immich::Client> = HashMap::new();
+                let mut thumbs: HashMap<i64, Option<crate::db::ImmichThumbs>> = HashMap::new();
                 loop {
                     let job = {
                         let rx = immich_rx.lock().unwrap();
@@ -186,6 +187,22 @@ impl Grid {
                             Err(_) => return,
                         }
                     };
+                    // Disk cache first: a stored thumbnail skips the HTTP call.
+                    let cache = thumbs.entry(job.server_id).or_insert_with(|| {
+                        crate::db::ImmichThumbs::open_for_server(job.server_id).ok()
+                    });
+                    if let Some(cache) = cache.as_ref() {
+                        if let Ok(Some(blob)) = cache.get(&job.asset_id) {
+                            if !blob.is_empty() {
+                                let _ = done_tx.send(Done {
+                                    key: job.key,
+                                    blob,
+                                    generation: job.generation,
+                                });
+                                continue;
+                            }
+                        }
+                    }
                     let client = match clients.get(&job.server_id) {
                         Some(c) => c,
                         None => {
@@ -201,6 +218,11 @@ impl Grid {
                     };
                     if let Ok(blob) = client.asset_thumbnail(&job.asset_id) {
                         if !blob.is_empty() {
+                            // Store for next time, then hand the bytes to the UI.
+                            if let Some(cache) = thumbs.get(&job.server_id).and_then(|c| c.as_ref())
+                            {
+                                let _ = cache.put(&job.asset_id, &blob);
+                            }
                             let _ = done_tx.send(Done {
                                 key: job.key,
                                 blob,

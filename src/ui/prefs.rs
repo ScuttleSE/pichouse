@@ -27,6 +27,11 @@ pub const KEY_AI_NUM_THREAD: &str = "ai.num_thread";
 pub const KEY_AI_NUM_CTX: &str = "ai.num_ctx";
 pub const KEY_AI_NUM_PREDICT: &str = "ai.num_predict";
 
+/// Immich setting keys stored in `library.db`.
+pub const KEY_IMMICH_PAGE_SIZE: &str = "immich.page_size";
+/// Default number of assets fetched per page when listing an Immich album.
+pub const DEFAULT_IMMICH_PAGE_SIZE: i32 = 100;
+
 /// The four slider preset sizes in pixels.
 pub const DEFAULT_THUMB_SIZES: [i32; 4] = [96, 160, 240, 320];
 

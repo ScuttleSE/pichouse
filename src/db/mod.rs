@@ -6,12 +6,16 @@
 mod albums;
 mod config;
 mod immich;
+mod immich_thumbs;
 mod library;
 mod tags;
 mod thumbs;
 mod virtual_albums;
 
 pub use config::{data_dir, write_configured_data_dir};
+pub use immich_thumbs::{
+    remove_all_immich_thumb_databases, remove_immich_thumbs_for_server, ImmichThumbs,
+};
 pub use library::Library;
 pub use thumbs::{remove_all_thumb_databases, Thumbs};
 
