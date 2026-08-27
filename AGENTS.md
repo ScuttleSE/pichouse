@@ -109,6 +109,99 @@ GTK4 (>= 4.10) must be present at runtime; Debian 13 ships GTK 4.18.
                          newfiles, vrules, vmenu)
     .gitea/workflows/    CI (build/test/release on push to main)
 
+## Architecture patterns
+
+Read this section before you explore the code. It gives the reusable patterns
+and the file and name anchors. It does not give line numbers. Line numbers
+change. Names do not. Use grep to find a name.
+
+### Settings
+
+The application has no config file. Settings are key/value rows in the
+`settings` table in `library.db`. Read a setting with `Library::get_setting`.
+Write a setting with `Library::set_setting`. The setting key names are string
+constants in `src/ui/prefs.rs`.
+
+The application loads the AI config once at startup in `prefs::load_ai_config`.
+`AppState` holds the config in a `RefCell`.
+
+The settings dialog is a `Stack` with a `StackSidebar`. Each pane is a function
+that returns a `GtkBox`. Panes register in `src/ui/settings.rs` with
+`stack.add_titled`. A pane writes the in-memory `RefCell` and the DB setting on
+each widget change. The dialog has no Save button.
+
+To add a settings pane, write a new pane function and add one `stack.add_titled`
+line in `src/ui/settings.rs`.
+
+### DB schema and migration
+
+The schema is `src/db/schema.sql`. Every table uses
+`CREATE TABLE IF NOT EXISTS`. There is no schema version table.
+
+`Library::open_at` runs the schema, then runs `migrate`. `migrate` is in
+`src/db/library.rs`. `migrate` is idempotent. `migrate` adds columns only. It
+reads `PRAGMA table_info` and adds a missing column with
+`ALTER TABLE ... ADD COLUMN`.
+
+To add a table, add a `CREATE TABLE IF NOT EXISTS` block to `schema.sql`.
+To add a column to an existing table, add the column to `migrate`.
+
+The `PHOTO_COLS` constant and the `map_photo` row-mapper are shared across the
+query files.
+
+### Sidebar sections
+
+The sidebar tree is in `src/ui/sidebar.rs`. The tree is a `TreeListModel` over
+string ids. Each id has a prefix, for example `album:<id>` or `valbum:<id>`.
+The tree persists its expansion in the DB under a settings key.
+
+The "Virtual Albums" section is the template for a new section. Its header id
+is `VIRTUAL_HEADER_ID`. `reload` reads the DB into a `TreeData` struct and
+builds the root id list. `child_ids` maps a node id to its child ids.
+`node_label` gives a node its text and icon. `on_selection_changed` dispatches
+by id prefix.
+
+To add a section, do these steps:
+1. Add id constants for the header and the item prefix.
+2. Add data fields to `TreeData` and fill them in `reload`.
+3. Push the header id to the root id list in `reload`.
+4. Handle the ids in `child_ids`, `node_label`, and `on_selection_changed`.
+
+### Grid entry points
+
+The grid is in `src/ui/grid.rs`. The `Grid` holds a `Source` enum. The variants
+are `Folder`, `RawDir`, `VirtualAlbum`, and `None`.
+
+The loaders are `show_folder`, `show_virtual_album`, and `show_photos`.
+`show_photos` shows an ad-hoc list of photos. `show_photos` has no re-queryable
+source. `show_photos` is the simplest entry point for a remote photo set.
+
+`AppState::show_virtual_album` in `src/ui/state.rs` is the wiring template. It
+sets the current view, calls the grid loader, and updates the status bar.
+
+A photo in the grid is a `PhotoObject`. `PhotoObject` is a GObject wrapper of a
+`model::Photo`. `PhotoObject::from_photo` builds one. The grid fills the
+`texture` property from the thumbnail cache.
+
+### Background HTTP pattern
+
+The AI backend is the template for background HTTP work. `src/ai/client.rs`
+wraps a blocking `reqwest` client with a `base_url`. It sends requests and
+deserializes JSON responses into `serde` structs.
+
+`src/ui/aitag.rs` shows how to run the work off the GTK main thread:
+1. Define a `Msg` enum for progress and results.
+2. Create a channel with `glib::MainContext::channel`.
+3. Attach the receiver with `rx.attach`. The receiver runs on the GTK main
+   thread. It updates the UI.
+4. Spawn a coordinator thread. The coordinator owns a `Client`. It starts a
+   worker pool. Each worker does blocking HTTP and sends `Msg` values through a
+   cloned sender.
+5. Cancel the work with a `Controller`. A `Controller` holds an
+   `Arc<AtomicBool>`. `AppState` holds the `Controller`.
+
+Reuse this pattern for the Immich client.
+
 ## CI
 
 `.gitea/workflows/build.yaml` builds on push to `main` on the `debian-go` runner,
