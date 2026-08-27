@@ -57,6 +57,8 @@ struct TreeData {
     immich_servers: Vec<(i64, String)>,
     /// Cached albums per Immich server id, as `(album_uuid, name, count)`.
     immich_albums: HashMap<i64, Vec<(String, String, i64)>>,
+    /// Folder ids linked to an Immich album for auto-upload.
+    immich_linked_folders: std::collections::HashSet<i64>,
 }
 
 impl TreeData {
@@ -384,7 +386,16 @@ impl Sidebar {
                 .map(|f| f.name.clone())
                 .unwrap_or_default();
             let count = data.counts.get(&fid).copied().unwrap_or(0);
-            (format!("{name} ({count})"), "image-x-generic-symbolic")
+            // Mark a folder that is synced to an Immich album.
+            let synced = if data.immich_linked_folders.contains(&fid) {
+                " ⇅"
+            } else {
+                ""
+            };
+            (
+                format!("{name} ({count}){synced}"),
+                "image-x-generic-symbolic",
+            )
         } else {
             (id.to_string(), "folder-symbolic")
         }
@@ -538,6 +549,7 @@ impl Sidebar {
         for s in &servers {
             data.immich_servers.push((s.id, s.name.clone()));
         }
+        data.immich_linked_folders = state.lib.linked_immich_folders().unwrap_or_default();
         {
             let cache = state.immich_albums.borrow();
             for s in &servers {
@@ -1007,6 +1019,41 @@ impl Sidebar {
         {
             let this = self.clone();
             add(
+                "sync-immich",
+                &group,
+                Rc::new(move |t| {
+                    let Some(fid) = folder_id_of(t) else { return };
+                    let Some(state) = this.state() else { return };
+                    let name = this
+                        .data
+                        .borrow()
+                        .folders
+                        .get(&fid)
+                        .map(|f| f.name.clone())
+                        .unwrap_or_default();
+                    super::immich::show_sync_dialog(&state, fid, &name);
+                }),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "unsync-immich",
+                &group,
+                Rc::new(move |t| {
+                    let Some(fid) = folder_id_of(t) else { return };
+                    let Some(state) = this.state() else { return };
+                    if let Err(e) = state.lib.delete_immich_folder_link(fid) {
+                        show_error(&state, &e.to_string());
+                        return;
+                    }
+                    this.reload_deferred();
+                }),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
                 "upload-to-immich",
                 &group,
                 Rc::new(move |t| {
@@ -1297,6 +1344,20 @@ impl Sidebar {
                         Some("Upload to Immich…"),
                         Some(&detailed("upload-to-immich", id)),
                     );
+                }
+                // Sync (link) the folder to an Immich album for auto-upload.
+                if !data.immich_servers.is_empty() {
+                    if data.immich_linked_folders.contains(&fid) {
+                        menu.append(
+                            Some("Unsync from Immich"),
+                            Some(&detailed("unsync-immich", id)),
+                        );
+                    } else {
+                        menu.append(
+                            Some("Sync with Immich album…"),
+                            Some(&detailed("sync-immich", id)),
+                        );
+                    }
                 }
             }
         } else if id == NEW_FOLDERS_ID {

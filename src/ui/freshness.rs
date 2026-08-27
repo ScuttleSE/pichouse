@@ -46,6 +46,7 @@ pub fn reconcile_now(state: &Rc<AppState>) {
                 state.refresh_new_files_if_active();
                 if !report.added.is_empty() {
                     super::enrich::enqueue(&state, report.added.clone());
+                    super::immich::autoupload_added(&state, &report.added);
                 }
                 let mut parts = Vec::new();
                 if !report.added.is_empty() {

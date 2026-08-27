@@ -158,3 +158,14 @@ CREATE TABLE IF NOT EXISTS immich_servers (
     api_key  TEXT NOT NULL DEFAULT '',
     added_at INTEGER NOT NULL DEFAULT 0
 );
+
+-- Links a local scanned folder to an album on an Immich server. When a folder
+-- is linked, new photos scanned into it are uploaded to that album in the
+-- background. A folder can link to at most one Immich album (folder_id is the
+-- primary key).
+CREATE TABLE IF NOT EXISTS immich_folder_links (
+    folder_id       INTEGER PRIMARY KEY REFERENCES folders(id) ON DELETE CASCADE,
+    server_id       INTEGER NOT NULL REFERENCES immich_servers(id) ON DELETE CASCADE,
+    immich_album_id TEXT NOT NULL,
+    created_at      INTEGER NOT NULL DEFAULT 0
+);

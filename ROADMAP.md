@@ -54,8 +54,8 @@ separate **Folders** tab.
 Interface with an [Immich](https://immich.app/) server so the library can work
 alongside a self-hosted Immich instance.
 
-**Status: Phase 1 (browse), Phase 2 (full image viewer), and Phase 3 (upload)
-implemented.**
+**Status: Phase 1 (browse), Phase 2 (full image viewer), Phase 3 (upload), and
+Phase 4a (linked folders + auto-upload) implemented.**
 pichouse connects to one or more Immich servers (Settings → Immich; API-key
 auth; servers stored in the `immich_servers` table). Each server appears as a
 section in the Library sidebar, expanding to its albums with asset counts.
@@ -70,7 +70,8 @@ downloads the asset "preview" over HTTP. Thumbnails and previews may be WebP;
 both the grid and the viewer decode WebP through the `image` crate when GTK's
 pixbuf loader cannot. See `src/immich/` (blocking HTTP client),
 `src/db/immich_thumbs.rs` (thumbnail cache), and `src/ui/immich.rs` (background
-fetch + channel to the GTK main thread). Sync (Phase 4) is not yet implemented.
+fetch + channel to the GTK main thread). Sync of tags (Phase 4b) is not yet
+implemented; linked folders with auto-upload (Phase 4a) are.
 
 ### Phase 1 — Browse (done)
 - When connected to an Immich server, its albums appear as a **separate
@@ -102,13 +103,26 @@ fetch + channel to the GTK main thread). Sync (Phase 4) is not yet implemented.
   target album, so re-uploading is safe.
 - Virtual albums are not yet uploadable.
 
-### Phase 4 — Sync
-- **No global sync by default** — only albums the user explicitly selects are
+### Phase 4a — Sync: linked folders + auto-upload (done)
+- **No global sync by default** — only folders the user explicitly links are
   synced.
-- Tag a local album as "synced" with an Immich album.
-- When a synced album is tagged, adding pictures to it automatically uploads
-  them to Immich in the background.
+- Right-click a scanned folder → "Sync with Immich album…" links it to a chosen
+  server and album (stored in `immich_folder_links`). The folder's current
+  photos upload immediately, and a synced folder is marked with `⇅` in the tree.
+- When new photos are scanned into a linked folder (by the freshness reconcile
+  or the inotify watcher), they auto-upload to the linked album in the
+  background (see `immich::autoupload_added`).
+- "Unsync from Immich" removes the link (does not touch the server album).
+- The Immich album list auto-refreshes every 5 minutes (plus the manual
+  "Refresh Albums" action), so albums added or deleted on the server appear
+  without a restart.
+
+### Phase 4b — Two-way tag sync (future)
 - Sync tags back and forth between pichouse and Immich (two-way tag sync).
+- Open questions: conflict resolution when a tag changes on both sides; how
+  pichouse tag sources (AI vs. user) map to Immich tags; how per-asset identity
+  is tracked (local `photos.hash` ↔ Immich asset id) so tags land on the right
+  asset.
 
 ### Phase 5 — Immich photos in virtual albums (future)
 Let Immich assets be members of pichouse virtual albums. Today they cannot:

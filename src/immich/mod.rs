@@ -7,4 +7,4 @@
 
 mod client;
 
-pub use client::{Client, UploadOutcome};
+pub use client::Client;

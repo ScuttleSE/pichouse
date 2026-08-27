@@ -139,7 +139,8 @@ pub fn start(state: &Rc<AppState>) {
                 state.grid().reload_from_source();
                 state.refresh_new_files_if_active();
                 if !added.is_empty() {
-                    super::enrich::enqueue(&state, added);
+                    super::enrich::enqueue(&state, added.clone());
+                    super::immich::autoupload_added(&state, &added);
                 }
             }
             glib::ControlFlow::Continue

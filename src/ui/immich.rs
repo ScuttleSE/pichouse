@@ -332,6 +332,256 @@ pub fn upload_photos(
     });
 }
 
+/// Show the "Sync folder with Immich album" dialog. Links the folder to a
+/// chosen server and existing album so new photos auto-upload. An initial
+/// upload of the folder's current photos runs immediately after linking.
+pub fn show_sync_dialog(state: &Rc<AppState>, folder_id: i64, folder_name: &str) {
+    use gtk4::prelude::*;
+    use gtk4::{
+        Box as GtkBox, Button, DropDown, Label, Orientation, StringList, Window,
+    };
+
+    let servers = state.lib.immich_servers().unwrap_or_default();
+    if servers.is_empty() {
+        state
+            .status()
+            .set_message("Add an Immich server first (Settings → Immich).");
+        return;
+    }
+
+    let root = GtkBox::new(Orientation::Vertical, 8);
+    root.set_margin_top(12);
+    root.set_margin_bottom(12);
+    root.set_margin_start(12);
+    root.set_margin_end(12);
+    root.append(&Label::new(Some(&format!(
+        "Keep folder \"{folder_name}\" synced with an Immich album.\n\
+         New photos scanned into it will upload automatically."
+    ))));
+
+    let server_names: Vec<&str> = servers.iter().map(|s| s.name.as_str()).collect();
+    let server_list = StringList::new(&server_names);
+    let server_drop = DropDown::new(Some(server_list), gtk4::Expression::NONE);
+    let server_row = GtkBox::new(Orientation::Horizontal, 6);
+    server_row.append(&Label::new(Some("Server")));
+    server_row.append(&server_drop);
+    root.append(&server_row);
+
+    let album_list = StringList::new(&[]);
+    let album_drop = DropDown::new(Some(album_list.clone()), gtk4::Expression::NONE);
+    let album_row = GtkBox::new(Orientation::Horizontal, 6);
+    album_row.append(&Label::new(Some("Album")));
+    album_row.append(&album_drop);
+    root.append(&album_row);
+
+    let album_ids: Rc<std::cell::RefCell<Vec<String>>> =
+        Rc::new(std::cell::RefCell::new(Vec::new()));
+    let fill = {
+        let state = state.clone();
+        let servers = servers.clone();
+        let album_list = album_list.clone();
+        let album_ids = album_ids.clone();
+        Rc::new(move |server_index: u32| {
+            while album_list.n_items() > 0 {
+                album_list.remove(0);
+            }
+            album_ids.borrow_mut().clear();
+            let Some(server) = servers.get(server_index as usize) else {
+                return;
+            };
+            let cache = state.immich_albums.borrow();
+            if let Some(albums) = cache.get(&server.id) {
+                let mut albums = albums.clone();
+                albums.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+                for a in albums {
+                    album_list.append(&a.name);
+                    album_ids.borrow_mut().push(a.id);
+                }
+            }
+        })
+    };
+    fill(0);
+    {
+        let fill = fill.clone();
+        server_drop.connect_selected_notify(move |d| fill(d.selected()));
+    }
+
+    let ok = Button::with_label("Sync");
+    ok.add_css_class("suggested-action");
+    let cancel = Button::with_label("Cancel");
+    let buttons = GtkBox::new(Orientation::Horizontal, 6);
+    buttons.set_halign(gtk4::Align::End);
+    buttons.append(&cancel);
+    buttons.append(&ok);
+    root.append(&buttons);
+
+    let window = Window::builder()
+        .title("Sync with Immich")
+        .modal(true)
+        .default_width(400)
+        .child(&root)
+        .build();
+    if let Some(w) = state.window() {
+        window.set_transient_for(Some(&w));
+    }
+    {
+        let window = window.clone();
+        cancel.connect_clicked(move |_| window.close());
+    }
+    {
+        let state = state.clone();
+        let window = window.clone();
+        let servers = servers.clone();
+        let album_ids = album_ids.clone();
+        let album_drop = album_drop.clone();
+        let server_drop = server_drop.clone();
+        let folder_name = folder_name.to_string();
+        ok.connect_clicked(move |_| {
+            let Some(server) = servers.get(server_drop.selected() as usize) else {
+                return;
+            };
+            let idx = album_drop.selected() as usize;
+            let Some(album_id) = album_ids.borrow().get(idx).cloned() else {
+                state
+                    .status()
+                    .set_message("Choose an Immich album to sync with.");
+                return;
+            };
+            if let Err(e) =
+                state
+                    .lib
+                    .set_immich_folder_link(folder_id, server.id, &album_id)
+            {
+                super::state::show_error(&state, &e.to_string());
+                return;
+            }
+            if let Some(sb) = state.sidebar.borrow().as_ref() {
+                sb.reload();
+            }
+            // Upload the folder's current photos to the linked album now.
+            upload_photos(
+                &state,
+                UploadSource::Folder(folder_id),
+                &folder_name,
+                server.id,
+                UploadTarget::ExistingAlbum(album_id),
+            );
+            window.close();
+        });
+    }
+
+    window.set_visible(true);
+}
+
+/// Auto-upload newly added photos that live in a folder linked to an Immich
+/// album. Called after reconcile/watcher inserts new rows. Groups the added
+/// photos by their linked folder and uploads each group to that folder's Immich
+/// album in the background.
+pub fn autoupload_added(state: &Rc<AppState>, added: &[i64]) {
+    if added.is_empty() {
+        return;
+    }
+    let linked = state.lib.linked_immich_folders().unwrap_or_default();
+    if linked.is_empty() {
+        return;
+    }
+    // Group added photos by folder, keeping only linked folders.
+    let mut by_folder: std::collections::HashMap<i64, Vec<Photo>> = std::collections::HashMap::new();
+    for &id in added {
+        if let Ok(Some(p)) = state.lib.photo_by_id(id) {
+            if linked.contains(&p.folder_id) {
+                by_folder.entry(p.folder_id).or_default().push(p);
+            }
+        }
+    }
+    for (folder_id, photos) in by_folder {
+        let Ok(Some(link)) = state.lib.immich_folder_link(folder_id) else {
+            continue;
+        };
+        let Ok(Some(server)) = state.lib.immich_server(link.server_id) else {
+            continue;
+        };
+        upload_photo_list(
+            state,
+            photos,
+            server,
+            UploadTarget::ExistingAlbum(link.immich_album_id),
+        );
+    }
+}
+
+/// Background upload of an explicit photo list to a target album. Shared by the
+/// auto-upload path. Runs on the immich_upload controller and reports a brief
+/// status message. Does not touch the album list on completion.
+fn upload_photo_list(
+    state: &Rc<AppState>,
+    photos: Vec<Photo>,
+    server: crate::model::ImmichServer,
+    target: UploadTarget,
+) {
+    if photos.is_empty() {
+        return;
+    }
+    let cancel = state.immich_upload.begin();
+    let total = photos.len();
+    state
+        .status()
+        .set_message(&format!("Auto-uploading {total} new photo(s) to Immich…"));
+
+    let (tx, rx) = glib::MainContext::channel::<UploadMsg>(glib::Priority::DEFAULT);
+    std::thread::spawn(move || {
+        let client = crate::immich::Client::new(&server.base_url, &server.api_key);
+        let mut asset_ids: Vec<String> = Vec::new();
+        let mut uploaded = 0usize;
+        let mut duplicate = 0usize;
+        let mut failed = 0usize;
+        for p in &photos {
+            if cancel.load(Ordering::Relaxed) {
+                break;
+            }
+            let path = std::path::Path::new(&p.path);
+            let created = if p.taken_at > 0 { p.taken_at } else { p.mod_time };
+            match client.upload_asset(path, &p.filename, created, p.mod_time) {
+                Ok(o) => {
+                    if o.duplicate {
+                        duplicate += 1;
+                    } else {
+                        uploaded += 1;
+                    }
+                    asset_ids.push(o.asset_id);
+                }
+                Err(_) => failed += 1,
+            }
+        }
+        if !cancel.load(Ordering::Relaxed) {
+            if let UploadTarget::ExistingAlbum(id) = &target {
+                let _ = client.add_assets_to_album(id, &asset_ids);
+            }
+        }
+        let _ = tx.send(UploadMsg::Done {
+            uploaded,
+            duplicate,
+            failed,
+        });
+    });
+
+    let state = state.clone();
+    rx.attach(None, move |msg| {
+        if let UploadMsg::Done {
+            uploaded,
+            duplicate,
+            failed,
+        } = msg
+        {
+            state.immich_upload.finish();
+            state.status().set_message(&format!(
+                "Auto-upload done: {uploaded} new, {duplicate} already present, {failed} failed."
+            ));
+        }
+        glib::ControlFlow::Break
+    });
+}
+
 /// Refresh the album list for every Immich server in the background.
 ///
 /// The function fetches all servers' albums on a worker thread, stores them in
@@ -363,6 +613,20 @@ pub fn refresh_albums(state: &Rc<AppState>) {
         if let Some(sb) = state.sidebar.borrow().as_ref() {
             sb.reload();
         }
+        glib::ControlFlow::Continue
+    });
+}
+
+/// How often to auto-refresh the Immich album list, so albums added or deleted
+/// on the server directly appear without a manual refresh.
+const REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// Start the periodic Immich album refresh timer. Runs on the GLib main loop
+/// and simply calls `refresh_albums` on each tick.
+pub fn start_periodic_refresh(state: &Rc<AppState>) {
+    let state = state.clone();
+    glib::timeout_add_local(REFRESH_INTERVAL, move || {
+        refresh_albums(&state);
         glib::ControlFlow::Continue
     });
 }

@@ -307,6 +307,16 @@ pub struct ImmichServer {
     pub added_at: i64,
 }
 
+/// A link from a local scanned folder to an Immich album. New photos in the
+/// folder are auto-uploaded to that album.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ImmichFolderLink {
+    pub folder_id: i64,
+    pub server_id: i64,
+    pub immich_album_id: String,
+    pub created_at: i64,
+}
+
 /// An album on an Immich server.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ImmichAlbum {
