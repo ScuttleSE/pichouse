@@ -23,6 +23,34 @@ pub fn is_image(name: &str) -> bool {
     }
 }
 
+/// Wall-clock milliseconds since the Unix epoch.
+fn now_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Sleep while `pause_until` is in the future, in short slices so cancellation
+/// stays responsive. Used to yield the disk to the UI while the user browses.
+fn wait_while_paused(
+    pause_until: &Arc<std::sync::atomic::AtomicU64>,
+    cancel: &Arc<AtomicBool>,
+) {
+    loop {
+        if cancel.load(Ordering::Relaxed) {
+            return;
+        }
+        let until = pause_until.load(Ordering::Relaxed);
+        let now = now_millis();
+        if now >= until {
+            return;
+        }
+        let wait = (until - now).min(200);
+        std::thread::sleep(std::time::Duration::from_millis(wait));
+    }
+}
+
 /// Scan progress. `done` is the number of photos processed so far; `total` is
 /// the number discovered.
 #[derive(Debug, Clone)]
@@ -60,6 +88,7 @@ impl<'a> Scanner<'a> {
         &self,
         root: &Path,
         cancel: &Arc<AtomicBool>,
+        pause_until: &Arc<std::sync::atomic::AtomicU64>,
         mut progress: F,
         mut on_folder: G,
     ) -> Result<usize, ScanError>
@@ -85,6 +114,13 @@ impl<'a> Scanner<'a> {
         let mut done = 0usize;
         let ndirs = by_dir.len();
         for (i, (dir, files)) in by_dir.iter().enumerate() {
+            if cancel.load(Ordering::Relaxed) {
+                return Err(ScanError::Cancelled(done));
+            }
+            // Yield to the UI while the user is browsing: opening a folder sets a
+            // short pause deadline so on-demand thumbnail work gets the disk and
+            // the grid is not rebuilt from under the user by scan reloads.
+            wait_while_paused(pause_until, cancel);
             if cancel.load(Ordering::Relaxed) {
                 return Err(ScanError::Cancelled(done));
             }
@@ -500,9 +536,10 @@ mod tests {
         let lib = Library::open_at(&db_path).unwrap();
         let scanner = Scanner::new(&lib);
         let cancel = Arc::new(AtomicBool::new(false));
+        let pause = Arc::new(std::sync::atomic::AtomicU64::new(0));
         let mut seen = 0;
         let n = scanner
-            .scan_folder(&dir, &cancel, |_p| seen += 1, |_fid, _dir| {})
+            .scan_folder(&dir, &cancel, &pause, |_p| seen += 1, |_fid, _dir| {})
             .unwrap();
         assert_eq!(n, 1);
         assert_eq!(seen, 1);

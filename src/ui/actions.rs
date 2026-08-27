@@ -115,6 +115,7 @@ fn start_scan_worker(state: &Rc<AppState>) {
 
     let lib = state.lib.clone();
     let queue = state.scan_queue_arc();
+    let pause_until = state.enrich_pause_until.clone();
     let spawn = std::thread::Builder::new().name("scan".into());
     let _ = spawn.spawn(move || {
         let scanner = Scanner::new(&lib);
@@ -154,6 +155,7 @@ fn start_scan_worker(state: &Rc<AppState>) {
             let result = scanner.scan_folder(
                 std::path::Path::new(&path),
                 &cancel,
+                &pause_until,
                 move |p| {
                     use std::sync::atomic::Ordering;
                     this_done_cb.store(p.done, Ordering::Relaxed);

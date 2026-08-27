@@ -590,9 +590,29 @@ impl Grid {
     }
 
     /// Rebuild the store and re-enqueue thumbnail jobs for the filtered set.
+    ///
+    /// To avoid the "thumbnails flash away and come back" seen when a background
+    /// scan/enrich reloads the same folder every few seconds, this preserves
+    /// already-shown thumbnails across the rebuild: it snapshots each visible
+    /// cell's texture by the file path (a stable key that does not change when a
+    /// photo gains its content hash during enrichment) and re-seeds the new
+    /// objects from that snapshot. A worker job is only enqueued for cells that
+    /// have no texture yet, so a folder that is already thumbnailed does not
+    /// re-decode on every scan tick.
     fn rebuild(&self) {
         let photos = self.filtered_photos();
         let gen = self.generation.fetch_add(1, Ordering::Relaxed) + 1;
+
+        // Snapshot currently-shown textures by stable path key before wiping.
+        let mut prev_tex: HashMap<String, gdk::Texture> = HashMap::new();
+        for i in 0..self.store.n_items() {
+            if let Some(obj) = self.store.item(i).and_downcast::<PhotoObject>() {
+                if let Some(tex) = obj.texture() {
+                    prev_tex.insert(obj.path(), tex);
+                }
+            }
+        }
+
         self.store.remove_all();
         self.pending.borrow_mut().clear();
 
@@ -600,6 +620,11 @@ impl Grid {
         let mut objs = Vec::with_capacity(photos.len());
         for p in &photos {
             let obj = PhotoObject::from_photo(p);
+            // Carry the previously shown thumbnail over so the cell never blanks
+            // during a background reload.
+            if let Some(tex) = prev_tex.get(&p.path) {
+                obj.set_texture(Some(tex.clone()));
+            }
             self.store.append(&obj);
             objs.push(obj);
         }
@@ -613,6 +638,11 @@ impl Grid {
             // worker job and JPEG decode entirely.
             if let Some(texture) = self.tex_cache.borrow_mut().get(&key) {
                 obj.set_texture(Some(texture));
+                continue;
+            }
+            // Already showing a carried-over thumbnail for this exact cell key
+            // (nothing changed): no need to re-render.
+            if obj.texture().is_some() && prev_tex.contains_key(&p.path) {
                 continue;
             }
             self.pending.borrow_mut().insert(key.clone(), obj);
