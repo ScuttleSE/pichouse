@@ -51,8 +51,9 @@ a thumbnail grid in the center, and a properties panel on the right.
   original file on disk is never changed. Toggle "View original", "Revert all",
   or "Export copy…" to bake the edits into a new JPEG/PNG.
 - **Color levels for negative scans.** Per-channel (R/G/B) black/white/gamma with
-  a one-click Auto levels (from the histogram) to fix color casts. Save named
-  levels presets and apply a preset to a whole folder at once.
+  a live, draggable histogram per channel and a one-click Auto levels (from the
+  histogram) to fix color casts. Save named levels presets and apply a preset to
+  a whole folder at once.
 
 ## AI-based tagging (local, optional)
 

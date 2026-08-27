@@ -15,13 +15,22 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use gtk4::{
-    Box as GtkBox, Button, CheckButton, DropDown, Label, Orientation, Scale, ScrolledWindow,
-    SpinButton, StringList, Window,
+    Box as GtkBox, Button, CheckButton, DrawingArea, DropDown, Label, Orientation, Scale,
+    ScrolledWindow, SpinButton, StringList, Window,
 };
 
 use crate::model::{Levels, LevelPreset, Photo, PhotoEdit};
 
 use super::state::{show_error, AppState};
+
+/// Per-channel spin buttons for the levels panel, kept so auto/preset changes
+/// can push new values back into the widgets.
+struct ChannelWidgets {
+    black: SpinButton,
+    white: SpinButton,
+    gamma: SpinButton,
+    area: DrawingArea,
+}
 
 /// Shared editor state passed to every control callback.
 struct Ed {
@@ -33,6 +42,11 @@ struct Ed {
     loading: std::cell::Cell<bool>,
     presets: RefCell<Vec<LevelPreset>>,
     preset_drop: DropDown,
+    /// Per-channel histogram (R, G, B), 256 bins each, from the original at a
+    /// working resolution. Used to draw the levels histogram behind the markers.
+    histogram: [Vec<u32>; 3],
+    /// The per-channel levels widgets, filled as the panel is built.
+    channels: RefCell<Vec<ChannelWidgets>>,
 }
 
 /// Open the edit panel for `photo`.
@@ -49,6 +63,8 @@ pub fn open(state: &Rc<AppState>, viewer: Rc<super::viewer::Viewer>, photo: Phot
     let name_refs: Vec<&str> = preset_names.iter().map(|s| s.as_str()).collect();
     let preset_drop = DropDown::new(Some(StringList::new(&name_refs)), gtk4::Expression::NONE);
 
+    let histogram = compute_histogram(&photo);
+
     let ed = Rc::new(Ed {
         state: state.clone(),
         viewer: viewer.clone(),
@@ -57,6 +73,8 @@ pub fn open(state: &Rc<AppState>, viewer: Rc<super::viewer::Viewer>, photo: Phot
         loading: std::cell::Cell::new(false),
         presets: RefCell::new(presets),
         preset_drop: preset_drop.clone(),
+        histogram,
+        channels: RefCell::new(Vec::new()),
     });
 
     let root = GtkBox::new(Orientation::Vertical, 10);
@@ -307,34 +325,47 @@ fn build_crop(ed: &Rc<Ed>) -> GtkBox {
     outer
 }
 
-/// Per-channel color-levels controls plus an auto-levels button.
+/// Per-channel color-levels controls: a live histogram with draggable black,
+/// white, and gamma markers, plus spin buttons, and an auto-levels button.
 fn build_levels(ed: &Rc<Ed>) -> GtkBox {
     let outer = GtkBox::new(Orientation::Vertical, 4);
-    let head = Label::new(Some("Color levels (per channel: black / white / gamma×1000)"));
+    let head = Label::new(Some("Color levels — drag the markers under each histogram"));
     head.set_xalign(0.0);
     head.add_css_class("heading");
     outer.append(&head);
 
     for ch in 0..3usize {
         let name = ["Red", "Green", "Blue"][ch];
-        let row = GtkBox::new(Orientation::Horizontal, 6);
         let lbl = Label::new(Some(name));
-        lbl.set_width_chars(6);
         lbl.set_xalign(0.0);
-        row.append(&lbl);
+        outer.append(&lbl);
+
+        // Histogram + markers strip.
+        let area = DrawingArea::new();
+        area.set_content_height(80);
+        area.set_hexpand(true);
+        attach_histogram_draw(ed, &area, ch);
+        attach_marker_drag(ed, &area, ch);
+        outer.append(&area);
+
+        // Numeric spin buttons under the strip.
+        let row = GtkBox::new(Orientation::Horizontal, 6);
         let (b, w, g) = channel_vals(&ed.edit.borrow().levels, ch);
+        row.append(&Label::new(Some("black")));
         let black = SpinButton::with_range(0.0, 255.0, 1.0);
         black.set_value(b as f64);
+        row.append(&black);
+        row.append(&Label::new(Some("white")));
         let white = SpinButton::with_range(0.0, 255.0, 1.0);
         white.set_value(w as f64);
+        row.append(&white);
+        row.append(&Label::new(Some("gamma×1000")));
         let gamma = SpinButton::with_range(10.0, 5000.0, 10.0);
         gamma.set_value(g as f64);
-        row.append(&black);
-        row.append(&white);
         row.append(&gamma);
         outer.append(&row);
 
-        for (kind, sb) in [(0, black), (1, white), (2, gamma)] {
+        for (kind, sb) in [(0, black.clone()), (1, white.clone()), (2, gamma.clone())] {
             let ed = ed.clone();
             sb.connect_value_changed(move |s| {
                 if ed.loading.get() {
@@ -343,8 +374,18 @@ fn build_levels(ed: &Rc<Ed>) -> GtkBox {
                 let v = s.value().round() as i32;
                 set_channel_val(&mut ed.edit.borrow_mut().levels, ch, kind, v);
                 commit(&ed);
+                if let Some(cw) = ed.channels.borrow().get(ch) {
+                    cw.area.queue_draw();
+                }
             });
         }
+
+        ed.channels.borrow_mut().push(ChannelWidgets {
+            black,
+            white,
+            gamma,
+            area,
+        });
     }
 
     let auto = Button::with_label("Auto levels (from histogram)");
@@ -354,6 +395,202 @@ fn build_levels(ed: &Rc<Ed>) -> GtkBox {
     }
     outer.append(&auto);
     outer
+}
+
+/// Draw the channel histogram plus the black/white/gamma marker positions.
+fn attach_histogram_draw(ed: &Rc<Ed>, area: &DrawingArea, ch: usize) {
+    let ed = ed.clone();
+    area.set_draw_func(move |_area, cr, w, h| {
+        let w = w as f64;
+        let h = h as f64;
+        let strip = 12.0; // marker strip height at the bottom
+        let hist_h = (h - strip).max(1.0);
+
+        // Background.
+        cr.set_source_rgb(0.12, 0.12, 0.12);
+        let _ = cr.paint();
+
+        // Histogram bars, log-scaled so small counts remain visible.
+        let hist = &ed.histogram[ch];
+        let max = hist.iter().copied().max().unwrap_or(1).max(1) as f64;
+        let max_log = (1.0 + max).ln();
+        let col = [(0.85, 0.3, 0.3), (0.3, 0.8, 0.3), (0.4, 0.5, 0.9)][ch];
+        cr.set_source_rgb(col.0, col.1, col.2);
+        for (i, &count) in hist.iter().enumerate() {
+            let x = i as f64 / 255.0 * w;
+            let bar = (1.0 + count as f64).ln() / max_log * hist_h;
+            cr.rectangle(x, hist_h - bar, (w / 256.0).max(1.0), bar);
+        }
+        let _ = cr.fill();
+
+        // Markers along the bottom strip.
+        let lv = ed.edit.borrow().levels;
+        let (black, white, gamma_m) = channel_vals(&lv, ch);
+        let bx = black as f64 / 255.0 * w;
+        let wx = white as f64 / 255.0 * w;
+        // Gamma marker sits between black and white; midpoint shifted by gamma.
+        let gamma = (gamma_m.max(1) as f64) / 1000.0;
+        let t = 0.5f64.powf(gamma); // input position mapping to mid output
+        let gx = bx + (wx - bx) * t;
+
+        let y0 = hist_h;
+        // Black marker (filled left triangle).
+        cr.set_source_rgb(0.0, 0.0, 0.0);
+        draw_triangle(cr, bx, y0, strip);
+        cr.set_source_rgb(1.0, 1.0, 1.0);
+        cr.set_line_width(1.0);
+        draw_triangle_outline(cr, bx, y0, strip);
+        // White marker.
+        cr.set_source_rgb(1.0, 1.0, 1.0);
+        draw_triangle(cr, wx, y0, strip);
+        cr.set_source_rgb(0.0, 0.0, 0.0);
+        draw_triangle_outline(cr, wx, y0, strip);
+        // Gamma marker (gray).
+        cr.set_source_rgb(0.6, 0.6, 0.6);
+        draw_triangle(cr, gx, y0, strip);
+        cr.set_source_rgb(0.0, 0.0, 0.0);
+        draw_triangle_outline(cr, gx, y0, strip);
+    });
+}
+
+/// A filled up-pointing triangle marker centered at `x`, sitting below `y0`.
+fn draw_triangle(cr: &gtk4::cairo::Context, x: f64, y0: f64, h: f64) {
+    let half = h * 0.5;
+    cr.move_to(x, y0);
+    cr.line_to(x - half, y0 + h);
+    cr.line_to(x + half, y0 + h);
+    cr.close_path();
+    let _ = cr.fill();
+}
+
+fn draw_triangle_outline(cr: &gtk4::cairo::Context, x: f64, y0: f64, h: f64) {
+    let half = h * 0.5;
+    cr.move_to(x, y0);
+    cr.line_to(x - half, y0 + h);
+    cr.line_to(x + half, y0 + h);
+    cr.close_path();
+    let _ = cr.stroke();
+}
+
+/// Wire click-drag on the histogram strip to move the nearest marker (black,
+/// white, or gamma) and commit live.
+fn attach_marker_drag(ed: &Rc<Ed>, area: &DrawingArea, ch: usize) {
+    // Which marker is being dragged: 0=black, 1=white, 2=gamma, -1=none.
+    let active = Rc::new(std::cell::Cell::new(-1i32));
+    let drag = gtk4::GestureDrag::new();
+
+    {
+        let ed = ed.clone();
+        let active = active.clone();
+        let area_w = area.clone();
+        drag.connect_drag_begin(move |_g, sx, _sy| {
+            let w = area_w.width().max(1) as f64;
+            let val = (sx / w * 255.0).clamp(0.0, 255.0);
+            let lv = ed.edit.borrow().levels;
+            let (black, white, gamma_m) = channel_vals(&lv, ch);
+            let gamma = (gamma_m.max(1) as f64) / 1000.0;
+            let gx = black as f64 + (white as f64 - black as f64) * 0.5f64.powf(gamma);
+            // Pick the closest of the three markers.
+            let db = (val - black as f64).abs();
+            let dw = (val - white as f64).abs();
+            let dg = (val - gx).abs();
+            let pick = if db <= dw && db <= dg {
+                0
+            } else if dw <= dg {
+                1
+            } else {
+                2
+            };
+            active.set(pick);
+            apply_marker(&ed, ch, pick, val);
+        });
+    }
+    {
+        let ed = ed.clone();
+        let active = active.clone();
+        let area_w = area.clone();
+        drag.connect_drag_update(move |g, ox, _oy| {
+            let pick = active.get();
+            if pick < 0 {
+                return;
+            }
+            let w = area_w.width().max(1) as f64;
+            let start = g.start_point().map(|(x, _)| x).unwrap_or(0.0);
+            let val = ((start + ox) / w * 255.0).clamp(0.0, 255.0);
+            apply_marker(&ed, ch, pick, val);
+        });
+    }
+    {
+        let active = active.clone();
+        drag.connect_drag_end(move |_g, _ox, _oy| active.set(-1));
+    }
+    area.add_controller(drag);
+}
+
+/// Apply a marker drag: set black, white, or gamma for `ch` to reflect the
+/// input value `val` (0..255), then commit and refresh widgets.
+fn apply_marker(ed: &Rc<Ed>, ch: usize, marker: i32, val: f64) {
+    {
+        let mut edit = ed.edit.borrow_mut();
+        let lv = &mut edit.levels;
+        let (black, white, _g) = channel_vals(lv, ch);
+        match marker {
+            0 => {
+                // Black must stay below white.
+                let v = (val.round() as i32).min(white - 1).max(0);
+                set_channel_val(lv, ch, 0, v);
+            }
+            1 => {
+                let v = (val.round() as i32).max(black + 1).min(255);
+                set_channel_val(lv, ch, 1, v);
+            }
+            2 => {
+                // Convert the dragged input position into a gamma value:
+                // t = (val-black)/(white-black); gamma = ln(0.5)/ln(t).
+                let span = (white - black).max(1) as f64;
+                let t = ((val - black as f64) / span).clamp(0.01, 0.99);
+                let gamma = (0.5f64.ln() / t.ln()).clamp(0.01, 5.0);
+                set_channel_val(lv, ch, 2, (gamma * 1000.0).round() as i32);
+            }
+            _ => {}
+        }
+    }
+    commit(ed);
+    refresh_channel_widgets(ed);
+}
+
+/// Push the current levels values back into every channel's spin buttons and
+/// redraw its histogram strip, without firing the change callbacks.
+fn refresh_channel_widgets(ed: &Rc<Ed>) {
+    ed.loading.set(true);
+    let lv = ed.edit.borrow().levels;
+    for (ch, cw) in ed.channels.borrow().iter().enumerate() {
+        let (b, w, g) = channel_vals(&lv, ch);
+        cw.black.set_value(b as f64);
+        cw.white.set_value(w as f64);
+        cw.gamma.set_value(g as f64);
+        cw.area.queue_draw();
+    }
+    ed.loading.set(false);
+}
+
+/// Compute a per-channel 256-bin histogram from the original at a working
+/// resolution. Returns empty bins if the image cannot be read.
+fn compute_histogram(photo: &Photo) -> [Vec<u32>; 3] {
+    let mut hist = [vec![0u32; 256], vec![0u32; 256], vec![0u32; 256]];
+    if let Some(img) = load_original(photo) {
+        let small = if img.width().max(img.height()) > 1024 {
+            image::imageops::thumbnail(&img, 1024, 1024)
+        } else {
+            img
+        };
+        for px in small.pixels() {
+            hist[0][px.0[0] as usize] += 1;
+            hist[1][px.0[1] as usize] += 1;
+            hist[2][px.0[2] as usize] += 1;
+        }
+    }
+    hist
 }
 
 /// Preset chooser: apply on selection, save current, delete, apply to folder.
@@ -590,14 +827,11 @@ fn refresh_presets(ed: &Rc<Ed>, select_name: Option<&str>) {
     *ed.presets.borrow_mut() = presets;
 }
 
-/// Push the in-memory edit values back into every widget without triggering
-/// their change callbacks. Rebuilds the whole window would be simpler, but this
-/// keeps it live; here we just re-render (widgets that changed via auto/preset
-/// are levels/crop). We take the cheap route: reopen not needed — the viewer
-/// already reflects the committed edit; the spin buttons are refreshed lazily by
-/// the user. To avoid stale sliders after auto/preset, we no-op here and rely on
-/// commit having updated the view.
-fn reload_widgets(_ed: &Rc<Ed>) {}
+/// Push the in-memory edit values back into the levels widgets (spin buttons and
+/// histogram strips) after auto-levels or a preset changed them.
+fn reload_widgets(ed: &Rc<Ed>) {
+    refresh_channel_widgets(ed);
+}
 
 /// Load and decode the original file into RGBA. Immich paths are not exported.
 fn load_original(photo: &Photo) -> Option<image::RgbaImage> {

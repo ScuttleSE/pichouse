@@ -205,6 +205,9 @@ images scanned from negatives that have skewed color casts.
 - Per-channel input black point, white point, and gamma.
 - **Auto levels**: derive per-channel black/white points from the image
   histogram (0.5% tail clip) to remove a color cast in one click.
+- **Live histogram**: each channel shows a log-scaled histogram of the original
+  with draggable black, white, and gamma markers; dragging updates the view
+  live. Numeric spin buttons stay in sync.
 - **Presets**: save the current levels as a named preset (`level_presets`),
   choose a preset to apply, and delete presets. Presets store levels only.
 - **Apply to folder**: merge a preset's levels into every photo in the current
@@ -212,7 +215,6 @@ images scanned from negatives that have skewed color casts.
   crop/rotate/flip/brightness (`Library::apply_levels_to_folder`).
 
 ### Open questions / to decide
-- A live histogram display in the levels panel (nice-to-have).
 - Interactive crop overlay (drag rectangle) instead of numeric per-mille.
 - Whether edits sync to Immich (upload original, edited, or both).
 
