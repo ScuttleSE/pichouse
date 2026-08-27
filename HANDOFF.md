@@ -218,8 +218,12 @@ tree view. Read section 12 first if you continue recent work.
 
 ### Open follow-ups (not done; noted in code)
 - Full hash-based move detection beyond the size heuristic.
-- A "clean up missing" action to hard-delete missing rows on user confirmation.
-- Making `NEW_MAX_AGE_DAYS` a user setting (it is a constant now).
+- ~~A "clean up missing" action to hard-delete missing rows on user
+  confirmation.~~ Done. A "Clean Up Missing Photos" button in the Thumbnails
+  settings pane calls `Library::delete_missing_photos` after a confirm dialog.
+- ~~Making `NEW_MAX_AGE_DAYS` a user setting (it is a constant now).~~ Done. It
+  is `Prefs.new_max_age_days` (setting key `ui.new_max_age_days`), edited by a
+  spin button in the Thumbnails settings pane.
 - Interaction with future RAW+JPEG pairing (pair during Phase 1 or Phase 2).
 
 ## 11. Recent session: scan sequencing, tree, and theme
@@ -382,10 +386,11 @@ virtual albums, the grid selection, or the sidebar tree state.
 
 ### 12.5 Open follow-ups (not done)
 - Give the grid selection model a hands-on test pass (see 12.4).
-- Clean up pre-existing dead-code warnings. `cargo build` prints about 29
-  warnings. None come from the virtual albums work. Examples: unused thumbnail
-  size helpers, Ollama response duration fields, `upsert_photo`,
-  `set_thumb_ready`. Some may be kept API. Do not delete without a check.
+- ~~Clean up pre-existing dead-code warnings.~~ Done. Dead-code warnings are
+  cleared: truly-unused imports removed, intentional kept-API items annotated
+  with `#[allow(dead_code)]` and a comment. The ~25 remaining warnings are all
+  glib-channel / MessageDialog deprecation warnings (a separate future
+  migration, see section 8).
 
 ## 2. What is ported
 
@@ -442,8 +447,8 @@ Improvements added after parity (not in Go):
   `drive-harddisk-symbolic` icon and show their full path in bold.
 
 There are no known parity gaps. One historical setting, `thumb.regen`
-(regenerate on slider move), is stored but never consulted — this matches the
-Go behavior exactly and is not a regression.
+(regenerate on slider move), was stored but unused in the Go app and early Rust;
+it is now wired (see section 3a).
 
 ## 3a. Open behaviors / possible follow-ups
 
@@ -457,8 +462,10 @@ asked:
 - A rescan does NOT re-assert the disk-mirrored tree over manual album edits;
   it only files folders that are not already in an album. This was a deliberate
   choice (preserve user edits). The user has not asked to change it.
-- `thumb.regen` remains a stored-but-unused setting (matches Go). Wiring it up
-  would be a genuine new feature, not a bug fix.
+- `thumb.regen` is now wired: when "Regenerate thumbnails when moving the
+  slider" is on, the toolbar slider clears the grid's in-memory texture cache
+  before resizing, so cells re-render at the new size instead of scaling a
+  cached texture. When off, the prior behavior is kept.
 
 ## 4. Build, test, run
 
