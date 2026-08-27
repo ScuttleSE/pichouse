@@ -3,7 +3,8 @@
 //! Shown in the center stack when the user selects "New Files" in the Library
 //! tab. Each folder that has new files is a header; its new thumbnails are shown
 //! in a flow below it. "New" means added to the library after the owning root's
-//! first scan finished, within the last `NEW_MAX_AGE_DAYS` days (see
+//! first scan finished, within the configured New Files window (default 14
+//! days; see `prefs::Prefs::new_max_age_days` and
 //! `Library::new_photos_grouped`); older additions fall off automatically.
 
 use std::cell::RefCell;
@@ -23,12 +24,6 @@ use gtk4::{
 
 use crate::model::{Folder, Photo};
 use crate::thumb::Generator;
-
-/// How many days a file stays in the New Files view after being added.
-pub const NEW_MAX_AGE_DAYS: i64 = 14;
-
-/// The max age in seconds, for `Library::new_photos_grouped`.
-pub const NEW_MAX_AGE_SECS: i64 = NEW_MAX_AGE_DAYS * 24 * 60 * 60;
 
 /// How many thumbnails are generated concurrently for this view.
 const WORKERS: usize = 3;

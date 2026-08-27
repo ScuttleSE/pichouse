@@ -248,6 +248,29 @@ fn thumb_pane(state: &Rc<AppState>) -> GtkBox {
     root.append(&save_all);
     root.append(&Separator::new(Orientation::Horizontal));
 
+    // New Files window (days).
+    let nf_box = GtkBox::new(Orientation::Horizontal, 6);
+    nf_box.append(&Label::new(Some("New Files window (days):")));
+    let nf_spin = SpinButton::with_range(1.0, 365.0, 1.0);
+    nf_spin.set_value(state.prefs.borrow().new_max_age_days as f64);
+    {
+        let state = state.clone();
+        nf_spin.connect_value_changed(move |s| {
+            let days = s.value() as i64;
+            state.prefs.borrow_mut().new_max_age_days = days;
+            let _ = state
+                .lib
+                .set_setting(prefs::KEY_NEW_MAX_AGE_DAYS, &days.to_string());
+            state.refresh_new_files_if_active();
+            if let Some(sb) = state.sidebar.borrow().as_ref() {
+                sb.reload();
+            }
+        });
+    }
+    nf_box.append(&nf_spin);
+    root.append(&nf_box);
+    root.append(&Separator::new(Orientation::Horizontal));
+
     let clear = Button::with_label("Clear Thumbnail Cache");
     clear.add_css_class("destructive-action");
     {

@@ -124,7 +124,7 @@ impl AppState {
         *self.current_folder.borrow_mut() = 0;
         let groups = self
             .lib
-            .new_photos_grouped(super::newfiles::NEW_MAX_AGE_SECS)
+            .new_photos_grouped(self.prefs.borrow().new_max_age_secs())
             .unwrap_or_default();
         let count: usize = groups.iter().map(|(_, ps)| ps.len()).sum();
         self.new_files().show_groups(groups);
@@ -204,7 +204,7 @@ impl AppState {
         if self.new_files_active() {
             let groups = self
                 .lib
-                .new_photos_grouped(super::newfiles::NEW_MAX_AGE_SECS)
+                .new_photos_grouped(self.prefs.borrow().new_max_age_secs())
                 .unwrap_or_default();
             self.new_files().show_groups(groups);
         }

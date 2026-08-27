@@ -13,6 +13,8 @@ pub const KEY_PROPS_VISIBLE: &str = "ui.props_visible";
 /// by default because some environments (e.g. Kasm/remote desktops) ship a
 /// broken GTK theme that hides the folder-tree expander.
 pub const KEY_THEME_OVERRIDE: &str = "ui.theme_override";
+/// How many days a photo stays in the New Files view after being added.
+pub const KEY_NEW_MAX_AGE_DAYS: &str = "ui.new_max_age_days";
 
 /// AI setting keys stored in `library.db`.
 pub const KEY_AI_ENABLED: &str = "ai.enabled";
@@ -47,6 +49,8 @@ pub struct Prefs {
     pub props_visible: bool,
     /// Force the built-in Adwaita theme (default true).
     pub theme_override: bool,
+    /// How many days a file stays in the New Files view (default 14).
+    pub new_max_age_days: i64,
 }
 
 impl Default for Prefs {
@@ -58,6 +62,7 @@ impl Default for Prefs {
             save_all_sizes: false,
             props_visible: true,
             theme_override: true,
+            new_max_age_days: 14,
         }
     }
 }
@@ -82,12 +87,24 @@ impl Prefs {
         p.save_all_sizes = bool_setting(lib, KEY_SAVE_ALL_SIZES, false);
         p.props_visible = bool_setting(lib, KEY_PROPS_VISIBLE, true);
         p.theme_override = bool_setting(lib, KEY_THEME_OVERRIDE, true);
+        if let Ok(v) = lib.get_setting(KEY_NEW_MAX_AGE_DAYS, "") {
+            if let Ok(n) = v.parse::<i64>() {
+                if (1..=365).contains(&n) {
+                    p.new_max_age_days = n;
+                }
+            }
+        }
         p
     }
 
     /// The active thumbnail size in pixels.
     pub fn active_size(&self) -> i32 {
         self.sizes.get(self.active).copied().unwrap_or(160)
+    }
+
+    /// The New Files max age in seconds, for `Library::new_photos_grouped`.
+    pub fn new_max_age_secs(&self) -> i64 {
+        self.new_max_age_days * 24 * 60 * 60
     }
 }
 

@@ -502,7 +502,7 @@ impl Sidebar {
         let mut virtual_albums = state.lib.virtual_albums().unwrap_or_default();
         let new_files_count = state
             .lib
-            .new_photos_count(super::newfiles::NEW_MAX_AGE_SECS)
+            .new_photos_count(state.prefs.borrow().new_max_age_secs())
             .unwrap_or(0);
 
         folders.sort_by(|a, b| a.name.cmp(&b.name));
