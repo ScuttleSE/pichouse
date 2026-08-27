@@ -23,6 +23,7 @@ const PING_TIMEOUT: Duration = Duration::from_secs(5);
 pub enum Error {
     Http(reqwest::Error),
     Status(u16),
+    Io(std::io::Error),
 }
 
 impl std::fmt::Display for Error {
@@ -30,6 +31,7 @@ impl std::fmt::Display for Error {
         match self {
             Error::Http(e) => write!(f, "http: {e}"),
             Error::Status(s) => write!(f, "immich http status {s}"),
+            Error::Io(e) => write!(f, "io: {e}"),
         }
     }
 }
@@ -234,6 +236,132 @@ impl Client {
         }
         Ok(resp.bytes()?.to_vec())
     }
+
+    /// Upload one asset file to the server.
+    ///
+    /// Immich detects duplicates by checksum. The returned `UploadOutcome`
+    /// reports the server asset id and whether the asset was newly `created` or
+    /// was already present (`duplicate`).
+    pub fn upload_asset(
+        &self,
+        path: &std::path::Path,
+        filename: &str,
+        created_at: i64,
+        modified_at: i64,
+    ) -> Result<UploadOutcome> {
+        let bytes = std::fs::read(path).map_err(Error::Io)?;
+        let device_asset_id = format!("pichouse-{filename}-{modified_at}");
+        let part = reqwest::blocking::multipart::Part::bytes(bytes)
+            .file_name(filename.to_string())
+            .mime_str("application/octet-stream")?;
+        let form = reqwest::blocking::multipart::Form::new()
+            .text("deviceAssetId", device_asset_id)
+            .text("deviceId", "pichouse")
+            .text("fileCreatedAt", unix_to_rfc3339(created_at))
+            .text("fileModifiedAt", unix_to_rfc3339(modified_at))
+            .text("filename", filename.to_string())
+            .part("assetData", part);
+
+        let resp = self
+            .http
+            .post(format!("{}/assets", self.api_base))
+            .header("x-api-key", &self.api_key)
+            .multipart(form)
+            .send()?;
+        if !resp.status().is_success() {
+            return Err(Error::Status(resp.status().as_u16()));
+        }
+        #[derive(Deserialize)]
+        struct Out {
+            id: String,
+            #[serde(default)]
+            status: String,
+        }
+        let out: Out = resp.json()?;
+        Ok(UploadOutcome {
+            asset_id: out.id,
+            duplicate: out.status == "duplicate",
+        })
+    }
+
+    /// Create a new album, optionally with an initial set of asset ids. Returns
+    /// the new album's id.
+    pub fn create_album(&self, name: &str, asset_ids: &[String]) -> Result<String> {
+        let body = serde_json::json!({
+            "albumName": name,
+            "assetIds": asset_ids,
+        });
+        let resp = self
+            .http
+            .post(format!("{}/albums", self.api_base))
+            .header("x-api-key", &self.api_key)
+            .json(&body)
+            .send()?;
+        if !resp.status().is_success() {
+            return Err(Error::Status(resp.status().as_u16()));
+        }
+        #[derive(Deserialize)]
+        struct Out {
+            id: String,
+        }
+        let out: Out = resp.json()?;
+        Ok(out.id)
+    }
+
+    /// Add asset ids to an existing album. Assets already in the album are
+    /// ignored by the server.
+    pub fn add_assets_to_album(&self, album_id: &str, asset_ids: &[String]) -> Result<()> {
+        if asset_ids.is_empty() {
+            return Ok(());
+        }
+        let body = serde_json::json!({ "ids": asset_ids });
+        let resp = self
+            .http
+            .put(format!("{}/albums/{album_id}/assets", self.api_base))
+            .header("x-api-key", &self.api_key)
+            .json(&body)
+            .send()?;
+        if !resp.status().is_success() {
+            return Err(Error::Status(resp.status().as_u16()));
+        }
+        Ok(())
+    }
+}
+
+/// The result of uploading one asset.
+#[derive(Debug, Clone)]
+pub struct UploadOutcome {
+    /// The asset id on the server (new or existing).
+    pub asset_id: String,
+    /// `true` when the server already had this asset (upload was a no-op).
+    pub duplicate: bool,
+}
+
+/// Format a Unix timestamp (seconds) as an RFC 3339 UTC string, for the upload
+/// `fileCreatedAt` / `fileModifiedAt` fields. A non-positive value uses the
+/// Unix epoch.
+fn unix_to_rfc3339(secs: i64) -> String {
+    let secs = if secs > 0 { secs } else { 0 };
+    let days = secs.div_euclid(86400);
+    let rem = secs.rem_euclid(86400);
+    let (hh, mm, ss) = (rem / 3600, (rem % 3600) / 60, rem % 60);
+    let (y, m, d) = civil_from_days(days);
+    format!("{y:04}-{m:02}-{d:02}T{hh:02}:{mm:02}:{ss:02}.000Z")
+}
+
+/// Convert a day count since the Unix epoch to a civil (year, month, day) in
+/// UTC. Inverse of `civil_to_unix`'s date part (days-from-civil algorithm).
+fn civil_from_days(z: i64) -> (i64, u32, u32) {
+    let z = z + 719468;
+    let era = if z >= 0 { z } else { z - 146096 } / 146097;
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = (if mp < 10 { mp + 3 } else { mp - 9 }) as u32;
+    (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
 /// Parse an Immich ISO 8601 date string into a Unix timestamp in seconds.
@@ -302,8 +430,16 @@ mod tests {
     }
 
     #[test]
-    fn search_response_deserializes() {
-        // The exact shape POST /search/metadata returns. Confirms the nested
+    fn unix_to_rfc3339_roundtrips() {
+        for secs in [0i64, 1609459200, 1_700_000_000, 946684800, 1234567890] {
+            let s = unix_to_rfc3339(secs);
+            assert_eq!(parse_rfc3339_seconds(&s), Some(secs), "for {secs} got {s}");
+        }
+        assert!(unix_to_rfc3339(1609459200).starts_with("2021-01-01T00:00:00"));
+    }
+
+    #[test]
+    fn search_response_deserializes() {        // The exact shape POST /search/metadata returns. Confirms the nested
         // `assets.items` and `assets.nextPage` parse into our structs.
         #[derive(serde::Deserialize)]
         struct Exif {

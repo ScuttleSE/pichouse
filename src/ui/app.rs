@@ -68,6 +68,7 @@ fn build_ui(app: &Application) {
         ai_job: Controller::default(),
         enrich_job: Controller::default(),
         reconcile_job: Controller::default(),
+        immich_upload: Controller::default(),
         scan_queue: std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new())),
         enrich_queue: std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new())),
         status: RefCell::new(None),

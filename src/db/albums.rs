@@ -139,6 +139,23 @@ impl Library {
         }
         Ok(out)
     }
+
+    /// Every photo in an album, across all its member folders. Ordered by taken
+    /// date then filename. Used by the Immich upload path.
+    pub fn photos_in_album(&self, album_id: i64) -> Result<Vec<crate::model::Photo>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT p.id, p.folder_id, p.path, p.filename, p.size, p.mod_time, p.taken_at, \
+                    p.width, p.height, p.hash, p.thumb_ready, p.orientation, p.ai_status, \
+                    p.scan_state, p.missing, p.added_at \
+             FROM photos p \
+             JOIN album_folders af ON af.folder_id = p.folder_id \
+             WHERE af.album_id = ?1 AND p.missing = 0 \
+             ORDER BY p.taken_at ASC, p.filename ASC",
+        )?;
+        let rows = stmt.query_map([album_id], super::library::map_photo)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
 }
 
 #[cfg(test)]

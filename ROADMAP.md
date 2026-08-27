@@ -54,7 +54,8 @@ separate **Folders** tab.
 Interface with an [Immich](https://immich.app/) server so the library can work
 alongside a self-hosted Immich instance.
 
-**Status: Phase 1 (browse) and Phase 2 (full image viewer) implemented.**
+**Status: Phase 1 (browse), Phase 2 (full image viewer), and Phase 3 (upload)
+implemented.**
 pichouse connects to one or more Immich servers (Settings → Immich; API-key
 auth; servers stored in the `immich_servers` table). Each server appears as a
 section in the Library sidebar, expanding to its albums with asset counts.
@@ -69,8 +70,7 @@ downloads the asset "preview" over HTTP. Thumbnails and previews may be WebP;
 both the grid and the viewer decode WebP through the `image` crate when GTK's
 pixbuf loader cannot. See `src/immich/` (blocking HTTP client),
 `src/db/immich_thumbs.rs` (thumbnail cache), and `src/ui/immich.rs` (background
-fetch + channel to the GTK main thread). Upload (Phase 3) and Sync (Phase 4) are
-not yet implemented.
+fetch + channel to the GTK main thread). Sync (Phase 4) is not yet implemented.
 
 ### Phase 1 — Browse (done)
 - When connected to an Immich server, its albums appear as a **separate
@@ -84,11 +84,17 @@ not yet implemented.
   supported). Navigation (prev/next) and view-only rotation work; rotation is
   not written back to the server.
 
-### Phase 3 — Upload
-- Upload a pichouse album to Immich as a **new** album (created on the Immich
-  server).
-- Upload a pichouse album into an **existing** Immich album (add to it rather
-  than create).
+### Phase 3 — Upload (done)
+- Right-click a local album → "Upload to Immich…" opens a dialog to pick a
+  server and either **create a new album** (default named after the local
+  album) or **add to an existing album**.
+- Uploads run in the background with progress in the status bar; the
+  `immich_upload` controller cancels a run.
+- Deduplication uses Immich's own checksum check: the upload endpoint reports
+  each asset as `created` or `duplicate`, and duplicates are still added to the
+  target album, so re-uploading is safe.
+- Only folder-backed local albums are uploaded (a local album's photos are the
+  union of its member folders' photos). Virtual albums are not yet uploadable.
 
 ### Phase 4 — Sync
 - **No global sync by default** — only albums the user explicitly selects are

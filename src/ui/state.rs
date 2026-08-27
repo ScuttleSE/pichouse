@@ -38,6 +38,8 @@ pub struct AppState {
     pub enrich_job: Controller,
     /// The library-freshness reconciliation session (see `super::freshness`).
     pub reconcile_job: Controller,
+    /// The Immich album upload session (see `super::immich`).
+    pub immich_upload: Controller,
     /// Paths waiting to be scanned. A running scan thread drains this, so adding
     /// a folder while a scan runs appends to it instead of cancelling the scan.
     pub scan_queue: Arc<Mutex<std::collections::VecDeque<String>>>,

@@ -29,7 +29,7 @@ sha2 = "0.10"
 
 # Ollama HTTP client (blocking, to mirror the Go goroutine worker model).
 # Use rustls to avoid a system OpenSSL dependency on the CI runner.
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls", "multipart"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"

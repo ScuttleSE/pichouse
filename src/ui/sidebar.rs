@@ -977,6 +977,29 @@ impl Sidebar {
         {
             let this = self.clone();
             add(
+                "upload-to-immich",
+                &group,
+                Rc::new(move |t| {
+                    let aid = album_id_of(t).unwrap_or(0);
+                    if aid == 0 {
+                        return;
+                    }
+                    let name = this
+                        .data
+                        .borrow()
+                        .albums
+                        .get(&aid)
+                        .map(|a| a.name.clone())
+                        .unwrap_or_default();
+                    if let Some(state) = this.state() {
+                        super::immich::show_upload_dialog(&state, aid, &name);
+                    }
+                }),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
                 "remove-folder",
                 &group,
                 Rc::new(move |t| {
@@ -1200,6 +1223,13 @@ impl Sidebar {
                 menu.append(
                     Some("Move selected here"),
                     Some(&detailed("move-to-album", id)),
+                );
+            }
+            // Offer upload only when at least one Immich server exists.
+            if !data.immich_servers.is_empty() {
+                menu.append(
+                    Some("Upload to Immich…"),
+                    Some(&detailed("upload-to-immich", id)),
                 );
             }
         } else if folder_id_of(id).is_some() {
