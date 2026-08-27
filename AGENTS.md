@@ -13,6 +13,23 @@ Do not speculate in a loop. Do not run in circles.
 
 ---
 
+## RULE ZERO-A — ALL COMMUNICATION USES ASD-STE100 STRICT
+
+Write all text in Simplified Technical English (ASD-STE100), Strict mode.
+
+- This rule covers every text you write. It covers your chat answers to the
+  user. It covers commit messages. It covers README.md, HANDOFF.md, ROADMAP.md,
+  and all other documents. It covers code comments.
+- Load the `asd-ste100` skill at the start of each session. Apply Strict mode.
+- Use short sentences. Use active voice. Use one instruction per sentence. Give
+  each word one meaning.
+- Keep sentences to 20 words or fewer for instructions. Keep sentences to 25
+  words or fewer for descriptions.
+- Do not use semicolons. Do not use phrasal verbs. Do not use marketing words.
+- Keep a hedge as a hedge. Do not change "may fail" into "fails".
+
+---
+
 ## RULE ONE — ALWAYS COMMIT AND PUSH
 
 After completing any change, commit and push all changes. Do not leave work uncommitted. Pushing triggers CI.
