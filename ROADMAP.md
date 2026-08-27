@@ -124,12 +124,11 @@ implemented; linked folders with auto-upload (Phase 4a) are.
 - The Immich album list auto-refreshes every 5 minutes (plus the manual
   "Refresh Albums" action).
 
-### Phase 4b — Two-way tag sync (future)
-- Sync tags back and forth between pichouse and Immich (two-way tag sync).
-- Open questions: conflict resolution when a tag changes on both sides; how
-  pichouse tag sources (AI vs. user) map to Immich tags; how per-asset identity
-  is tracked (local `photos.hash` ↔ Immich asset id) so tags land on the right
-  asset.
+### Phase 4b — Two-way tag sync (out of scope)
+Not planned for now. Deliberately skipped. If revisited later, the open points
+are: conflict resolution when a tag changes on both sides; how pichouse tag
+sources (AI vs. user) map to Immich tags; and how per-asset identity is tracked
+(local `photos.hash` ↔ Immich asset id) so tags land on the right asset.
 
 ### Phase 5 — Immich photos in virtual albums (future)
 Let Immich assets be members of pichouse virtual albums. Today they cannot:
