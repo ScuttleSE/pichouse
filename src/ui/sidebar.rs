@@ -524,10 +524,12 @@ impl Sidebar {
             let cache = state.immich_albums.borrow();
             for s in &servers {
                 if let Some(albums) = cache.get(&s.id) {
-                    let list = albums
+                    let mut list: Vec<(String, String, i64)> = albums
                         .iter()
                         .map(|a| (a.id.clone(), a.name.clone(), a.asset_count))
                         .collect();
+                    // Show Immich albums alphabetically (case-insensitive).
+                    list.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
                     data.immich_albums.insert(s.id, list);
                 }
             }

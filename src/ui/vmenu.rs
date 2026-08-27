@@ -39,7 +39,7 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
             else {
                 return;
             };
-            let ids: Vec<i64> = grid.selected_photos().iter().map(|p| p.id).collect();
+            let ids: Vec<i64> = local_photo_ids(&grid);
             if ids.is_empty() {
                 return;
             }
@@ -62,7 +62,7 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
         let pop = pop.clone();
         act.connect_activate(move |_, _| {
             dismiss(&pop);
-            let ids: Vec<i64> = grid.selected_photos().iter().map(|p| p.id).collect();
+            let ids: Vec<i64> = local_photo_ids(&grid);
             if ids.is_empty() {
                 return;
             }
@@ -107,7 +107,7 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
             let Some(album_id) = grid.current_virtual_album() else {
                 return;
             };
-            let ids: Vec<i64> = grid.selected_photos().iter().map(|p| p.id).collect();
+            let ids: Vec<i64> = local_photo_ids(&grid);
             if ids.is_empty() {
                 return;
             }
@@ -131,7 +131,10 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
         let Some(grid) = grid_weak.upgrade() else {
             return;
         };
-        if grid.selected_photos().is_empty() {
+        // Only local library photos can join a virtual album. Immich photos
+        // (id 0) are not rows in `photos`, so skip the menu when the selection
+        // has no local photos.
+        if local_photo_ids(&grid).is_empty() {
             return;
         }
         let menu = build_menu(&state, &grid);
@@ -199,6 +202,16 @@ fn album_depth(albums: &[crate::model::VirtualAlbum], id: i64) -> usize {
         }
     }
     depth
+}
+
+/// The ids of the currently selected **local** photos. Immich photos have id 0
+/// and cannot be members of a virtual album, which stores `photos.id`.
+fn local_photo_ids(grid: &Rc<Grid>) -> Vec<i64> {
+    grid.selected_photos()
+        .iter()
+        .map(|p| p.id)
+        .filter(|&id| id != 0)
+        .collect()
 }
 
 fn dismiss(pop: &Rc<RefCell<Option<PopoverMenu>>>) {
