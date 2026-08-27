@@ -54,33 +54,43 @@ separate **Folders** tab.
 Interface with an [Immich](https://immich.app/) server so the library can work
 alongside a self-hosted Immich instance.
 
-**Status: Phase 1 (browse) implemented.** pichouse connects to one or more
-Immich servers (Settings → Immich; API-key auth; servers stored in the
-`immich_servers` table). Each server appears as a section in the Library
-sidebar, expanding to its albums with asset counts. Opening an album lists its
-assets with `POST /search/metadata` (`albumIds` filter, paged; the page size is
-configurable, default 100) and shows them in the grid. Thumbnails download from
-the server and are cached on disk in a per-server SQLite file
-(`immich-thumbs-<server_id>.db`, keyed by asset id); a dedicated worker pool
-serves them disk-first, then over HTTP. Deleting a server removes its thumbnail
-file; a separate "Clear Immich Thumbnail Cache" button clears all of them. See
-`src/immich/` (blocking HTTP client), `src/db/immich_thumbs.rs` (thumbnail
-cache), and `src/ui/immich.rs` (background fetch + channel to the GTK main
-thread). Upload (Phase 2) and Sync (Phase 3) are not yet implemented.
+**Status: Phase 1 (browse) and Phase 2 (full image viewer) implemented.**
+pichouse connects to one or more Immich servers (Settings → Immich; API-key
+auth; servers stored in the `immich_servers` table). Each server appears as a
+section in the Library sidebar, expanding to its albums with asset counts.
+Opening an album lists its assets with `POST /search/metadata` (`albumIds`
+filter, paged; the page size is configurable, default 100) and shows them in the
+grid. Thumbnails download from the server and are cached on disk in a per-server
+SQLite file (`immich-thumbs-<server_id>.db`, keyed by asset id); a dedicated
+worker pool serves them disk-first, then over HTTP. Deleting a server removes its
+thumbnail file; a separate "Clear Immich Thumbnail Cache" button clears all of
+them. Double-clicking an Immich thumbnail opens the full image viewer, which
+downloads the asset "preview" over HTTP. Thumbnails and previews may be WebP;
+both the grid and the viewer decode WebP through the `image` crate when GTK's
+pixbuf loader cannot. See `src/immich/` (blocking HTTP client),
+`src/db/immich_thumbs.rs` (thumbnail cache), and `src/ui/immich.rs` (background
+fetch + channel to the GTK main thread). Upload (Phase 3) and Sync (Phase 4) are
+not yet implemented.
 
-### Browse
+### Phase 1 — Browse (done)
 - When connected to an Immich server, its albums appear as a **separate
   section** in the Libraries tab (distinct from local library folders/albums).
 - Browse Immich albums from within pichouse.
 - View the contents of an Immich album (photos/assets) inside the app.
 
-### Upload
+### Phase 2 — Full image viewer (done)
+- Double-click an Immich thumbnail to open the full image viewer.
+- The viewer downloads the asset "preview" over HTTP and decodes it (WebP
+  supported). Navigation (prev/next) and view-only rotation work; rotation is
+  not written back to the server.
+
+### Phase 3 — Upload
 - Upload a pichouse album to Immich as a **new** album (created on the Immich
   server).
 - Upload a pichouse album into an **existing** Immich album (add to it rather
   than create).
 
-### Sync
+### Phase 4 — Sync
 - **No global sync by default** — only albums the user explicitly selects are
   synced.
 - Tag a local album as "synced" with an Immich album.

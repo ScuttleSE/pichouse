@@ -218,12 +218,6 @@ impl Grid {
                     };
                     match client.asset_thumbnail(&job.asset_id) {
                         Ok(blob) if !blob.is_empty() => {
-                            eprintln!(
-                                "[immich] thumb ok server={} asset={} bytes={}",
-                                job.server_id,
-                                job.asset_id,
-                                blob.len()
-                            );
                             // Store for next time, then hand the bytes to the UI.
                             if let Some(cache) = thumbs.get(&job.server_id).and_then(|c| c.as_ref())
                             {
@@ -235,18 +229,7 @@ impl Grid {
                                 generation: job.generation,
                             });
                         }
-                        Ok(_) => {
-                            eprintln!(
-                                "[immich] thumb EMPTY server={} asset={}",
-                                job.server_id, job.asset_id
-                            );
-                        }
-                        Err(e) => {
-                            eprintln!(
-                                "[immich] thumb ERROR server={} asset={}: {e}",
-                                job.server_id, job.asset_id
-                            );
-                        }
+                        _ => {}
                     }
                 }
             });
@@ -274,43 +257,15 @@ impl Grid {
         let pending_for_apply = pending.clone();
         let cache_for_apply = tex_cache.clone();
         done_rx.attach(None, move |done: Done| {
-            let is_immich = done.key.starts_with("immich://");
             if done.generation == gen_for_apply.load(Ordering::Relaxed) {
                 if let Some(obj) = pending_for_apply.borrow_mut().remove(&done.key) {
-                    match decode_texture(&done.blob) {
-                        Some(texture) => {
-                            cache_for_apply
-                                .borrow_mut()
-                                .put(done.key.clone(), texture.clone());
-                            obj.set_texture(Some(texture));
-                        }
-                        None => {
-                            if is_immich {
-                                let head: Vec<String> = done
-                                    .blob
-                                    .iter()
-                                    .take(16)
-                                    .map(|b| format!("{b:02x}"))
-                                    .collect();
-                                eprintln!(
-                                    "[immich] decode FAILED key={} bytes={} head={}",
-                                    done.key,
-                                    done.blob.len(),
-                                    head.join(" ")
-                                );
-                            }
-                        }
+                    if let Some(texture) = decode_texture(&done.blob) {
+                        cache_for_apply
+                            .borrow_mut()
+                            .put(done.key.clone(), texture.clone());
+                        obj.set_texture(Some(texture));
                     }
-                } else if is_immich {
-                    eprintln!("[immich] no pending object for key={}", done.key);
                 }
-            } else if is_immich {
-                eprintln!(
-                    "[immich] dropped stale result key={} gen={} current={}",
-                    done.key,
-                    done.generation,
-                    gen_for_apply.load(Ordering::Relaxed)
-                );
             }
             glib::ControlFlow::Continue
         });
@@ -346,11 +301,6 @@ impl Grid {
             let rc2 = rc.clone();
             rc.grid_view.connect_activate(move |_, pos| {
                 let photos = rc2.filtered_photos();
-                eprintln!(
-                    "[immich] activate pos={pos} n={} path={:?}",
-                    photos.len(),
-                    photos.get(pos as usize).map(|p| p.path.clone())
-                );
                 if (pos as usize) < photos.len() {
                     if let Some(cb) = rc2.on_activate.borrow().as_ref() {
                         cb(photos, pos as usize);

@@ -223,12 +223,20 @@ impl Viewer {
         let generation = self.generation.get().wrapping_add(1);
         self.generation.set(generation);
 
-        // Read the file bytes off-thread (I/O), then decode + rotate on the UI
-        // thread (Pixbuf is not Send).
+        // Read the image bytes off-thread, then decode + rotate on the UI
+        // thread (Pixbuf is not Send). Local photos read from disk; Immich
+        // photos download the preview over HTTP.
         let (tx, rx) = glib::MainContext::channel::<Option<Vec<u8>>>(glib::Priority::DEFAULT);
         let path = photo.path.clone();
+        let server = immich_server_for(&self.state.borrow().clone(), &path);
         std::thread::spawn(move || {
-            let bytes = std::fs::read(&path).ok();
+            let bytes = match server {
+                Some((server, asset_id)) => {
+                    let client = crate::immich::Client::new(&server.base_url, &server.api_key);
+                    client.asset_preview(&asset_id).ok()
+                }
+                None => std::fs::read(&path).ok(),
+            };
             let _ = tx.send(bytes);
         });
         let picture = self.picture.clone();
@@ -249,11 +257,12 @@ impl Viewer {
 }
 
 /// Decode image bytes and apply the given clockwise rotation for display.
+///
+/// Tries GTK's `PixbufLoader` first. Immich previews may be WebP, which some
+/// GTK builds cannot load, so on failure the `image` crate decodes the bytes
+/// and the pixels are copied into a `Pixbuf`.
 fn decode_rotated(bytes: &[u8], degrees: i32) -> Option<Pixbuf> {
-    let loader = gtk4::gdk_pixbuf::PixbufLoader::new();
-    loader.write(bytes).ok()?;
-    loader.close().ok()?;
-    let pb = loader.pixbuf()?;
+    let pb = decode_pixbuf(bytes)?;
     let degrees = ((degrees % 360) + 360) % 360;
     match degrees {
         90 => pb.rotate_simple(PixbufRotation::Clockwise),
@@ -261,4 +270,46 @@ fn decode_rotated(bytes: &[u8], degrees: i32) -> Option<Pixbuf> {
         270 => pb.rotate_simple(PixbufRotation::Counterclockwise),
         _ => Some(pb),
     }
+}
+
+/// Decode image bytes into a `Pixbuf`, with an `image`-crate fallback for
+/// formats GTK cannot load (for example WebP).
+fn decode_pixbuf(bytes: &[u8]) -> Option<Pixbuf> {
+    let loader = gtk4::gdk_pixbuf::PixbufLoader::new();
+    if loader.write(bytes).is_ok() && loader.close().is_ok() {
+        if let Some(pb) = loader.pixbuf() {
+            return Some(pb);
+        }
+    }
+    // Fallback: decode with the `image` crate and copy RGBA into a Pixbuf.
+    let img = image::load_from_memory(bytes).ok()?;
+    let rgba = img.to_rgba8();
+    let (w, h) = (rgba.width() as i32, rgba.height() as i32);
+    let data = glib::Bytes::from_owned(rgba.into_raw());
+    Some(Pixbuf::from_bytes(
+        &data,
+        gtk4::gdk_pixbuf::Colorspace::Rgb,
+        true,
+        8,
+        w,
+        h,
+        w * 4,
+    ))
+}
+
+/// If `path` is an `immich://<server_id>/<asset_id>` URL and the server exists,
+/// return the server record and the asset id. Otherwise return `None`.
+fn immich_server_for(
+    state: &Option<Rc<AppState>>,
+    path: &str,
+) -> Option<(crate::model::ImmichServer, String)> {
+    let rest = path.strip_prefix("immich://")?;
+    let (sid, asset_id) = rest.split_once('/')?;
+    let server_id: i64 = sid.parse().ok()?;
+    if asset_id.is_empty() {
+        return None;
+    }
+    let state = state.as_ref()?;
+    let server = state.lib.immich_server(server_id).ok()??;
+    Some((server, asset_id.to_string()))
 }

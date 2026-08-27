@@ -211,10 +211,20 @@ impl Client {
 
     /// Download the thumbnail JPEG bytes for one asset.
     pub fn asset_thumbnail(&self, asset_id: &str) -> Result<Vec<u8>> {
+        self.asset_image(asset_id, THUMBNAIL_SIZE)
+    }
+
+    /// Download the larger "preview" image bytes for one asset, for the viewer.
+    pub fn asset_preview(&self, asset_id: &str) -> Result<Vec<u8>> {
+        self.asset_image(asset_id, "preview")
+    }
+
+    /// Download an asset image at the given size (`thumbnail` or `preview`).
+    fn asset_image(&self, asset_id: &str, size: &str) -> Result<Vec<u8>> {
         let resp = self
             .http
             .get(format!(
-                "{}/assets/{asset_id}/thumbnail?size={THUMBNAIL_SIZE}",
+                "{}/assets/{asset_id}/thumbnail?size={size}",
                 self.api_base
             ))
             .header("x-api-key", &self.api_key)
