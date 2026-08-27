@@ -59,6 +59,24 @@ struct TreeData {
     immich_albums: HashMap<i64, Vec<(String, String, i64)>>,
 }
 
+impl TreeData {
+    /// Total photos in a folder (cached scan count).
+    fn folder_photo_count(&self, folder_id: i64) -> i64 {
+        self.counts.get(&folder_id).copied().unwrap_or(0)
+    }
+
+    /// Total photos across an album's direct member folders. This matches what
+    /// `Library::photos_in_album` uploads (direct folders, not sub-albums).
+    fn album_photo_count(&self, album_id: i64) -> i64 {
+        self.album_folders
+            .get(&album_id)
+            .into_iter()
+            .flatten()
+            .map(|fid| self.folder_photo_count(*fid))
+            .sum()
+    }
+}
+
 /// The Library-tab album tree sidebar.
 pub struct Sidebar {
     root: GtkBox,
@@ -980,19 +998,34 @@ impl Sidebar {
                 "upload-to-immich",
                 &group,
                 Rc::new(move |t| {
-                    let aid = album_id_of(t).unwrap_or(0);
-                    if aid == 0 {
-                        return;
-                    }
-                    let name = this
-                        .data
-                        .borrow()
-                        .albums
-                        .get(&aid)
-                        .map(|a| a.name.clone())
-                        .unwrap_or_default();
-                    if let Some(state) = this.state() {
-                        super::immich::show_upload_dialog(&state, aid, &name);
+                    let Some(state) = this.state() else { return };
+                    // The target id is an `album:<id>` or `folder:<id>` node.
+                    if let Some(aid) = album_id_of(t) {
+                        let name = this
+                            .data
+                            .borrow()
+                            .albums
+                            .get(&aid)
+                            .map(|a| a.name.clone())
+                            .unwrap_or_default();
+                        super::immich::show_upload_dialog(
+                            &state,
+                            super::immich::UploadSource::Album(aid),
+                            &name,
+                        );
+                    } else if let Some(fid) = folder_id_of(t) {
+                        let name = this
+                            .data
+                            .borrow()
+                            .folders
+                            .get(&fid)
+                            .map(|f| f.name.clone())
+                            .unwrap_or_default();
+                        super::immich::show_upload_dialog(
+                            &state,
+                            super::immich::UploadSource::Folder(fid),
+                            &name,
+                        );
                     }
                 }),
             );
@@ -1225,12 +1258,14 @@ impl Sidebar {
                     Some(&detailed("move-to-album", id)),
                 );
             }
-            // Offer upload only when at least one Immich server exists.
-            if !data.immich_servers.is_empty() {
-                menu.append(
-                    Some("Upload to Immich…"),
-                    Some(&detailed("upload-to-immich", id)),
-                );
+            // Offer upload only when a server exists and the album has photos.
+            if let Some(aid) = album_id_of(id) {
+                if !data.immich_servers.is_empty() && data.album_photo_count(aid) > 0 {
+                    menu.append(
+                        Some("Upload to Immich…"),
+                        Some(&detailed("upload-to-immich", id)),
+                    );
+                }
             }
         } else if folder_id_of(id).is_some() {
             if data.albums.is_empty() {
@@ -1243,6 +1278,15 @@ impl Sidebar {
                 Some("Remove from Album"),
                 Some(&detailed("remove-folder", id)),
             );
+            // Offer upload only when a server exists and the folder has photos.
+            if let Some(fid) = folder_id_of(id) {
+                if !data.immich_servers.is_empty() && data.folder_photo_count(fid) > 0 {
+                    menu.append(
+                        Some("Upload to Immich…"),
+                        Some(&detailed("upload-to-immich", id)),
+                    );
+                }
+            }
         } else if id == NEW_FOLDERS_ID {
             menu.append(Some("New Album…"), Some(&detailed("new-album", id)));
         } else {

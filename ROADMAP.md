@@ -85,16 +85,20 @@ fetch + channel to the GTK main thread). Sync (Phase 4) is not yet implemented.
   not written back to the server.
 
 ### Phase 3 — Upload (done)
-- Right-click a local album → "Upload to Immich…" opens a dialog to pick a
-  server and either **create a new album** (default named after the local
-  album) or **add to an existing album**.
+- Right-click a scanned **folder** or a **folder-backed album** → "Upload to
+  Immich…" opens a dialog to pick a server and either **create a new album**
+  (default named after the source) or **add to an existing album**. A folder
+  uploads its own photos; an album uploads the union of its direct member
+  folders' photos.
+- The "Upload to Immich…" item appears only when a server exists and the node
+  has photos (based on the cached scan counts), so empty folders and empty
+  albums do not offer it.
 - Uploads run in the background with progress in the status bar; the
   `immich_upload` controller cancels a run.
 - Deduplication uses Immich's own checksum check: the upload endpoint reports
   each asset as `created` or `duplicate`, and duplicates are still added to the
   target album, so re-uploading is safe.
-- Only folder-backed local albums are uploaded (a local album's photos are the
-  union of its member folders' photos). Virtual albums are not yet uploadable.
+- Virtual albums are not yet uploadable.
 
 ### Phase 4 — Sync
 - **No global sync by default** — only albums the user explicitly selects are

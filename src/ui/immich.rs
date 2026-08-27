@@ -21,6 +21,25 @@ pub enum UploadTarget {
     ExistingAlbum(String),
 }
 
+/// The local source of photos to upload.
+#[derive(Clone, Copy)]
+pub enum UploadSource {
+    /// A pichouse album: the union of its member folders' photos.
+    Album(i64),
+    /// A single scanned folder: the photos in that directory.
+    Folder(i64),
+}
+
+impl UploadSource {
+    /// The local photos this source contains.
+    fn photos(self, state: &Rc<AppState>) -> Vec<Photo> {
+        match self {
+            UploadSource::Album(id) => state.lib.photos_in_album(id).unwrap_or_default(),
+            UploadSource::Folder(id) => state.lib.photos_in_folder(id).unwrap_or_default(),
+        }
+    }
+}
+
 /// A progress message from the upload coordinator to the GTK main thread.
 enum UploadMsg {
     Progress { done: usize, total: usize },
@@ -28,11 +47,12 @@ enum UploadMsg {
     Error(String),
 }
 
-/// Show the "Upload to Immich" dialog for a local album, then start the upload.
+/// Show the "Upload to Immich" dialog for a local folder or album, then start
+/// the upload.
 ///
 /// The dialog lets the user pick a server, and either create a new album
-/// (default named after the local album) or add to an existing one.
-pub fn show_upload_dialog(state: &Rc<AppState>, album_id: i64, album_name: &str) {
+/// (default named after the source) or add to an existing one.
+pub fn show_upload_dialog(state: &Rc<AppState>, source: UploadSource, source_name: &str) {
     use gtk4::prelude::*;
     use gtk4::{
         Box as GtkBox, Button, CheckButton, DropDown, Entry, Label, Orientation, StringList, Window,
@@ -53,7 +73,7 @@ pub fn show_upload_dialog(state: &Rc<AppState>, album_id: i64, album_name: &str)
     root.set_margin_end(12);
 
     root.append(&Label::new(Some(&format!(
-        "Upload album \"{album_name}\" to Immich."
+        "Upload \"{source_name}\" to Immich."
     ))));
 
     // Server picker.
@@ -73,7 +93,7 @@ pub fn show_upload_dialog(state: &Rc<AppState>, album_id: i64, album_name: &str)
     root.append(&new_radio);
 
     let name_entry = Entry::new();
-    name_entry.set_text(album_name);
+    name_entry.set_text(source_name);
     name_entry.set_hexpand(true);
     root.append(&name_entry);
 
@@ -157,7 +177,7 @@ pub fn show_upload_dialog(state: &Rc<AppState>, album_id: i64, album_name: &str)
     {
         let state = state.clone();
         let window = window.clone();
-        let album_name = album_name.to_string();
+        let source_name = source_name.to_string();
         let servers = servers.clone();
         let new_radio = new_radio.clone();
         let name_entry = name_entry.clone();
@@ -181,7 +201,7 @@ pub fn show_upload_dialog(state: &Rc<AppState>, album_id: i64, album_name: &str)
                 };
                 UploadTarget::ExistingAlbum(id)
             };
-            upload_album(&state, album_id, &album_name, server.id, target);
+            upload_photos(&state, source, &source_name, server.id, target);
             window.close();
         });
     }
@@ -189,27 +209,28 @@ pub fn show_upload_dialog(state: &Rc<AppState>, album_id: i64, album_name: &str)
     window.set_visible(true);
 }
 
-/// Upload a local album's photos to an Immich server in the background.
+/// Upload a local folder's or album's photos to an Immich server in the
+/// background.
 ///
 /// The coordinator uploads each photo, skips ones with no readable file, and
 /// treats server-reported duplicates as already present. It then creates a new
 /// album or adds the assets to an existing one. Progress and the final result
 /// show in the status bar. The `immich_upload` controller cancels the run.
-pub fn upload_album(
+pub fn upload_photos(
     state: &Rc<AppState>,
-    album_id: i64,
-    album_name: &str,
+    source: UploadSource,
+    source_name: &str,
     server_id: i64,
     target: UploadTarget,
 ) {
     let Ok(Some(server)) = state.lib.immich_server(server_id) else {
         return;
     };
-    let photos = state.lib.photos_in_album(album_id).unwrap_or_default();
+    let photos = source.photos(state);
     if photos.is_empty() {
         state
             .status()
-            .set_message(&format!("{album_name}: no photos to upload."));
+            .set_message(&format!("{source_name}: no photos to upload."));
         return;
     }
 
@@ -219,7 +240,6 @@ pub fn upload_album(
         .set_message(&format!("Uploading {} photos to Immich…", photos.len()));
     state.status().set_progress(0.0);
 
-    let album_name = album_name.to_string();
     let (tx, rx) = glib::MainContext::channel::<UploadMsg>(glib::Priority::DEFAULT);
     std::thread::spawn(move || {
         let client = crate::immich::Client::new(&server.base_url, &server.api_key);
