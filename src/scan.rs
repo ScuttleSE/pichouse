@@ -207,6 +207,10 @@ pub struct Enrichment {
 /// Compute the Phase 2 enrichment for a file: EXIF `taken_at`, dimensions, and
 /// the SHA-256 content hash. Missing pieces default to `0`/empty. Returns
 /// `None` only if the file cannot be hashed (e.g. it vanished).
+///
+/// The live enrichment path uses [`enrich_file_with_image`], which reads the
+/// file once; this per-operation variant is kept for tests and as a fallback.
+#[allow(dead_code)]
 pub fn enrich_file(path: &Path) -> Option<Enrichment> {
     let hash = hash_file(path).ok()?;
     let taken_at = taken_at(path).unwrap_or(0);
@@ -218,6 +222,46 @@ pub fn enrich_file(path: &Path) -> Option<Enrichment> {
         hash,
     })
 }
+
+/// Enrich a file reading it from disk exactly once, and return the decoded
+/// pixels so the caller can build the thumbnail without a second read/decode.
+///
+/// This collapses what used to be three separate reads of a (potentially large,
+/// slow-disk) image — hash, dimensions, thumbnail decode — into a single read:
+/// the bytes are read once, hashed in memory, and decoded in memory. On any
+/// failure the fields fall back to the per-operation path so behaviour matches
+/// `enrich_file`. Returns the enrichment plus the decoded RGBA image (the image
+/// is `None` when decoding fails, e.g. an unsupported format).
+pub fn enrich_file_with_image(path: &Path) -> Option<(Enrichment, Option<image::RgbaImage>)> {
+    // One read of the whole file.
+    let bytes = std::fs::read(path).ok()?;
+
+    // Hash the bytes we already have.
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    let hash = hex_encode(&hasher.finalize());
+
+    // EXIF taken date: parse from the same in-memory bytes.
+    let taken_at = taken_at_from_bytes(&bytes).unwrap_or(0);
+
+    // Decode once from memory; derive dimensions from the decoded image.
+    let decoded = image::load_from_memory(&bytes).ok().map(|i| i.to_rgba8());
+    let (width, height) = match &decoded {
+        Some(img) => (img.width() as i32, img.height() as i32),
+        None => (0, 0),
+    };
+
+    Some((
+        Enrichment {
+            taken_at,
+            width,
+            height,
+            hash,
+        },
+        decoded,
+    ))
+}
+
 
 /// Recursively collect image files under `root`, grouped by parent directory.
 fn collect_images(
@@ -293,12 +337,27 @@ impl From<std::io::Error> for ScanError {
 }
 
 /// The EXIF DateTimeOriginal for a file as a Unix timestamp, if present.
+#[allow(dead_code)]
 fn taken_at(path: &Path) -> Option<i64> {
     let file = std::fs::File::open(path).ok()?;
     let mut reader = std::io::BufReader::new(file);
     let exif = exif::Reader::new()
         .read_from_container(&mut reader)
         .ok()?;
+    taken_at_from_exif(&exif)
+}
+
+/// The EXIF DateTimeOriginal from already-read image bytes, if present.
+fn taken_at_from_bytes(bytes: &[u8]) -> Option<i64> {
+    let mut cursor = std::io::Cursor::new(bytes);
+    let exif = exif::Reader::new()
+        .read_from_container(&mut cursor)
+        .ok()?;
+    taken_at_from_exif(&exif)
+}
+
+/// Extract and parse the taken date from a decoded EXIF container.
+fn taken_at_from_exif(exif: &exif::Exif) -> Option<i64> {
     // Prefer DateTimeOriginal; fall back to DateTime.
     let field = exif
         .get_field(exif::Tag::DateTimeOriginal, exif::In::PRIMARY)
@@ -356,6 +415,7 @@ pub fn year_of(unix: i64) -> i32 {
 }
 
 /// The pixel width and height of an image file.
+#[allow(dead_code)]
 fn dimensions(path: &Path) -> Option<(i32, i32)> {
     let reader = image::ImageReader::open(path).ok()?;
     let reader = reader.with_guessed_format().ok()?;
@@ -364,6 +424,7 @@ fn dimensions(path: &Path) -> Option<(i32, i32)> {
 }
 
 /// A sha256 hex digest of a file's contents.
+#[allow(dead_code)]
 fn hash_file(path: &Path) -> std::io::Result<String> {
     let mut file = std::fs::File::open(path)?;
     let mut hasher = Sha256::new();

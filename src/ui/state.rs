@@ -20,6 +20,15 @@ use super::shortcuts::Shortcuts;
 use super::status::StatusBar;
 use super::viewer::Viewer;
 
+/// Wall-clock milliseconds since the Unix epoch. Used for the enrichment pause
+/// deadline, shared with the background workers via an `AtomicU64`.
+pub fn now_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
 /// Everything shared across the UI. Panels are filled in after construction via
 /// `OnceCell`-like `RefCell<Option<...>>` slots.
 pub struct AppState {
@@ -46,6 +55,11 @@ pub struct AppState {
     /// Photo ids waiting for Phase 2 enrichment. The enrichment worker pool
     /// drains this front-to-back; opening a folder front-loads its ids.
     pub enrich_queue: Arc<Mutex<std::collections::VecDeque<i64>>>,
+    /// Wall-clock millis (since the Unix epoch) until which Phase 2 enrichment
+    /// is paused. Set when the user interacts with the grid so background
+    /// hashing/thumbnailing never competes with on-demand UI work on a slow
+    /// disk. Enrichment workers sleep while `now < enrich_pause_until`.
+    pub enrich_pause_until: Arc<std::sync::atomic::AtomicU64>,
 
     pub status: RefCell<Option<Rc<StatusBar>>>,
     pub grid: RefCell<Option<Rc<Grid>>>,
@@ -85,6 +99,20 @@ impl AppState {
     /// A clone of the shared AI manager handle for background workers.
     pub fn ai_manager_arc(&self) -> Arc<Mutex<ai::Manager>> {
         self.ai_manager.clone()
+    }
+
+    /// Pause background Phase 2 enrichment for `secs` seconds from now, so the
+    /// UI (folder open, scrolling, thumbnail fetches) gets the disk to itself.
+    /// Called on grid interaction. Extending an existing pause simply pushes the
+    /// resume time further out.
+    pub fn pause_enrichment(&self, secs: u64) {
+        use std::sync::atomic::Ordering;
+        let until = now_millis().saturating_add(secs.saturating_mul(1000));
+        // Only ever push the deadline later, never earlier.
+        let cur = self.enrich_pause_until.load(Ordering::Relaxed);
+        if until > cur {
+            self.enrich_pause_until.store(until, Ordering::Relaxed);
+        }
     }
 
     /// A clone of the shared scan queue handle for the scan worker.

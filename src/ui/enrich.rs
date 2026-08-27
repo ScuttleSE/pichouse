@@ -1,15 +1,16 @@
 //! Phase 2 of the two-phase import: a background worker pool that enriches
 //! photos recorded as structure-only by Phase 1.
 //!
-//! Each worker pops a photo id from a shared priority worklist, computes its
-//! EXIF taken date, pixel dimensions, and content hash, writes them to the
-//! database, then generates its thumbnail (now that the hash — the thumbnail
-//! cache key — exists). The visible grid re-queries periodically so
-//! placeholders are replaced by real thumbnails as data lands.
+//! Each worker pops a photo id from a shared priority worklist, reads the file
+//! once, hashes and decodes it in memory, writes EXIF/dimensions/hash to the
+//! database, then builds its thumbnail from the pixels already decoded (no
+//! second read). The visible grid re-queries periodically so placeholders are
+//! replaced by real thumbnails as data lands.
 //!
 //! On-demand priority: opening a folder whose photos are not yet enriched moves
-//! those ids to the front of the worklist, so what the user is looking at is
-//! filled in first.
+//! those ids to the front of the worklist, and briefly pauses background
+//! enrichment entirely (`enrich_pause_until`) so on-demand UI work always wins
+//! the disk on a slow HDD/network mount.
 
 use std::rc::Rc;
 use std::sync::atomic::Ordering;
@@ -24,11 +25,17 @@ use crate::thumb::Generator;
 
 use super::state::AppState;
 
-/// How many photos are enriched concurrently.
-const ENRICH_WORKERS: usize = 3;
+/// How many photos are enriched concurrently. Kept low: on a slow disk (HDD or
+/// network mount) parallel large-image reads/decodes thrash I/O and are net
+/// slower than a small pool, and they must not starve on-demand UI thumbnails.
+const ENRICH_WORKERS: usize = 2;
 
 /// How often (in enriched photos) to refresh the visible grid/sidebar.
 const REFRESH_EVERY: usize = 12;
+
+/// How long to fully pause background enrichment when the user opens a folder,
+/// so on-demand UI work (cached-thumbnail loads, scrolling) gets the disk.
+const BROWSE_PAUSE_SECS: u64 = 3;
 
 /// A status update posted from a worker coordinator to the UI thread.
 enum Msg {
@@ -66,7 +73,13 @@ pub fn enqueue(state: &Rc<AppState>, ids: Vec<i64>) {
 
 /// Move a folder's un-enriched photos to the FRONT of the worklist so the folder
 /// the user just opened is enriched first, then start the pool if idle.
+///
+/// Also briefly pauses background enrichment so the just-opened folder's cached
+/// thumbnails load from disk without competing with background hashing on a slow
+/// disk. Enrichment resumes after the pause, now front-loaded on this folder.
 pub fn prioritize_folder(state: &Rc<AppState>, folder_id: i64) {
+    // Always yield the disk to the UI on a folder open.
+    state.pause_enrichment(BROWSE_PAUSE_SECS);
     let ids = state
         .lib
         .photos_needing_enrichment(Some(folder_id))
@@ -161,6 +174,7 @@ fn start_workers(state: &Rc<AppState>) {
     let lib = state.lib.clone();
     let gen = state.gen.clone();
     let queue = state.enrich_queue.clone();
+    let pause_until = state.enrich_pause_until.clone();
 
     std::thread::spawn(move || {
         let done = Arc::new(Mutex::new(0usize));
@@ -178,8 +192,24 @@ fn start_workers(state: &Rc<AppState>) {
             let tx = tx.clone();
             let done = done.clone();
             let folder_seen = folder_seen.clone();
+            let pause_until = pause_until.clone();
             let builder = std::thread::Builder::new().name(format!("enrich{w}"));
             if let Ok(h) = builder.spawn(move || loop {
+                if cancel.load(Ordering::Relaxed) {
+                    return;
+                }
+                // Fully yield the disk to the UI while the user is browsing.
+                // `pause_enrichment` pushes this deadline out on grid activity;
+                // we sleep in short slices so cancellation stays responsive.
+                while !cancel.load(Ordering::Relaxed) {
+                    let until = pause_until.load(Ordering::Relaxed);
+                    let now = super::state::now_millis();
+                    if now >= until {
+                        break;
+                    }
+                    let wait = (until - now).min(200);
+                    std::thread::sleep(std::time::Duration::from_millis(wait));
+                }
                 if cancel.load(Ordering::Relaxed) {
                     return;
                 }
@@ -244,18 +274,29 @@ fn enrich_one(lib: &Library, gen: &Generator, id: i64) -> i64 {
     let _ = lib.set_photo_scan_state(id, PhotoScanState::Enriching);
     log::trace!("enrich {} ({}) …", id, p.path);
     let t = std::time::Instant::now();
-    match scan::enrich_file(std::path::Path::new(&p.path)) {
-        Some(enr) => {
-            let hash_ms = t.elapsed();
+    // Read + decode the file exactly once, reusing the decoded pixels for both
+    // the dimensions and the thumbnail, instead of reading the file three times.
+    match scan::enrich_file_with_image(std::path::Path::new(&p.path)) {
+        Some((enr, decoded)) => {
+            let read_ms = t.elapsed();
             let _ = lib.enrich_photo(id, enr.taken_at, enr.width, enr.height, &enr.hash);
-            // Generate (and cache) the thumbnail now that the hash exists.
+            // Generate (and cache) the thumbnail from the pixels we already have.
             let t_thumb = std::time::Instant::now();
-            let _ = gen.get(&enr.hash, std::path::Path::new(&p.path), p.orientation);
-            if hash_ms.as_millis() >= 500 || t_thumb.elapsed().as_millis() >= 500 {
+            match decoded {
+                Some(img) => {
+                    let _ = gen.cache_from_image(&enr.hash, img, p.orientation);
+                }
+                None => {
+                    // Decode failed above (unsupported format); fall back to the
+                    // file-based generator so at least a best-effort attempt runs.
+                    let _ = gen.get(&enr.hash, std::path::Path::new(&p.path), p.orientation);
+                }
+            }
+            if read_ms.as_millis() >= 500 || t_thumb.elapsed().as_millis() >= 500 {
                 log::debug!(
-                    "enrich {} slow: enrich_file {:.2?}, thumbnail {:.2?} ({})",
+                    "enrich {} slow: read+decode {:.2?}, thumbnail {:.2?} ({})",
                     id,
-                    hash_ms,
+                    read_ms,
                     t_thumb.elapsed(),
                     p.path
                 );

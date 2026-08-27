@@ -526,7 +526,6 @@ impl Sidebar {
             .new_photos_count(state.prefs.borrow().new_max_age_secs())
             .unwrap_or(0);
         let new_ms = t_new.elapsed();
-        let new_ms = t_new.elapsed();
 
         folders.sort_by(|a, b| a.name.cmp(&b.name));
         // Show albums alphabetically at every level (case-insensitive). They are

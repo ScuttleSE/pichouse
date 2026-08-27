@@ -75,6 +75,7 @@ fn build_ui(app: &Application) {
         immich_upload: Controller::default(),
         scan_queue: std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new())),
         enrich_queue: std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new())),
+        enrich_pause_until: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
         status: RefCell::new(None),
         grid: RefCell::new(None),
         new_files: RefCell::new(None),

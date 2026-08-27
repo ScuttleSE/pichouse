@@ -165,10 +165,37 @@ impl Generator {
         Ok(active_blob)
     }
 
+    /// Render and cache thumbnails from an already-decoded image, avoiding a
+    /// re-read and re-decode of the source file. Used by Phase 2 enrichment,
+    /// which decodes each file once and passes the pixels straight here. The
+    /// caching behaviour (active size, `all_sizes`, cache key) matches
+    /// [`Generator::get`]; `rotation` is applied to `src`. An identity edit is
+    /// assumed (enrichment runs before any edit exists).
+    pub fn cache_from_image(&self, hash: &str, src: RgbaImage, rotation: i32) -> Result<()> {
+        if hash.is_empty() {
+            return Ok(());
+        }
+        let all = { self.inner.lock().unwrap().all_sizes.clone() };
+        let active = { self.inner.lock().unwrap().size };
+        let key = hash.to_string();
+
+        // If already cached at the active size, do nothing.
+        if self.with_store(active, |s| s.get(&key))?.is_some() {
+            return Ok(());
+        }
+
+        let src = rotate(src, rotation);
+        let sizes: Vec<i32> = if all.is_empty() { vec![active] } else { all };
+        for sz in &sizes {
+            let blob = encode(&src, *sz)?;
+            self.with_store(*sz, |s| s.put(&key, *sz, &blob))?;
+        }
+        Ok(())
+    }
+
     /// Remove cached thumbnails for a hash across all open sizes. Used when a
     /// photo's rotation changes.
-    pub fn invalidate(&self, hash: &str) -> Result<()> {
-        if hash.is_empty() {
+    pub fn invalidate(&self, hash: &str) -> Result<()> {        if hash.is_empty() {
             return Ok(());
         }
         let inner = self.inner.lock().unwrap();
