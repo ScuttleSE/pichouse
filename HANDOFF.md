@@ -2,7 +2,128 @@
 
 This document is for an agent with no memory of the last session. It uses
 Simplified Technical English (ASD-STE100, Strict). Read AGENTS.md first. Read
-ROADMAP.md for planned features.
+ROADMAP.md for planned features. Read section 0 first — it describes the most
+recent work (the Immich integration). The later sections describe earlier
+features and are still correct.
+
+## 0. Immich integration (most recent work — read this first)
+
+The Immich integration is the active work area. Read this section before the
+older sections. The older sections describe earlier features and are still
+correct.
+
+### 0.1 State
+
+The application builds. `cargo test` passes 37 tests. All work is on `main`.
+Each change is committed and pushed. CI bumps the build number on each push.
+
+The Immich integration has four done phases and two out-of-scope items. See
+`ROADMAP.md`, section "Immich integration", for the phase list.
+
+- Phase 1 — Browse. Done.
+- Phase 2 — Full image viewer. Done.
+- Phase 3 — Upload. Done.
+- Phase 4a — Two-way folder sync. Done.
+- Phase 4b — Tag sync. Out of scope. Do not build it.
+- Phase 5 — Immich photos in virtual albums. Deferred. Do not build it now.
+
+### 0.2 Architecture
+
+Immich uses the background HTTP pattern. Read the "Background HTTP pattern"
+part of AGENTS.md.
+
+- `src/immich/client.rs` holds a blocking `reqwest` client. It sends an
+  `x-api-key` header. It talks to the Immich REST API under the `/api` path.
+- `src/immich/mod.rs` exports `Client`.
+- `src/ui/immich.rs` runs all Immich work off the GTK main thread. It uses
+  `glib::MainContext::channel` to return results to the main thread. This is the
+  main Immich UI file.
+- `src/db/immich.rs` holds the `immich_servers` and `immich_folder_links`
+  table access.
+- `src/db/immich_thumbs.rs` holds a per-server thumbnail cache. Each server has
+  its own file `immich-thumbs-<server_id>.db`.
+- `src/ui/settings_immich.rs` is the Settings pane. It manages servers and the
+  album page size. It has a "Clear Immich Thumbnail Cache" button.
+
+### 0.3 Data model
+
+- Table `immich_servers(id, name, base_url, api_key, added_at)`. More than one
+  server is supported. The API key is stored in plain text.
+- Table `immich_folder_links(folder_id PK, server_id, immich_album_id,
+  created_at)`. One local folder links to one Immich album for two-way sync.
+- Both tables are in `src/db/schema.sql`. They use `CREATE TABLE IF NOT
+  EXISTS`. No migrate step is needed for them.
+- An Immich photo in the grid is a synthetic `model::Photo`. Its `id` is 0. Its
+  `path` is `immich://<server_id>/<asset_id>`. It has no row in the `photos`
+  table. For this reason an Immich photo cannot join a virtual album (that needs
+  a real `photos.id`). The grid excludes Immich photos from virtual-album
+  actions.
+
+### 0.4 Key API facts (do not re-learn these)
+
+- List an album's assets with `POST /search/metadata`, body
+  `{"albumIds":[id], "size":N, "page":P}`. The response is
+  `{"assets":{"items":[...], "nextPage":"<n>"|null}}`. The old
+  `GET /albums/{id}` no longer returns assets on current Immich.
+- Thumbnails come from `GET /assets/{id}/thumbnail?size=thumbnail`. The viewer
+  preview comes from `size=preview`. The original file comes from
+  `GET /assets/{id}/original`.
+- Thumbnails and previews may be WebP. GTK `PixbufLoader` cannot decode WebP on
+  the target machine. `decode_texture` in `src/ui/grid.rs` and `decode_pixbuf`
+  in `src/ui/viewer.rs` fall back to the `image` crate for WebP. Keep this
+  fallback.
+- Upload with a multipart `POST /assets`. The response reports `created` or
+  `duplicate`. Immich dedups by its own checksum. The local `photos.hash` is
+  SHA-256 and is not used for Immich dedup.
+- The `reqwest` `multipart` feature is enabled in `Cargo.toml`.
+
+### 0.5 Sync behaviour
+
+- Sync links a local **folder** to an Immich album. It does not link a pichouse
+  album.
+- Up direction: `immich::autoupload_added` uploads new local photos of a linked
+  folder. It is called next to `enrich::enqueue` in `src/ui/freshness.rs` and
+  `src/ui/watcher.rs`.
+- Down direction: `immich::sync_folder_down` downloads album assets that are not
+  yet local, writes them into the folder, then calls `freshness::reconcile_now`.
+  `sync_all_down` runs at startup and every 5 minutes
+  (`start_periodic_refresh`).
+- Match is by original filename. This stops re-download loops and re-upload.
+- Start sync from the local side: right-click a folder → "Sync with Immich
+  album…". The dialog makes a new album or uses an existing one.
+- Start sync from the Immich side: right-click an Immich album → "Sync to local
+  folder…". The dialog downloads the album into a new subfolder of a chosen
+  library root, then links that folder.
+- A synced folder shows a `⇅` mark in the sidebar tree.
+
+### 0.6 Sidebar node ids (Immich)
+
+The sidebar tree uses string ids. See AGENTS.md "Sidebar sections".
+
+- `immichheader` — the Immich section header.
+- `immichserver:<server_id>` — one server.
+- `immichalbum:<server_id>:<album_uuid>` — one album.
+- Helper parsers in `src/ui/sidebar.rs`: `immich_server_id_of`,
+  `immich_album_of`. Context-menu actions: `refresh-immich`, `album-to-local`,
+  `upload-to-immich`, `sync-immich`, `unsync-immich`, `syncnow-immich`.
+
+### 0.7 Known limits (do not treat as bugs)
+
+- One upload or sync session at a time. The `state.immich_upload` controller
+  cancels a prior session when a new one starts. Two syncs can cancel each
+  other. A queue is a future improvement.
+- Filename match, not content hash. Two different images with the same filename
+  are treated as the same. Content-hash match is a future improvement.
+- Sync is additive. A delete on one side does not delete on the other side.
+- Virtual albums cannot be uploaded. Only folders and folder-backed albums
+  upload.
+
+### 0.8 Next steps (if the user asks)
+
+- Consider a proper upload queue so parallel syncs do not cancel each other.
+- Consider content-hash match for sync instead of filename match.
+- Phase 5 (Immich photos in virtual albums) needs a schema change. See
+  ROADMAP.md Phase 5 for the two options.
 
 ## 1. State
 
