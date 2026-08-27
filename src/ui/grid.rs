@@ -241,6 +241,29 @@ impl Grid {
             });
             rc.grid_view.add_controller(gesture);
         }
+        // Drag source: dragging thumbnails carries the selected photo ids as a
+        // string payload `photos:<id>,<id>,...` so a virtual-album sidebar row
+        // can accept them. GridView selects the pressed cell before the drag
+        // begins, so a drag over an unselected cell carries just that cell.
+        {
+            let rc2 = rc.clone();
+            let src = gtk4::DragSource::new();
+            src.set_actions(gdk::DragAction::COPY);
+            src.connect_prepare(move |_, _, _| {
+                let ids: Vec<String> = rc2
+                    .selected_photos()
+                    .iter()
+                    .filter(|p| p.id != 0)
+                    .map(|p| p.id.to_string())
+                    .collect();
+                if ids.is_empty() {
+                    return None;
+                }
+                let payload = format!("photos:{}", ids.join(","));
+                Some(gdk::ContentProvider::for_value(&payload.to_value()))
+            });
+            rc.grid_view.add_controller(src);
+        }
         rc
     }
 

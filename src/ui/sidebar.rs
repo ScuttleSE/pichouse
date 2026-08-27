@@ -672,6 +672,24 @@ impl Sidebar {
         self.reload_deferred();
     }
 
+    /// Add photos (from a grid drag) to a virtual album, then refresh.
+    fn add_photos_to_virtual_album(self: &Rc<Self>, album_id: i64, photo_ids: &[i64]) {
+        if photo_ids.is_empty() {
+            return;
+        }
+        let Some(state) = self.state() else { return };
+        if let Err(e) = state.lib.add_photos_to_virtual_album(album_id, photo_ids) {
+            show_error(&state, &e.to_string());
+            return;
+        }
+        self.reload_deferred();
+        // If the target album is being viewed, refresh the grid so the added
+        // photos appear immediately.
+        if state.grid().current_virtual_album() == Some(album_id) {
+            state.grid().reload_from_source();
+        }
+    }
+
     /// Open the rules editor for a virtual album.
     fn edit_virtual_album_rules(self: &Rc<Self>, id: i64) {
         let Some(state) = self.state() else { return };
@@ -848,7 +866,10 @@ impl Sidebar {
         });
         expander.add_controller(src);
 
-        let tgt = gtk4::DropTarget::new(glib::types::Type::STRING, gdk::DragAction::MOVE);
+        let tgt = gtk4::DropTarget::new(
+            glib::types::Type::STRING,
+            gdk::DragAction::MOVE | gdk::DragAction::COPY,
+        );
         let this = self.clone();
         let expander_weak = expander.downgrade();
         tgt.connect_drop(move |_, value, _, _| {
@@ -860,6 +881,14 @@ impl Sidebar {
                 Ok(s) => s,
                 Err(_) => return false,
             };
+            // Dropping photos from the grid onto a virtual album adds them.
+            if let Some(ids) = photo_ids_of(&dragged) {
+                if let Some(target_v) = valbum_id_of(&target_id) {
+                    this.add_photos_to_virtual_album(target_v, &ids);
+                    return true;
+                }
+                return false;
+            }
             // Dropping a virtual album onto another makes it a sub-album.
             if let (Some(target_v), Some(src_v)) =
                 (valbum_id_of(&target_id), valbum_id_of(&dragged))
@@ -1033,4 +1062,16 @@ fn folder_id_of(id: &str) -> Option<i64> {
 
 fn valbum_id_of(id: &str) -> Option<i64> {
     id.strip_prefix(VALBUM_PREFIX).and_then(|n| n.parse().ok())
+}
+
+/// Parse a grid drag payload `photos:<id>,<id>,...` into photo ids. Returns
+/// `None` when the payload is not a photo drag.
+fn photo_ids_of(payload: &str) -> Option<Vec<i64>> {
+    let rest = payload.strip_prefix("photos:")?;
+    let ids: Vec<i64> = rest
+        .split(',')
+        .filter(|s| !s.is_empty())
+        .filter_map(|s| s.parse().ok())
+        .collect();
+    Some(ids)
 }
