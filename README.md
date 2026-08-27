@@ -45,11 +45,16 @@ a thumbnail grid in the center, and a properties panel on the right.
     reopening a folder is fast.
 - Thumbnail grid with a size slider that snaps to preset sizes.
 - Properties panel for the selected photo.
-- **Non-destructive editing.** An Edit panel in the viewer applies flip,
-  straighten, crop, brightness/contrast, and per-channel color levels. Edits are
-  stored in `library.db` and applied at view time and to thumbnails; the
-  original file on disk is never changed. Toggle "View original", "Revert all",
-  or "Export copy…" to bake the edits into a new JPEG/PNG.
+- **Non-destructive editing.** An "Edit" tab in the right-hand panel (next to Pic
+  Info and Tags) applies flip, straighten, crop, brightness/contrast, and
+  per-channel color levels. Edits are stored in `library.db` and applied at view
+  time and to thumbnails; the original file on disk is never changed. Open it
+  from the viewer's Edit button or right-click → Edit on a thumbnail. Toggle
+  "View original", "Revert all", or "Export copy…" to bake the edits into a new
+  file. Immich photos can be edited too (the full asset is fetched on demand).
+- **Baked export.** Right-click one or more thumbnails → "Export edited copy…" to
+  write new files with edits applied. A dialog picks JPEG/PNG and JPEG quality,
+  remembered for next time; several photos export into a chosen folder.
 - **Color levels for negative scans.** Per-channel (R/G/B) black/white/gamma with
   a live, draggable histogram per channel and a one-click Auto levels (from the
   histogram) to fix color casts. Save named levels presets and apply a preset to

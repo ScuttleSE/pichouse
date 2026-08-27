@@ -34,6 +34,14 @@ pub const KEY_IMMICH_PAGE_SIZE: &str = "immich.page_size";
 /// Default number of assets fetched per page when listing an Immich album.
 pub const DEFAULT_IMMICH_PAGE_SIZE: i32 = 100;
 
+/// Export setting keys stored in `library.db`. Remembered as defaults for the
+/// next "Export baked copy" so the user sets format/quality once.
+pub const KEY_EXPORT_FORMAT: &str = "export.format";
+pub const KEY_EXPORT_JPEG_QUALITY: &str = "export.jpeg_quality";
+/// Default export format ("jpeg" or "png") and JPEG quality (1..100).
+pub const DEFAULT_EXPORT_FORMAT: &str = "jpeg";
+pub const DEFAULT_EXPORT_JPEG_QUALITY: i32 = 90;
+
 /// The four slider preset sizes in pixels.
 pub const DEFAULT_THUMB_SIZES: [i32; 4] = [96, 160, 240, 320];
 

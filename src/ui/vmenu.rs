@@ -121,6 +121,50 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
         group.add_action(&act);
     }
 
+    // Edit the selected photo: open it in the viewer and reveal the Edit tab.
+    {
+        let act = gio::SimpleAction::new("edit", None);
+        let state = state.clone();
+        let grid = grid.clone();
+        let pop = pop.clone();
+        act.connect_activate(move |_, _| {
+            dismiss(&pop);
+            let photos = grid.selected_photos();
+            let Some(first) = photos.into_iter().find(|p| p.id != 0) else {
+                return;
+            };
+            // Open the full picture, then switch the right panel to Edit.
+            state.open_viewer(vec![first], 0);
+            state.properties().open_edit_tab();
+        });
+        group.add_action(&act);
+    }
+
+    // Export baked copies of the selected photos.
+    {
+        let act = gio::SimpleAction::new("export", None);
+        let state = state.clone();
+        let grid = grid.clone();
+        let pop = pop.clone();
+        act.connect_activate(move |_, _| {
+            dismiss(&pop);
+            let items: Vec<(crate::model::Photo, crate::model::PhotoEdit)> = grid
+                .selected_photos()
+                .into_iter()
+                .filter(|p| p.id != 0)
+                .map(|p| {
+                    let edit = state.lib.photo_edit(p.id).unwrap_or_default();
+                    (p, edit)
+                })
+                .collect();
+            if items.is_empty() {
+                return;
+            }
+            super::export::export_photos(&state, items);
+        });
+        group.add_action(&act);
+    }
+
     grid.grid_view().insert_action_group("grid", Some(&group));
 
     // On right-click, build the menu from the current virtual albums and pop it
@@ -155,11 +199,22 @@ fn build_menu(state: &Rc<AppState>, grid: &Rc<Grid>) -> gio::Menu {
     let menu = gio::Menu::new();
     let albums = state.lib.virtual_albums().unwrap_or_default();
 
+    // Edit / export apply to the selection regardless of virtual albums.
+    let tools = gio::Menu::new();
+    let selected = grid.selected_photos().iter().filter(|p| p.id != 0).count();
+    if selected == 1 {
+        tools.append(Some("Edit…"), Some("grid.edit"));
+    }
+    tools.append(Some("Export edited copy…"), Some("grid.export"));
+    menu.append_section(None, &tools);
+
+    let album_menu = gio::Menu::new();
     if albums.is_empty() {
-        menu.append(
+        album_menu.append(
             Some("New Virtual Album from selection…"),
             Some("grid.new-from-selection"),
         );
+        menu.append_section(None, &album_menu);
         return menu;
     }
 
@@ -172,18 +227,19 @@ fn build_menu(state: &Rc<AppState>, grid: &Rc<Grid>) -> gio::Menu {
         let action = format!("grid.add-to::{}", a.id);
         add_section.append(Some(&label), Some(&action));
     }
-    menu.append_submenu(Some("Add to Virtual Album"), &add_section);
-    menu.append(
+    album_menu.append_submenu(Some("Add to Virtual Album"), &add_section);
+    album_menu.append(
         Some("New Virtual Album from selection…"),
         Some("grid.new-from-selection"),
     );
     // Offer removal only while a virtual album is being viewed.
     if grid.current_virtual_album().is_some() {
-        menu.append(
+        album_menu.append(
             Some("Remove from this album"),
             Some("grid.remove-from-current"),
         );
     }
+    menu.append_section(None, &album_menu);
     menu
 }
 

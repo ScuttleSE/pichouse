@@ -8,6 +8,7 @@ mod controller;
 mod dialogs;
 mod editor;
 mod enrich;
+mod export;
 mod foldertree;
 mod freshness;
 mod grid;

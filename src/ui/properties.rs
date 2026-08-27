@@ -10,6 +10,7 @@ use gtk4::{
 
 use crate::model::{Photo, Tag, TagSource};
 
+use super::editor::EditPanel;
 use super::state::{show_error, AppState};
 use super::util::{escape_markup, format_unix, human_size};
 
@@ -25,6 +26,8 @@ pub struct Properties {
     tag_list: GtkBox,
     tag_entry: Entry,
     tag_now: Button,
+
+    edit: Rc<EditPanel>,
 
     current: RefCell<Option<Photo>>,
     state: RefCell<Option<Rc<AppState>>>,
@@ -59,6 +62,8 @@ impl Properties {
         notebook.set_size_request(260, -1);
         notebook.append_page(&info, Some(&Label::new(Some("Pic Info"))));
 
+        let edit = EditPanel::new();
+
         let props = Rc::new(Properties {
             root: notebook,
             title,
@@ -69,6 +74,7 @@ impl Properties {
             tag_list,
             tag_entry,
             tag_now,
+            edit,
             current: RefCell::new(None),
             state: RefCell::new(None),
         });
@@ -77,6 +83,9 @@ impl Properties {
         props
             .root
             .append_page(&tags_tab, Some(&Label::new(Some("Tags"))));
+        props
+            .root
+            .append_page(props.edit.widget(), Some(&Label::new(Some("Edit"))));
 
         props.clear();
         props
@@ -85,6 +94,7 @@ impl Properties {
     /// Give the panel access to shared state and wire tag actions.
     pub fn bind_state(self: &Rc<Self>, state: Rc<AppState>) {
         *self.state.borrow_mut() = Some(state.clone());
+        self.edit.bind_state(state.clone());
 
         // Add-tag on entry activate and button click.
         let this = self.clone();
@@ -252,6 +262,13 @@ impl Properties {
         self.dims.set_text("—");
         self.tag_now.set_sensitive(false);
         self.reload_tags();
+        self.edit.load(None);
+    }
+
+    /// Switch to the Edit tab. Called when the user starts editing a photo.
+    pub fn open_edit_tab(self: &Rc<Self>) {
+        // Edit is the third page (index 2): Pic Info, Tags, Edit.
+        self.root.set_current_page(Some(2));
     }
 
     /// Populate the panel from a photo.
@@ -281,6 +298,7 @@ impl Properties {
         }
         self.tag_now.set_sensitive(photo.id != 0);
         self.reload_tags();
+        self.edit.load(Some(photo.clone()));
     }
 }
 

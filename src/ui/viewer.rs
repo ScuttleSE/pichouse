@@ -182,7 +182,7 @@ impl Viewer {
         self.show();
     }
 
-    /// Open the non-destructive edit panel for the current photo.
+    /// Switch the right-hand panel to the Edit tab for the current photo.
     fn open_editor(self: &Rc<Self>) {
         let Some(state) = self.state.borrow().clone() else {
             return;
@@ -195,7 +195,8 @@ impl Viewer {
         if photo.id == 0 {
             return;
         }
-        super::editor::open(&state, self.clone(), photo);
+        // The properties panel already shows this photo; just reveal Edit.
+        state.properties().open_edit_tab();
     }
 
     /// The photo currently shown, if any.

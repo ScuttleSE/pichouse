@@ -170,8 +170,10 @@ when the remote asset or server is removed.
 **Status: implemented.** Basic image editing, Picasa-style. Edits never modify
 the original file on disk; they are stored in `library.db` (`photo_edits`, one
 row per photo) and applied at view time and when generating thumbnails. The
-shared pipeline is `src/edit.rs`; the edit panel is `src/ui/editor.rs`, opened
-from the viewer's Edit button.
+shared pipeline is `src/edit.rs`; the edit UI is the "Edit" tab of the right-hand
+properties panel (`src/ui/editor.rs`), revealed by the viewer's Edit button or
+by right-click → Edit in the grid (which opens the photo, then the tab). Baked
+export lives in `src/ui/export.rs`.
 
 ### Edits (implemented)
 - Flip horizontal / vertical.
@@ -193,8 +195,13 @@ from the viewer's Edit button.
 - Thumbnails: the thumbnail cache key gains the edit revision (`<hash>|<rev>`);
   an identity edit reuses the plain `hash`, so pre-edit caches stay valid.
   Editing calls `Generator::invalidate` to drop stale edited thumbnails.
-- Immich: edits apply to local files only; Immich previews are shown unedited
-  and are not exported.
+- Export: "Export copy…" (edit tab) or right-click → "Export edited copy…" bakes
+  edits at full resolution. A dialog picks format (JPEG/PNG) and JPEG quality,
+  remembered in settings. One photo opens a Save dialog; several open a folder
+  chooser and each is written as `<stem>-edited.<ext>`.
+- Immich: editing works on Immich photos too. The full-resolution asset is
+  downloaded (`asset_original`) for the histogram, auto-levels, and export;
+  view-time edits apply to the preview.
 
 ## Color levels
 
@@ -216,7 +223,8 @@ images scanned from negatives that have skewed color casts.
 
 ### Open questions / to decide
 - Interactive crop overlay (drag rectangle) instead of numeric per-mille.
-- Whether edits sync to Immich (upload original, edited, or both).
+- Whether edits should sync back to Immich (currently local-only; export bakes
+  a new file the user can re-upload).
 
 ## RAW + JPEG pairing
 
