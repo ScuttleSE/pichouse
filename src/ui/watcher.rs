@@ -66,7 +66,7 @@ pub fn start(state: &Rc<AppState>) {
     }) {
         Ok(w) => w,
         Err(e) => {
-            eprintln!("pichouse: file watcher unavailable ({e}); relying on periodic reconcile");
+            log::warn!("file watcher unavailable ({e}); relying on periodic reconcile");
             return;
         }
     };
@@ -78,8 +78,8 @@ pub fn start(state: &Rc<AppState>) {
             Err(e) => {
                 // e.g. watch-limit reached on a huge tree; periodic reconcile
                 // still covers this root.
-                eprintln!(
-                    "pichouse: cannot watch {} ({e}); relying on periodic reconcile",
+                log::warn!(
+                    "cannot watch {} ({e}); relying on periodic reconcile",
                     root.path
                 );
             }

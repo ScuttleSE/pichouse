@@ -146,6 +146,24 @@ GTK4 (>= 4.10) must be present at runtime; Debian 13 ships GTK 4.18.
     cargo build
     cargo run
 
+## Logging / troubleshooting
+
+pichouse logs to the console (stderr). Verbosity is set by command-line flags on
+the shipped binary:
+
+    pichouse            # default: warnings and errors only
+    pichouse -v         # info: scan start/end summaries
+    pichouse -vv        # debug: per-directory DB timings + sidebar-reload breakdown
+    pichouse -vvv       # trace: per-photo detail
+    pichouse -q         # quiet: errors only
+    pichouse --help     # show usage
+
+The `-vv` level is the one to use when the UI stalls for several seconds while
+scanning a new library folder. It prints, for example, how long `collect_images`
+took, per-directory `insert_batch` timings, and a `sidebar.reload` line broken
+down into its slow queries (`folder_counts`, `new_photos_count`, `va_counts`) —
+which pinpoints where the time goes.
+
 ## Test
 
     cargo test

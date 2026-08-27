@@ -37,6 +37,13 @@ base64 = "0.22"
 # XDG data/config directory resolution.
 dirs = "5"
 
+# Logging facade + console backend. Verbosity is controlled by CLI flags
+# (-v/-vv/-vvv/-q); output goes to stderr. Pure Rust, no system dependencies.
+# env_logger default features (timestamps via jiff, regex filtering, colors) are
+# disabled to keep the dependency/link footprint small.
+log = "0.4"
+env_logger = { version = "0.11", default-features = false }
+
 # Filesystem change notifications (inotify on Linux) for the library-freshness
 # fast path. Reconciliation remains the reliable core; this is only a
 # low-latency optimization for local folders and is never required for

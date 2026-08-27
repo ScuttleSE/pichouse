@@ -508,15 +508,20 @@ impl Sidebar {
         // Suppress per-row expand/collapse persistence while the tree is torn
         // down and rebuilt, so teardown notifications do not wipe the saved set.
         self.suppress_expand_notify.set(true);
+        let t_reload = std::time::Instant::now();
         let mut folders = state.lib.folders().unwrap_or_default();
+        let t_counts = std::time::Instant::now();
         let counts = state.lib.folder_photo_counts().unwrap_or_default();
+        let counts_ms = t_counts.elapsed();
         let mut albums = state.lib.albums().unwrap_or_default();
         let folder_album = state.lib.folder_albums().unwrap_or_default();
         let mut virtual_albums = state.lib.virtual_albums().unwrap_or_default();
+        let t_new = std::time::Instant::now();
         let new_files_count = state
             .lib
             .new_photos_count(state.prefs.borrow().new_max_age_secs())
             .unwrap_or(0);
+        let new_ms = t_new.elapsed();
 
         folders.sort_by(|a, b| a.name.cmp(&b.name));
         // Show albums alphabetically at every level (case-insensitive). They are
@@ -536,6 +541,7 @@ impl Sidebar {
                 .or_default()
                 .push(a.id);
         }
+        let t_va = std::time::Instant::now();
         for va in &virtual_albums {
             data.valbum_children
                 .entry(va.parent_id)
@@ -547,6 +553,7 @@ impl Sidebar {
             );
             data.virtual_albums.insert(va.id, va.clone());
         }
+        let va_ms = t_va.elapsed();
         for f in &folders {
             data.folders.insert(f.id, f.clone());
             if let Some(&aid) = folder_album.get(&f.id) {
@@ -612,6 +619,13 @@ impl Sidebar {
         // The expansion set may have changed during this reload (e.g. a newly
         // created album's parent was marked expanded). Persist the final state.
         self.persist_expansion();
+        log::debug!(
+            "sidebar.reload {:.2?} (folder_counts {:.2?}, new_photos_count {:.2?}, va_counts {:.2?})",
+            t_reload.elapsed(),
+            counts_ms,
+            new_ms,
+            va_ms
+        );
     }
 
     fn save_expansion(&self) {

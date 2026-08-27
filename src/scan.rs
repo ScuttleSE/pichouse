@@ -70,14 +70,26 @@ impl<'a> Scanner<'a> {
         // First pass: collect image files grouped by directory.
         let mut by_dir: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
         let mut total = 0usize;
+        let t_collect = std::time::Instant::now();
         collect_images(root, cancel, &mut by_dir, &mut total)?;
+        log::info!(
+            "collect_images {}: {} images in {} dirs, took {:.2?}",
+            root.display(),
+            total,
+            by_dir.len(),
+            t_collect.elapsed()
+        );
 
+        let t_scan = std::time::Instant::now();
         let mut done = 0usize;
         for (dir, files) in &by_dir {
             if cancel.load(Ordering::Relaxed) {
                 return Err(ScanError::Cancelled(done));
             }
+            let t_dir = std::time::Instant::now();
+            let t_upsert = std::time::Instant::now();
             let fid = self.upsert_folder_for(dir)?;
+            let upsert_ms = t_upsert.elapsed();
             self.lib.set_scan_state(fid, ScanStatus::Running)?;
 
             // Record the whole directory's photos in one transaction. This holds
@@ -88,7 +100,9 @@ impl<'a> Scanner<'a> {
                 .iter()
                 .filter_map(|path| structure_photo(fid, path))
                 .collect();
+            let t_batch = std::time::Instant::now();
             self.lib.insert_structure_batch(&batch)?;
+            let batch_ms = t_batch.elapsed();
 
             // File this folder into the Library album tree right away.
             on_folder(fid, dir);
@@ -100,16 +114,30 @@ impl<'a> Scanner<'a> {
                     done,
                     total,
                 });
-                let _ = path;
+                log::trace!("recorded {}", path.display());
                 if cancel.load(Ordering::Relaxed) {
                     return Err(ScanError::Cancelled(done));
                 }
             }
             self.lib.set_scan_state(fid, ScanStatus::Done)?;
+            log::debug!(
+                "scan dir {}: {} photos, upsert_folder {:.2?}, insert_batch {:.2?}, dir total {:.2?}",
+                dir.display(),
+                batch.len(),
+                upsert_ms,
+                batch_ms,
+                t_dir.elapsed()
+            );
             // Yield so the enrichment workers get a turn on the DB lock between
             // directories rather than the scan monopolizing it.
             std::thread::yield_now();
         }
+        log::info!(
+            "scan {}: recorded {} photos in {:.2?}",
+            root.display(),
+            done,
+            t_scan.elapsed()
+        );
         Ok(done)
     }
 

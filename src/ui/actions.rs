@@ -84,13 +84,23 @@ fn start_scan_worker(state: &Rc<AppState>) {
                 Msg::Progress(p) => status.set_progress(p),
                 Msg::Scanning(s) => status.set_scanning(s),
                 Msg::ReloadOnly => {
+                    let t = std::time::Instant::now();
                     super::app::reload_folders(&state);
+                    let reload_ms = t.elapsed();
+                    let t2 = std::time::Instant::now();
                     // Re-query the visible folder so newly scanned photos appear.
                     state.grid().reload_from_source();
+                    log::debug!(
+                        "ReloadOnly: reload_folders {:.2?}, grid {:.2?}",
+                        reload_ms,
+                        t2.elapsed()
+                    );
                 }
                 Msg::ReloadAndEnrich => {
+                    let t = std::time::Instant::now();
                     super::app::reload_folders(&state);
                     state.grid().reload_from_source();
+                    log::debug!("ReloadAndEnrich: refresh took {:.2?}", t.elapsed());
                     // Bulk Phase 2 enrichment starts only after the whole scan
                     // has finished, so the file tree is fully in Library first.
                     super::enrich::ensure_running(&state);
@@ -169,7 +179,12 @@ fn start_scan_worker(state: &Rc<AppState>) {
                         path: dir.to_string_lossy().into_owned(),
                         ..Default::default()
                     };
+                    let t = std::time::Instant::now();
                     mapper.file(&lib_folder, &root_folder, &folder);
+                    let el = t.elapsed();
+                    if el.as_millis() >= 50 {
+                        log::debug!("mapper.file {} took {:.2?}", dir.display(), el);
+                    }
                     dirs_since_reload += 1;
                     if dirs_since_reload >= 4 {
                         dirs_since_reload = 0;
