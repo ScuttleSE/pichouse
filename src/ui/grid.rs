@@ -517,15 +517,15 @@ impl Grid {
         match source {
             Source::Folder(id, name) => {
                 let photos = self.lib.photos_in_folder(id).unwrap_or_default();
-                self.set_photos(&name, photos);
+                self.set_photos_preserving(&name, photos);
             }
             Source::RawDir(dir) => {
                 let (title, photos) = self.load_raw_dir(&dir);
-                self.set_photos(&title, photos);
+                self.set_photos_preserving(&title, photos);
             }
             Source::VirtualAlbum(id, name) => {
                 let photos = self.lib.photos_in_virtual_album(id).unwrap_or_default();
-                self.set_photos(&name, photos);
+                self.set_photos_preserving(&name, photos);
             }
             Source::None => {}
             // Immich albums refetch over HTTP. The grid keeps the last-shown
@@ -579,6 +579,122 @@ impl Grid {
         *self.all_photos.borrow_mut() = photos;
         *self.title.borrow_mut() = title.to_string();
         self.rebuild();
+    }
+
+    /// Update the view from a background reload (scan/enrich) **without**
+    /// destroying and recreating the store when the set of photos is unchanged.
+    ///
+    /// A full `rebuild` (`store.remove_all()` + re-append) resets the GridView's
+    /// selection and focus, which — fired every few seconds by a running scan —
+    /// makes it nearly impossible to click a thumbnail. This path instead diffs
+    /// the incoming set against the current store by file path (a stable id that
+    /// does not change as a photo gains its hash during enrichment). When the
+    /// paths match in order, it updates only the changed fields on the existing
+    /// `PhotoObject`s in place, so the user's selection is preserved. When the
+    /// set differs (folder switch, files added/removed), it falls back to a full
+    /// rebuild.
+    fn set_photos_preserving(&self, title: &str, photos: Vec<Photo>) {
+        *self.all_photos.borrow_mut() = photos;
+        *self.title.borrow_mut() = title.to_string();
+
+        let filtered = self.filtered_photos();
+        // Compare the incoming (filtered) set to the current store by path/order.
+        let same = {
+            let n = self.store.n_items() as usize;
+            if n != filtered.len() {
+                false
+            } else {
+                let mut ok = true;
+                for (i, p) in filtered.iter().enumerate() {
+                    let cur = self
+                        .store
+                        .item(i as u32)
+                        .and_downcast::<PhotoObject>()
+                        .map(|o| o.path())
+                        .unwrap_or_default();
+                    if cur != p.path {
+                        ok = false;
+                        break;
+                    }
+                }
+                ok
+            }
+        };
+
+        if !same {
+            // Structure changed: a full rebuild is required (and a selection
+            // reset here is expected — the view genuinely changed).
+            self.rebuild();
+            return;
+        }
+
+        // In-place update: refresh each existing object's mutable fields and
+        // enqueue a thumbnail only when the cell has none yet or its key changed
+        // (e.g. the photo just gained its hash). The store items — and thus the
+        // selection — are never removed.
+        let size = self.thumb_size.get();
+        let gen = self.generation.load(Ordering::Relaxed);
+        self.header
+            .set_text(&format!("{}  ({})", self.title.borrow(), filtered.len()));
+        for (i, p) in filtered.iter().enumerate() {
+            let Some(obj) = self.store.item(i as u32).and_downcast::<PhotoObject>() else {
+                continue;
+            };
+            // Update fields that enrichment may have filled in.
+            if obj.hash() != p.hash {
+                obj.set_hash(p.hash.clone());
+            }
+            if obj.id() != p.id {
+                obj.set_id(p.id);
+            }
+            if obj.missing() != p.missing {
+                obj.set_missing(p.missing);
+            }
+            // If the cell already shows a thumbnail, leave it; the worker result
+            // for a re-keyed job will replace it when ready.
+            if obj.texture().is_some() {
+                continue;
+            }
+            let edit = self.lib.photo_edit(p.id).unwrap_or_default();
+            let key = cell_key(p, size, &edit);
+            if let Some(texture) = self.tex_cache.borrow_mut().get(&key) {
+                obj.set_texture(Some(texture));
+                continue;
+            }
+            if self.pending.borrow().contains_key(&key) {
+                continue; // already queued
+            }
+            self.enqueue_thumb(p, &obj, &key, edit, gen);
+        }
+    }
+
+    /// Enqueue a thumbnail job for one cell (local or Immich).
+    fn enqueue_thumb(
+        &self,
+        p: &Photo,
+        obj: &PhotoObject,
+        key: &str,
+        edit: crate::model::PhotoEdit,
+        gen: u64,
+    ) {
+        self.pending.borrow_mut().insert(key.to_string(), obj.clone());
+        if let Some((server_id, asset_id)) = parse_immich_path(&p.path) {
+            let _ = self.immich_jobs.send(ImmichJob {
+                key: key.to_string(),
+                server_id,
+                asset_id,
+                generation: gen,
+            });
+            return;
+        }
+        let _ = self.jobs.send(Job {
+            key: key.to_string(),
+            hash: p.hash.clone(),
+            path: p.path.clone(),
+            orientation: p.orientation,
+            edit,
+            generation: gen,
+        });
     }
 
     /// Set the filename/tag filter and rebuild the view.
