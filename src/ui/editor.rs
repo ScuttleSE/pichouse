@@ -18,6 +18,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{
     Box as GtkBox, Button, CheckButton, DrawingArea, DropDown, Label, Orientation, Scale,
@@ -67,6 +68,9 @@ pub struct EditPanel {
     controls: RefCell<Option<Controls>>,
     /// The interactive "crop by dragging" toggle, so `load` can reset it.
     crop_btn: RefCell<Option<CheckButton>>,
+    /// Bumped on every `load` so a late async histogram for a previously shown
+    /// photo is discarded instead of overwriting the current one.
+    hist_generation: std::cell::Cell<u64>,
 }
 
 impl EditPanel {
@@ -105,6 +109,7 @@ impl EditPanel {
             channels: RefCell::new(Vec::new()),
             controls: RefCell::new(None),
             crop_btn: RefCell::new(None),
+            hist_generation: std::cell::Cell::new(0),
         });
 
         panel.build_body();
@@ -148,12 +153,18 @@ impl EditPanel {
                     ..Default::default()
                 });
                 *self.edit.borrow_mut() = edit;
-                *self.histogram.borrow_mut() = compute_histogram(&state, &p);
-                *self.photo.borrow_mut() = Some(p);
+                // Clear the histogram and show the panel immediately. Computing
+                // the histogram reads and decodes the full image, which is slow
+                // on a big file or a busy disk — doing it on the main thread here
+                // froze the UI on every photo open during a scan. Compute it on a
+                // background thread and fill it in when ready.
+                *self.histogram.borrow_mut() = [vec![0; 256], vec![0; 256], vec![0; 256]];
+                *self.photo.borrow_mut() = Some(p.clone());
                 self.root.set_child(Some(&self.body));
                 state.viewer().set_show_original(false);
                 self.refresh_presets(None);
                 self.refresh_all();
+                self.load_histogram_async(&state, &p);
             }
         }
     }
@@ -161,6 +172,48 @@ impl EditPanel {
     /// The id of the photo currently bound, or 0.
     fn photo_id(&self) -> i64 {
         self.photo.borrow().as_ref().map(|p| p.id).unwrap_or(0)
+    }
+
+    /// Compute the histogram off the main thread and apply it when ready.
+    ///
+    /// The image load/decode is slow (a big file, or a disk busy with a scan);
+    /// running it here instead of in `load` keeps opening a photo instant. A
+    /// generation guard discards a result that arrives after the user moved to a
+    /// different photo.
+    fn load_histogram_async(self: &Rc<Self>, state: &Rc<AppState>, photo: &Photo) {
+        let generation = self.hist_generation.get().wrapping_add(1);
+        self.hist_generation.set(generation);
+
+        // Resolve the source on the main thread (owns the non-Send AppState).
+        let source = if let Some((server_id, asset_id)) = parse_immich(&photo.path) {
+            match state.lib.immich_server(server_id) {
+                Ok(Some(s)) => HistSource::Immich(s.base_url, s.api_key, asset_id),
+                _ => return,
+            }
+        } else {
+            HistSource::Local(photo.path.clone())
+        };
+
+        let (tx, rx) = glib::MainContext::channel::<[Vec<u32>; 3]>(glib::Priority::DEFAULT);
+        std::thread::spawn(move || {
+            if let Some(hist) = histogram_from_source(&source) {
+                let _ = tx.send(hist);
+            }
+        });
+
+        let this = self.clone();
+        rx.attach(None, move |hist| {
+            // Ignore a late result for a photo the user already navigated away
+            // from.
+            if this.hist_generation.get() == generation {
+                *this.histogram.borrow_mut() = hist;
+                // Redraw the per-channel histogram areas.
+                for cw in this.channels.borrow().iter() {
+                    cw.area.queue_draw();
+                }
+            }
+            glib::ControlFlow::Break
+        });
     }
 
     // --- body construction (once) ---
@@ -885,22 +938,44 @@ fn set_channel_val(l: &mut Levels, ch: usize, kind: i32, v: i32) {
     }
 }
 
-/// Compute a per-channel 256-bin histogram at a working resolution.
-fn compute_histogram(state: &Rc<AppState>, photo: &Photo) -> [Vec<u32>; 3] {
-    let mut hist = [vec![0u32; 256], vec![0u32; 256], vec![0u32; 256]];
-    if let Some(img) = load_image_for_edit(state, photo) {
-        let small = if img.width().max(img.height()) > 1024 {
-            image::imageops::thumbnail(&img, 1024, 1024)
-        } else {
-            img
-        };
-        for px in small.pixels() {
-            hist[0][px.0[0] as usize] += 1;
-            hist[1][px.0[1] as usize] += 1;
-            hist[2][px.0[2] as usize] += 1;
+/// A histogram image source, resolved on the main thread so the worker thread
+/// needs no access to the non-`Send` `AppState`.
+enum HistSource {
+    /// A local file at this path.
+    Local(String),
+    /// An Immich asset: server base URL, API key, asset id.
+    Immich(String, String, String),
+}
+
+/// Compute a per-channel 256-bin histogram at a working resolution from a
+/// resolved source. Runs on a background thread.
+fn histogram_from_source(source: &HistSource) -> Option<[Vec<u32>; 3]> {
+    let img = match source {
+        HistSource::Local(path) => image::ImageReader::open(path)
+            .ok()?
+            .with_guessed_format()
+            .ok()?
+            .decode()
+            .ok()?
+            .to_rgba8(),
+        HistSource::Immich(base_url, api_key, asset_id) => {
+            let client = crate::immich::Client::new(base_url, api_key);
+            let bytes = client.asset_original(asset_id).ok()?;
+            image::load_from_memory(&bytes).ok()?.to_rgba8()
         }
+    };
+    let mut hist = [vec![0u32; 256], vec![0u32; 256], vec![0u32; 256]];
+    let small = if img.width().max(img.height()) > 1024 {
+        image::imageops::thumbnail(&img, 1024, 1024)
+    } else {
+        img
+    };
+    for px in small.pixels() {
+        hist[0][px.0[0] as usize] += 1;
+        hist[1][px.0[1] as usize] += 1;
+        hist[2][px.0[2] as usize] += 1;
     }
-    hist
+    Some(hist)
 }
 
 /// Load the full image for editing: a local file, or the Immich original.
