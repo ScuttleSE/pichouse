@@ -2,16 +2,144 @@
 
 This document is for an agent with no memory of the last session. It uses
 Simplified Technical English (ASD-STE100, Strict). Read AGENTS.md first. Read
-ROADMAP.md for planned features. Read section 00 first — it describes the most
-recent work (four small follow-up features). Then read section 0 — it describes
+ROADMAP.md for planned features. Read section 000 first — it describes the most
+recent work (non-destructive editing and color levels). Then read section 00 —
+it describes four small follow-up features. Then read section 0 — it describes
 the Immich integration. The later sections describe earlier features and are
 still correct.
 
-## 00. Small follow-up features (most recent work — read this first)
+## 000. Non-destructive editing and color levels (most recent work — read this first)
 
-This section describes the last session. The session did four small follow-up
-tasks. Each task is complete. The application builds. `cargo test` passes 37
-tests. Each task is on `main`. Each task is pushed.
+This section describes the last session. The session added non-destructive
+image editing and color levels. The work is complete. The application builds.
+`cargo test` passes 43 tests. The work is on `main`. The work is pushed. The
+version is 0.0.44.
+
+The remaining `cargo build` warnings are about 34. Each remaining warning is a
+deprecation warning. The deprecation warnings come from the glib channel API and
+the GTK dialogs. Section 8 describes this future migration. Do not treat the
+deprecation warnings as new work here.
+
+The user confirmed the feature works.
+
+### 000.1 What the feature does
+
+The user edits a photo without a change to the file on disk. The application
+stores the edits in `library.db`. The application applies the edits at view time
+and when it makes a thumbnail. The edits are:
+
+- Flip horizontal and flip vertical.
+- Straighten by a small angle, with an auto-crop of the empty corners.
+- Crop, as a per-mille rectangle.
+- Brightness and contrast.
+- Per-channel (red, green, blue) color levels: black point, white point, gamma.
+
+The 90-degree rotation is a separate, older feature. It stays on
+`photos.orientation`. The application applies the 90-degree rotation first. The
+application applies the new edits after.
+
+Color levels help photos scanned from negatives. These photos have skewed color.
+The levels panel shows these controls:
+
+- A live histogram for each channel. The histogram has three draggable markers:
+  black, white, and gamma. A drag updates the view immediately.
+- Spin buttons for the same values. The spin buttons and the markers stay in
+  step.
+- An "Auto levels" button. It reads the histogram and sets each channel's black
+  and white points to remove a color cast. It clips 0.5% at each tail.
+- A preset chooser. The user saves the current levels as a named preset. The
+  user applies a preset. The user deletes a preset. Presets store levels only.
+- An "Apply to folder" button. It merges the current levels into every photo in
+  the folder. It keeps each photo's other edits (crop, rotate, flip,
+  brightness).
+
+The user opens the edit controls in the "Edit" tab of the right-hand panel. The
+tab is next to "Pic Info" and "Tags". The user reveals the tab with the viewer
+Edit button, or with a right-click on a thumbnail, then "Edit".
+
+The user exports a "baked" copy. The application applies the edits at full
+resolution and writes a new file. The user starts an export with "Export copy…"
+in the edit tab, or with a right-click on one or more thumbnails, then "Export
+edited copy…". A dialog sets the format (JPEG or PNG) and the JPEG quality. The
+application remembers these values for the next export. For one photo, a Save
+dialog asks for the path. For more than one photo, a folder dialog asks for a
+folder. The application writes each file as `<stem>-edited.<ext>`.
+
+Immich photos work too. The application downloads the full-resolution asset with
+`Client::asset_original`. It uses the asset for the histogram, for auto-levels,
+and for export. View-time edits apply to the preview.
+
+### 000.2 Where the code is
+
+- `src/db/schema.sql` — two new tables: `photo_edits` (one row per photo) and
+  `level_presets`. Each table uses `CREATE TABLE IF NOT EXISTS`.
+- `src/model.rs` — `Levels`, `LevelPreset`, and `PhotoEdit` structs. All fields
+  are integer-scaled. `Default` is the identity edit. Gamma is milli-units
+  (1000 = 1.0). Crop is per-mille (0..1000). This keeps the structs `Eq`.
+- `src/db/edits.rs` — `photo_edit`, `set_photo_edit` (bumps `edit_rev`),
+  `clear_photo_edit`, and `apply_levels_to_folder`.
+- `src/db/presets.rs` — `level_presets`, `save_level_preset`,
+  `delete_level_preset`.
+- `src/edit.rs` — the shared render pipeline `apply_edits`, plus `auto_levels`.
+  Both the viewer and the thumbnail generator call `apply_edits`. It has unit
+  tests.
+- `src/thumb.rs` — `Generator::get_edited`. The cache key is `<hash>` for an
+  identity edit, or `<hash>|<edit_rev>` for a real edit. `invalidate` deletes the
+  plain hash and every edited variant (`delete_hash_and_edits` in
+  `src/db/thumbs.rs`).
+- `src/ui/editor.rs` — the `EditPanel`. It builds once. `EditPanel::load(photo)`
+  binds it to a photo. `refresh_all` and `refresh_channels` push values into the
+  widgets after auto-levels or a preset. `load_image_for_edit` loads a local
+  file or an Immich original.
+- `src/ui/export.rs` — the baked export. It reads and writes the format and
+  quality settings. It bakes the edits and writes the file.
+- `src/ui/properties.rs` — the right-hand panel. It owns the `EditPanel`. It adds
+  the "Edit" tab. `show(photo)` calls `edit.load`. `open_edit_tab` switches to
+  the tab (page index 2).
+- `src/ui/viewer.rs` — the Edit button calls `properties().open_edit_tab()`. The
+  decode path (`decode_edited`, `pixbuf_to_rgba`) applies the edit for display. A
+  "view original" toggle shows the unedited image.
+- `src/ui/vmenu.rs` — the grid right-click menu gains "Edit…" (one photo) and
+  "Export edited copy…" (one or more photos).
+- `src/ui/prefs.rs` — `KEY_EXPORT_FORMAT` and `KEY_EXPORT_JPEG_QUALITY`, with
+  defaults.
+
+### 000.3 Design rules to keep
+
+- Do not put float fields on `Photo` or `PhotoEdit`. `Photo` derives `Eq`. Store
+  scaled integers.
+- Do not change the shared `PHOTO_COLS`/`map_photo` query strings for edits.
+  Edits live in a separate table and a separate struct.
+- An identity edit keeps no `photo_edits` row. `set_photo_edit` deletes the row
+  for an identity edit.
+- After a change to an edit, call `Generator::invalidate(hash)`, then
+  `viewer().reload_current()`, then `grid().reload_from_source()`.
+- The thumbnail cache key must include the edit revision for a real edit. Do not
+  reuse the plain hash for an edited thumbnail.
+
+### 000.4 Open items (not done — candidates for next work)
+
+- Interactive crop overlay. The crop is numeric per-mille now. A drag-rectangle
+  overlay on the viewer picture is a good next step.
+- A background progress bar for "Apply to folder" on very large folders. The
+  operation is synchronous now.
+- Edits do not sync to Immich. Export writes a new file the user re-uploads.
+- The `open_edit_tab` page index is the constant 2 (Pic Info, Tags, Edit). If a
+  new tab changes the order, update this index.
+
+### 000.5 Verification limit
+
+The last session could not run the GTK GUI. It verified the work with `cargo
+build` and `cargo test` only. The user later confirmed the feature works. A new
+agent that changes this UI must still test by hand, because the tests do not
+cover the GTK widgets.
+
+## 00. Small follow-up features (earlier work)
+
+This section describes an earlier session. The session did four small follow-up
+tasks. Each task is complete. The application builds. `cargo test` passed 37
+tests at that time (it passes 43 now). Each task is on `main`. Each task is
+pushed.
 
 The remaining `cargo build` warnings are 25. Each remaining warning is a
 deprecation warning. The deprecation warnings come from the glib channel API and
