@@ -6,6 +6,7 @@ mod albumtree;
 mod app;
 mod controller;
 mod dialogs;
+mod editor;
 mod enrich;
 mod foldertree;
 mod freshness;

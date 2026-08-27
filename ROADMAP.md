@@ -167,28 +167,54 @@ when the remote asset or server is removed.
 
 ## Non-destructive image editing
 
-Basic image editing, Picasa-style. Edits never modify the original file on
-disk; they are stored in the database and applied at view time.
+**Status: implemented.** Basic image editing, Picasa-style. Edits never modify
+the original file on disk; they are stored in `library.db` (`photo_edits`, one
+row per photo) and applied at view time and when generating thumbnails. The
+shared pipeline is `src/edit.rs`; the edit panel is `src/ui/editor.rs`, opened
+from the viewer's Edit button.
 
-### Edits
-- Basic operations: crop, rotate, and similar (e.g. straighten, flip; more
-  adjustments like brightness/contrast/color TBD).
+### Edits (implemented)
+- Flip horizontal / vertical.
+- Straighten (arbitrary small angle, with auto-crop of the empty corners).
+- Crop (numeric per-mille rectangle; an interactive drag overlay is a follow-up).
+- Brightness / contrast.
+- Per-channel color levels (see "Color levels" below).
+- 90-degree rotation stays on `photos.orientation` (pre-existing) and is applied
+  before these edits.
 
-### Behaviour
-- Edits are stored in the database, not written to the original file
-  (non-destructive).
-- When an image is viewed, the **edited** version is the default view.
-- Option to view the **original** (before edits).
-- Option to **revert** the edits (discard, restoring the original as the view).
+### Behaviour (implemented)
+- Edits are stored in the database, not written to the original file.
+- The **edited** version is the default view.
+- "View original" toggle shows the untouched image.
+- "Revert all" discards the edits (removes the `photo_edits` row).
+- "Export copy…" bakes the edits into a new JPEG/PNG on disk.
+
+### Notes
+- Thumbnails: the thumbnail cache key gains the edit revision (`<hash>|<rev>`);
+  an identity edit reuses the plain `hash`, so pre-edit caches stay valid.
+  Editing calls `Generator::invalidate` to drop stale edited thumbnails.
+- Immich: edits apply to local files only; Immich previews are shown unedited
+  and are not exported.
+
+## Color levels
+
+**Status: implemented.** Per-channel (R/G/B) black/white/gamma levels, aimed at
+images scanned from negatives that have skewed color casts.
+
+### Behaviour (implemented)
+- Per-channel input black point, white point, and gamma.
+- **Auto levels**: derive per-channel black/white points from the image
+  histogram (0.5% tail clip) to remove a color cast in one click.
+- **Presets**: save the current levels as a named preset (`level_presets`),
+  choose a preset to apply, and delete presets. Presets store levels only.
+- **Apply to folder**: merge a preset's levels into every photo in the current
+  folder, changing only the levels part of each photo's edit and preserving
+  crop/rotate/flip/brightness (`Library::apply_levels_to_folder`).
 
 ### Open questions / to decide
-- Edit storage format: per-photo edit record / edit stack (ordered list of
-  operations) vs. a single derived-state blob; where it lives in library.db.
-- How edits interact with thumbnails (regenerate edited thumbnails? cache
-  both?) and with the thumb cache keyed by original hash.
-- How edits interact with Immich upload/sync (upload original, edited, or
-  both; do edits sync?).
-- Whether an "export edited copy" (bake edits into a new file) is offered.
+- A live histogram display in the levels panel (nice-to-have).
+- Interactive crop overlay (drag rectangle) instead of numeric per-mille.
+- Whether edits sync to Immich (upload original, edited, or both).
 
 ## RAW + JPEG pairing
 

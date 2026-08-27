@@ -109,13 +109,28 @@ impl Generator {
     /// from `src_path` and caches the result. When `all_sizes` is set, every
     /// configured size is pre-generated.
     pub fn get(&self, hash: &str, src_path: &Path, rotation: i32) -> Result<Vec<u8>> {
+        self.get_edited(hash, src_path, rotation, &crate::model::PhotoEdit::default())
+    }
+
+    /// Like [`Generator::get`], but also applies the non-destructive `edit`
+    /// (flip, straighten, crop, levels, brightness/contrast). The cache key
+    /// includes the edit revision so an edited thumbnail never collides with the
+    /// original; an identity edit reuses the plain `hash` key.
+    pub fn get_edited(
+        &self,
+        hash: &str,
+        src_path: &Path,
+        rotation: i32,
+        edit: &crate::model::PhotoEdit,
+    ) -> Result<Vec<u8>> {
         let (active, all) = {
             let inner = self.inner.lock().unwrap();
             (inner.size, inner.all_sizes.clone())
         };
 
-        if !hash.is_empty() {
-            if let Some(blob) = self.with_store(active, |s| s.get(hash))? {
+        let key = cache_key(hash, edit);
+        if !key.is_empty() {
+            if let Some(blob) = self.with_store(active, |s| s.get(&key))? {
                 return Ok(blob);
             }
         }
@@ -123,6 +138,7 @@ impl Generator {
         // Decode once, then produce every requested size.
         let src = decode(src_path)?;
         let src = rotate(src, rotation);
+        let src = crate::edit::apply_edits(src, edit);
 
         let sizes: Vec<i32> = if all.is_empty() { vec![active] } else { all };
         let mut active_blob: Option<Vec<u8>> = None;
@@ -131,8 +147,8 @@ impl Generator {
             if *sz == active {
                 active_blob = Some(blob.clone());
             }
-            if !hash.is_empty() {
-                self.with_store(*sz, |s| s.put(hash, *sz, &blob))?;
+            if !key.is_empty() {
+                self.with_store(*sz, |s| s.put(&key, *sz, &blob))?;
             }
         }
         let active_blob = match active_blob {
@@ -140,8 +156,8 @@ impl Generator {
             None => {
                 // Active size not among all-sizes: produce it directly.
                 let b = encode(&src, active)?;
-                if !hash.is_empty() {
-                    let _ = self.with_store(active, |s| s.put(hash, active, &b));
+                if !key.is_empty() {
+                    let _ = self.with_store(active, |s| s.put(&key, active, &b));
                 }
                 b
             }
@@ -157,7 +173,7 @@ impl Generator {
         }
         let inner = self.inner.lock().unwrap();
         for store in inner.stores.values() {
-            store.delete(hash)?;
+            store.delete_hash_and_edits(hash)?;
         }
         Ok(())
     }
@@ -184,6 +200,20 @@ pub fn encode_for_ai(src_path: &Path, rotation: i32, max_side: i32) -> Result<Ve
     let src = decode(src_path)?;
     let src = rotate(src, rotation);
     encode(&src, max_side)
+}
+
+/// The thumbnail cache key for a photo. An identity edit uses the bare `hash`,
+/// keeping caches made before editing valid; any real edit appends the edit
+/// revision so edited thumbnails never collide with the original.
+fn cache_key(hash: &str, edit: &crate::model::PhotoEdit) -> String {
+    if hash.is_empty() {
+        return String::new();
+    }
+    if edit.is_identity() {
+        hash.to_string()
+    } else {
+        format!("{hash}|{}", edit.edit_rev)
+    }
 }
 
 /// Read and decode an image file into RGBA8.

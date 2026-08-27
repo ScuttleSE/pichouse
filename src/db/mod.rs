@@ -5,9 +5,11 @@
 
 mod albums;
 mod config;
+mod edits;
 mod immich;
 mod immich_thumbs;
 mod library;
+mod presets;
 mod tags;
 mod thumbs;
 mod virtual_albums;
@@ -204,5 +206,59 @@ mod tests {
         assert_eq!(t.get("abc").unwrap().unwrap(), vec![1, 2, 3]);
         t.delete("abc").unwrap();
         assert!(t.get("abc").unwrap().is_none());
+    }
+
+    #[test]
+    fn photo_edit_roundtrip_and_identity() {
+        use crate::model::PhotoEdit;
+        let (_g, l) = temp_library();
+        let pid = new_test_photo(&l);
+        // No row yet -> identity edit with the right id.
+        let e = l.photo_edit(pid).unwrap();
+        assert!(e.is_identity());
+        assert_eq!(e.photo_id, pid);
+        // Save a real edit; edit_rev increments from 1.
+        let mut edit = PhotoEdit {
+            photo_id: pid,
+            brightness: 20,
+            ..Default::default()
+        };
+        edit.levels.r_black = 15;
+        let rev = l.set_photo_edit(&edit).unwrap();
+        assert_eq!(rev, 1);
+        let got = l.photo_edit(pid).unwrap();
+        assert_eq!(got.brightness, 20);
+        assert_eq!(got.levels.r_black, 15);
+        assert_eq!(got.edit_rev, 1);
+        // Saving again bumps the revision.
+        let rev2 = l.set_photo_edit(&got).unwrap();
+        assert_eq!(rev2, 2);
+        // Saving the identity edit removes the row.
+        let ident = PhotoEdit {
+            photo_id: pid,
+            ..Default::default()
+        };
+        l.set_photo_edit(&ident).unwrap();
+        assert!(l.photo_edit(pid).unwrap().is_identity());
+    }
+
+    #[test]
+    fn level_preset_roundtrip() {
+        use crate::model::Levels;
+        let (_g, l) = temp_library();
+        let mut lv = Levels::default();
+        lv.b_black = 40;
+        let id = l.save_level_preset("Kodak Gold", &lv).unwrap();
+        let presets = l.level_presets().unwrap();
+        assert_eq!(presets.len(), 1);
+        assert_eq!(presets[0].name, "Kodak Gold");
+        assert_eq!(presets[0].levels.b_black, 40);
+        // Overwrite by name keeps a single row.
+        lv.b_black = 55;
+        l.save_level_preset("Kodak Gold", &lv).unwrap();
+        assert_eq!(l.level_presets().unwrap().len(), 1);
+        assert_eq!(l.level_presets().unwrap()[0].levels.b_black, 55);
+        l.delete_level_preset(id).unwrap();
+        assert!(l.level_presets().unwrap().is_empty());
     }
 }

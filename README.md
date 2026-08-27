@@ -45,6 +45,14 @@ a thumbnail grid in the center, and a properties panel on the right.
     reopening a folder is fast.
 - Thumbnail grid with a size slider that snaps to preset sizes.
 - Properties panel for the selected photo.
+- **Non-destructive editing.** An Edit panel in the viewer applies flip,
+  straighten, crop, brightness/contrast, and per-channel color levels. Edits are
+  stored in `library.db` and applied at view time and to thumbnails; the
+  original file on disk is never changed. Toggle "View original", "Revert all",
+  or "Export copy…" to bake the edits into a new JPEG/PNG.
+- **Color levels for negative scans.** Per-channel (R/G/B) black/white/gamma with
+  a one-click Auto levels (from the histogram) to fix color casts. Save named
+  levels presets and apply a preset to a whole folder at once.
 
 ## AI-based tagging (local, optional)
 

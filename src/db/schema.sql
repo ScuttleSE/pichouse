@@ -148,6 +148,61 @@ CREATE TABLE IF NOT EXISTS virtual_album_rules (
 
 CREATE INDEX IF NOT EXISTS idx_var_album ON virtual_album_rules(album_id);
 
+-- Non-destructive edits for a photo. One row per edited photo. Edits are never
+-- written to the original file on disk; they are applied at view time and when
+-- generating thumbnails. All values are integer-scaled so the row stays cheap
+-- to compare and copy. A missing row means "no edits" (identity).
+--   flip_h/flip_v : 0 or 1, applied after the stored photos.orientation rotate.
+--   straighten_mdeg : arbitrary rotation in milli-degrees (1000 = 1 degree),
+--                     positive = clockwise, followed by an auto-crop.
+--   crop_*        : crop rectangle in per-mille of the post-orient/straighten
+--                   image (0..1000). crop_w/h = 0 means "no crop".
+--   brightness/contrast : -100..100, 0 = neutral. Applied after levels.
+--   lv_<c>_black/white  : per-channel input range, 0..255.
+--   lv_<c>_gamma_mille  : per-channel gamma * 1000 (1000 = 1.0).
+--   edit_rev      : bumped on every change; forms part of the thumbnail cache
+--                   key so edited thumbnails never collide with originals.
+CREATE TABLE IF NOT EXISTS photo_edits (
+    photo_id        INTEGER PRIMARY KEY REFERENCES photos(id) ON DELETE CASCADE,
+    flip_h          INTEGER NOT NULL DEFAULT 0,
+    flip_v          INTEGER NOT NULL DEFAULT 0,
+    straighten_mdeg INTEGER NOT NULL DEFAULT 0,
+    crop_x          INTEGER NOT NULL DEFAULT 0,
+    crop_y          INTEGER NOT NULL DEFAULT 0,
+    crop_w          INTEGER NOT NULL DEFAULT 0,
+    crop_h          INTEGER NOT NULL DEFAULT 0,
+    brightness      INTEGER NOT NULL DEFAULT 0,
+    contrast        INTEGER NOT NULL DEFAULT 0,
+    lv_r_black      INTEGER NOT NULL DEFAULT 0,
+    lv_r_white      INTEGER NOT NULL DEFAULT 255,
+    lv_r_gamma_mille INTEGER NOT NULL DEFAULT 1000,
+    lv_g_black      INTEGER NOT NULL DEFAULT 0,
+    lv_g_white      INTEGER NOT NULL DEFAULT 255,
+    lv_g_gamma_mille INTEGER NOT NULL DEFAULT 1000,
+    lv_b_black      INTEGER NOT NULL DEFAULT 0,
+    lv_b_white      INTEGER NOT NULL DEFAULT 255,
+    lv_b_gamma_mille INTEGER NOT NULL DEFAULT 1000,
+    edit_rev        INTEGER NOT NULL DEFAULT 0
+);
+
+-- Saved, reusable color-levels presets. Independent of any photo. Used for
+-- negative scans with known color casts. A preset stores only per-channel
+-- black/white/gamma levels (the same fields as photo_edits lv_*).
+CREATE TABLE IF NOT EXISTS level_presets (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    lv_r_black INTEGER NOT NULL DEFAULT 0,
+    lv_r_white INTEGER NOT NULL DEFAULT 255,
+    lv_r_gamma_mille INTEGER NOT NULL DEFAULT 1000,
+    lv_g_black INTEGER NOT NULL DEFAULT 0,
+    lv_g_white INTEGER NOT NULL DEFAULT 255,
+    lv_g_gamma_mille INTEGER NOT NULL DEFAULT 1000,
+    lv_b_black INTEGER NOT NULL DEFAULT 0,
+    lv_b_white INTEGER NOT NULL DEFAULT 255,
+    lv_b_gamma_mille INTEGER NOT NULL DEFAULT 1000,
+    created_at INTEGER NOT NULL DEFAULT 0
+);
+
 -- Immich servers the user connects to. Each server is a remote Immich instance
 -- reached over HTTP with an API key. pichouse supports more than one server.
 -- The API key is stored in plain text, the same way the AI host and port are.

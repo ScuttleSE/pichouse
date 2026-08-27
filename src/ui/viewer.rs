@@ -22,10 +22,13 @@ pub struct Viewer {
     prev_btn: Button,
     next_btn: Button,
     rotate_btn: Button,
+    edit_btn: Button,
 
     photos: RefCell<Vec<Photo>>,
     index: RefCell<usize>,
     state: RefCell<Option<Rc<AppState>>>,
+    /// When true, show the untouched original instead of the edited view.
+    show_original: std::cell::Cell<bool>,
     /// Bumped on every `show()` so a late async image load for a previous photo
     /// is discarded instead of flashing on screen.
     generation: std::cell::Cell<u64>,
@@ -38,6 +41,7 @@ impl Viewer {
         let prev_btn = Button::from_icon_name("media-skip-backward-symbolic");
         let next_btn = Button::from_icon_name("media-skip-forward-symbolic");
         let rotate_btn = Button::from_icon_name("object-rotate-right-symbolic");
+        let edit_btn = Button::from_icon_name("document-edit-symbolic");
 
         let header = Label::new(None);
         header.set_xalign(0.0);
@@ -53,6 +57,7 @@ impl Viewer {
         bar.append(&prev_btn);
         bar.append(&next_btn);
         bar.append(&rotate_btn);
+        bar.append(&edit_btn);
         bar.append(&header);
 
         let picture = Picture::new();
@@ -74,9 +79,11 @@ impl Viewer {
             prev_btn,
             next_btn,
             rotate_btn,
+            edit_btn,
             photos: RefCell::new(Vec::new()),
             index: RefCell::new(0),
             state: RefCell::new(None),
+            show_original: std::cell::Cell::new(false),
             generation: std::cell::Cell::new(0),
         })
     }
@@ -97,6 +104,8 @@ impl Viewer {
         self.next_btn.connect_clicked(move |_| this.navigate(1));
         let this = self.clone();
         self.rotate_btn.connect_clicked(move |_| this.rotate());
+        let this = self.clone();
+        self.edit_btn.connect_clicked(move |_| this.open_editor());
 
         self.refresh_tooltips();
     }
@@ -173,13 +182,47 @@ impl Viewer {
         self.show();
     }
 
+    /// Open the non-destructive edit panel for the current photo.
+    fn open_editor(self: &Rc<Self>) {
+        let Some(state) = self.state.borrow().clone() else {
+            return;
+        };
+        let idx = *self.index.borrow();
+        let photo = match self.photos.borrow().get(idx) {
+            Some(p) => p.clone(),
+            None => return,
+        };
+        if photo.id == 0 {
+            return;
+        }
+        super::editor::open(&state, self.clone(), photo);
+    }
+
+    /// The photo currently shown, if any.
+    #[allow(dead_code)] // Public accessor for future callers.
+    pub fn current_photo(self: &Rc<Self>) -> Option<Photo> {
+        let idx = *self.index.borrow();
+        self.photos.borrow().get(idx).cloned()
+    }
+
+    /// Show the untouched original (true) versus the edited view (false), then
+    /// re-render the current photo.
+    pub fn set_show_original(self: &Rc<Self>, original: bool) {
+        self.show_original.set(original);
+        self.show();
+    }
+
+    /// Re-render the current photo (for example after edits change).
+    pub fn reload_current(self: &Rc<Self>) {
+        self.show();
+    }
+
     fn rotate(self: &Rc<Self>) {
         let Some(state) = self.state.borrow().clone() else {
             return;
         };
         let idx = *self.index.borrow();
-        let (id, hash, new_orient) = {
-            let mut photos = self.photos.borrow_mut();
+        let (id, hash, new_orient) = {            let mut photos = self.photos.borrow_mut();
             let Some(p) = photos.get_mut(idx) else {
                 return;
             };
@@ -242,12 +285,23 @@ impl Viewer {
         let picture = self.picture.clone();
         let rot = photo.orientation;
         let this = self.clone();
+        // The non-destructive edit to apply on the decoded pixels, unless the
+        // user asked to see the original.
+        let edit = if self.show_original.get() {
+            crate::model::PhotoEdit::default()
+        } else {
+            self.state
+                .borrow()
+                .as_ref()
+                .and_then(|s| s.lib.photo_edit(photo.id).ok())
+                .unwrap_or_default()
+        };
         rx.attach(None, move |bytes| {
             // Drop stale results from an earlier show().
             if this.generation.get() != generation {
                 return glib::ControlFlow::Break;
             }
-            match bytes.and_then(|b| decode_rotated(&b, rot)) {
+            match bytes.and_then(|b| decode_edited(&b, rot, &edit)) {
                 Some(pb) => picture.set_pixbuf(Some(&pb)),
                 None => picture.set_paintable(gtk4::gdk::Paintable::NONE),
             }
@@ -256,20 +310,61 @@ impl Viewer {
     }
 }
 
-/// Decode image bytes and apply the given clockwise rotation for display.
+/// Decode image bytes, apply the stored 90-degree rotation, then apply the
+/// non-destructive `edit` (flip, straighten, crop, levels, brightness/contrast)
+/// for display.
 ///
 /// Tries GTK's `PixbufLoader` first. Immich previews may be WebP, which some
 /// GTK builds cannot load, so on failure the `image` crate decodes the bytes
 /// and the pixels are copied into a `Pixbuf`.
-fn decode_rotated(bytes: &[u8], degrees: i32) -> Option<Pixbuf> {
+fn decode_edited(bytes: &[u8], degrees: i32, edit: &crate::model::PhotoEdit) -> Option<Pixbuf> {
     let pb = decode_pixbuf(bytes)?;
     let degrees = ((degrees % 360) + 360) % 360;
-    match degrees {
-        90 => pb.rotate_simple(PixbufRotation::Clockwise),
-        180 => pb.rotate_simple(PixbufRotation::Upsidedown),
-        270 => pb.rotate_simple(PixbufRotation::Counterclockwise),
-        _ => Some(pb),
+    let pb = match degrees {
+        90 => pb.rotate_simple(PixbufRotation::Clockwise)?,
+        180 => pb.rotate_simple(PixbufRotation::Upsidedown)?,
+        270 => pb.rotate_simple(PixbufRotation::Counterclockwise)?,
+        _ => pb,
+    };
+    if edit.is_identity() {
+        return Some(pb);
     }
+    // Convert the rotated Pixbuf to an RgbaImage, run the edit pipeline, and
+    // convert back.
+    let rgba = pixbuf_to_rgba(&pb)?;
+    let out = crate::edit::apply_edits(rgba, edit);
+    let (w, h) = (out.width() as i32, out.height() as i32);
+    let data = glib::Bytes::from_owned(out.into_raw());
+    Some(Pixbuf::from_bytes(
+        &data,
+        gtk4::gdk_pixbuf::Colorspace::Rgb,
+        true,
+        8,
+        w,
+        h,
+        w * 4,
+    ))
+}
+
+/// Copy a `Pixbuf` (RGB or RGBA) into an `image::RgbaImage`.
+fn pixbuf_to_rgba(pb: &Pixbuf) -> Option<image::RgbaImage> {
+    let (w, h) = (pb.width() as u32, pb.height() as u32);
+    let channels = pb.n_channels();
+    let rowstride = pb.rowstride() as usize;
+    let pixels = pb.read_pixel_bytes();
+    let src = pixels.as_ref();
+    let mut out = image::RgbaImage::new(w, h);
+    for y in 0..h as usize {
+        for x in 0..w as usize {
+            let i = y * rowstride + x * channels as usize;
+            let r = *src.get(i)?;
+            let g = *src.get(i + 1)?;
+            let b = *src.get(i + 2)?;
+            let a = if channels >= 4 { *src.get(i + 3)? } else { 255 };
+            out.put_pixel(x as u32, y as u32, image::Rgba([r, g, b, a]));
+        }
+    }
+    Some(out)
 }
 
 /// Decode image bytes into a `Pixbuf`, with an `image`-crate fallback for

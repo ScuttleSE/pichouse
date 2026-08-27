@@ -2,6 +2,7 @@
 
 mod ai;
 mod db;
+mod edit;
 mod immich;
 mod model;
 mod reconcile;

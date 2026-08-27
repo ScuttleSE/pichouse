@@ -97,19 +97,22 @@ GTK4 (>= 4.10) must be present at runtime; Debian 13 ships GTK 4.18.
     src/db/              SQLite schema + access (library.db, thumbs-<N>.db,
                          immich-thumbs-<server_id>.db); includes
                          virtual_albums.rs (virtual album CRUD, membership, and
-                         rule evaluation) and immich_thumbs.rs (per-server Immich
-                         thumbnail cache)
+                         rule evaluation), immich_thumbs.rs (per-server Immich
+                         thumbnail cache), edits.rs (non-destructive per-photo
+                         edits) and presets.rs (levels presets)
     src/scan.rs          filesystem scanner (Phase 1 structure walk + Phase 2
                          per-file enrich helper)
     src/reconcile.rs     library freshness: diff disk against the DB per folder
-    src/thumb.rs         thumbnail generation + cache
+    src/thumb.rs         thumbnail generation + cache (applies edits at render)
+    src/edit.rs          non-destructive edit pipeline (flip, straighten, crop,
+                         levels, brightness/contrast) + auto-levels
     src/ai/              local AI tagging backend (Ollama HTTP client, tagger)
     src/immich/          Immich server integration (blocking HTTP client)
-    src/ui/              GTK4 UI (app, state, grid, sidebar, viewer, properties,
-                         toolbar, status, settings, settings_ai, settings_immich,
-                         aitag, immich, tagmanager, shortcuts, dialogs, actions,
-                         controller, prefs, photo_object, util, enrich, freshness,
-                         watcher, newfiles, vrules, vmenu)
+    src/ui/              GTK4 UI (app, state, grid, sidebar, viewer, editor,
+                         properties, toolbar, status, settings, settings_ai,
+                         settings_immich, aitag, immich, tagmanager, shortcuts,
+                         dialogs, actions, controller, prefs, photo_object, util,
+                         enrich, freshness, watcher, newfiles, vrules, vmenu)
     .gitea/workflows/    CI (build/test/release on push to main)
 
 ## Architecture patterns

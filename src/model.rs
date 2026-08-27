@@ -61,6 +61,124 @@ pub struct Photo {
     pub added_at: i64,
 }
 
+/// Per-channel color-levels adjustment. Each channel has an input black point,
+/// an input white point (both 0..255), and a gamma stored in milli-units
+/// (1000 = 1.0). The identity value (via `Default`) maps every input to itself.
+///
+/// Used both as the levels part of a [`PhotoEdit`] and as the content of a saved
+/// levels preset. Integer fields keep the type `Eq`-comparable and cheap.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Levels {
+    pub r_black: i32,
+    pub r_white: i32,
+    pub r_gamma_mille: i32,
+    pub g_black: i32,
+    pub g_white: i32,
+    pub g_gamma_mille: i32,
+    pub b_black: i32,
+    pub b_white: i32,
+    pub b_gamma_mille: i32,
+}
+
+impl Default for Levels {
+    fn default() -> Self {
+        Levels {
+            r_black: 0,
+            r_white: 255,
+            r_gamma_mille: 1000,
+            g_black: 0,
+            g_white: 255,
+            g_gamma_mille: 1000,
+            b_black: 0,
+            b_white: 255,
+            b_gamma_mille: 1000,
+        }
+    }
+}
+
+impl Levels {
+    /// `true` when these levels make no change (all channels are identity).
+    pub fn is_identity(&self) -> bool {
+        *self == Levels::default()
+    }
+}
+
+/// A named, reusable color-levels preset (a row in `level_presets`).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct LevelPreset {
+    pub id: i64,
+    pub name: String,
+    pub levels: Levels,
+}
+
+/// The non-destructive edit state for one photo (a row in `photo_edits`).
+///
+/// Edits are applied at view time and when rendering thumbnails; the original
+/// file on disk is never changed. Rotation by 90-degree steps lives separately
+/// on [`Photo::orientation`]; these edits are applied *after* that rotation.
+///
+/// All values are integer-scaled. The [`Default`] value is the identity edit
+/// (no change), which is also what a photo with no `photo_edits` row gets.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PhotoEdit {
+    pub photo_id: i64,
+    /// Mirror horizontally (after the 90-degree orientation rotation).
+    pub flip_h: bool,
+    /// Mirror vertically.
+    pub flip_v: bool,
+    /// Fine straighten angle in milli-degrees clockwise (1000 = 1 degree),
+    /// followed by an auto-crop that removes the empty corners.
+    pub straighten_mdeg: i32,
+    /// Crop rectangle in per-mille (0..1000) of the straightened image. A
+    /// `crop_w` or `crop_h` of 0 means "no crop".
+    pub crop_x: i32,
+    pub crop_y: i32,
+    pub crop_w: i32,
+    pub crop_h: i32,
+    /// Brightness offset, -100..100 (0 = neutral). Applied after levels.
+    pub brightness: i32,
+    /// Contrast, -100..100 (0 = neutral). Applied after levels.
+    pub contrast: i32,
+    /// Per-channel color levels.
+    pub levels: Levels,
+    /// Revision counter, bumped on every change. Part of the thumbnail cache
+    /// key so an edited thumbnail never collides with the original.
+    pub edit_rev: i64,
+}
+
+impl Default for PhotoEdit {
+    fn default() -> Self {
+        PhotoEdit {
+            photo_id: 0,
+            flip_h: false,
+            flip_v: false,
+            straighten_mdeg: 0,
+            crop_x: 0,
+            crop_y: 0,
+            crop_w: 0,
+            crop_h: 0,
+            brightness: 0,
+            contrast: 0,
+            levels: Levels::default(),
+            edit_rev: 0,
+        }
+    }
+}
+
+impl PhotoEdit {
+    /// `true` when this edit makes no visible change to the image.
+    pub fn is_identity(&self) -> bool {
+        !self.flip_h
+            && !self.flip_v
+            && self.straighten_mdeg == 0
+            && self.crop_w == 0
+            && self.crop_h == 0
+            && self.brightness == 0
+            && self.contrast == 0
+            && self.levels.is_identity()
+    }
+}
+
 /// The two-phase import state of a photo. The integer values are stable and are
 /// stored directly in the database.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

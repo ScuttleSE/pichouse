@@ -32,6 +32,7 @@ struct Job {
     hash: String,
     path: String,
     orientation: i32,
+    edit: crate::model::PhotoEdit,
     generation: u64,
 }
 
@@ -155,7 +156,12 @@ impl Grid {
                         Err(_) => return, // senders dropped; exit
                     }
                 };
-                match gen.get(&job.hash, std::path::Path::new(&job.path), job.orientation) {
+                match gen.get_edited(
+                    &job.hash,
+                    std::path::Path::new(&job.path),
+                    job.orientation,
+                    &job.edit,
+                ) {
                     Ok(blob) if !blob.is_empty() => {
                         let _ = done_tx.send(Done {
                             key: job.key,
@@ -596,7 +602,8 @@ impl Grid {
             .set_text(&format!("{}  ({})", self.title.borrow(), photos.len()));
 
         for (p, obj) in photos.iter().zip(objs) {
-            let key = cell_key(p, size);
+            let edit = self.lib.photo_edit(p.id).unwrap_or_default();
+            let key = cell_key(p, size, &edit);
             // Serve from the in-memory texture cache when available, skipping a
             // worker job and JPEG decode entirely.
             if let Some(texture) = self.tex_cache.borrow_mut().get(&key) {
@@ -618,6 +625,7 @@ impl Grid {
                 hash: p.hash.clone(),
                 path: p.path.clone(),
                 orientation: p.orientation,
+                edit,
                 generation: gen,
             });
         }
@@ -625,11 +633,11 @@ impl Grid {
 }
 
 /// The cache/recycle key for a photo at a given size. Encodes hash (or path),
-/// size, and orientation so a size or rotation change never matches a stale
-/// cell.
-fn cell_key(p: &Photo, size: i32) -> String {
+/// size, orientation, and edit revision so a size, rotation, or edit change
+/// never matches a stale cell.
+fn cell_key(p: &Photo, size: i32, edit: &crate::model::PhotoEdit) -> String {
     let base = if p.hash.is_empty() { &p.path } else { &p.hash };
-    format!("{base}|{size}|{}", p.orientation)
+    format!("{base}|{size}|{}|{}", p.orientation, edit.edit_rev)
 }
 
 /// Build the recycled cell factory: an `Overlay` of a fallback `Label` under an

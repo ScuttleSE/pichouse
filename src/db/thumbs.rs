@@ -75,9 +75,21 @@ impl Thumbs {
     }
 
     /// Remove any cached thumbnail for a photo hash.
+    #[allow(dead_code)] // Superseded by delete_hash_and_edits; kept as API.
     pub fn delete(&self, hash: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM thumbnails WHERE photo_hash = ?1", params![hash])?;
+        Ok(())
+    }
+
+    /// Remove the plain-hash thumbnail and every edited variant, whose keys are
+    /// `<hash>|<edit_rev>`. Used when a photo's rotation or edits change.
+    pub fn delete_hash_and_edits(&self, hash: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "DELETE FROM thumbnails WHERE photo_hash = ?1 OR photo_hash LIKE ?2",
+            params![hash, format!("{hash}|%")],
+        )?;
         Ok(())
     }
 
