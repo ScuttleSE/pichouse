@@ -83,6 +83,11 @@ pub fn show_album(state: &Rc<AppState>, server_id: i64, album_id: &str, name: &s
 
     let state = state.clone();
     rx.attach(None, move |assets| {
+        eprintln!(
+            "[immich] album '{name}' returned {} assets (first id={:?})",
+            assets.len(),
+            assets.first().map(|a| a.id.clone())
+        );
         let photos: Vec<Photo> = assets
             .iter()
             .map(|a| Photo {
