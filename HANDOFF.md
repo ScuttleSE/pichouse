@@ -11,10 +11,12 @@ application. The Go code is deleted. All work is on `main`. The temporary
 `rust-port` branch is deleted.
 
 The application builds, tests pass, and the UI runs on the target machine
-(Debian 13, GTK 4.18).
+(Debian 13, GTK 4.18). `cargo test` passes 28 tests.
 
-Two roadmap features are now implemented: fast two-phase import and library
-freshness. Section 10 describes them.
+Two roadmap features are complete: fast two-phase import and library freshness.
+A New Files view is complete. Section 10 describes them. Section 11 describes
+the fixes from the most recent session. Read section 11 first if you continue
+recent work.
 
 ## 10. Fast two-phase import and library freshness
 
@@ -33,6 +35,7 @@ freshness. Section 10 describes them.
   un-enriched ids to the front of the worklist. The queue follows the view.
 - On startup, `enrich::ensure_running` reseeds the worklist from the database,
   so an interrupted import resumes without a manual rescan.
+- Bulk enrichment does NOT run during a scan. See section 11.1.
 - The folder `year` starts from the folder mtime and is refined from the
   earliest known `taken_at` after a folder finishes enriching.
 - Thumbnails need the hash (the cache key), so an un-enriched cell shows the
@@ -93,6 +96,89 @@ freshness. Section 10 describes them.
 - A "clean up missing" action to hard-delete missing rows on user confirmation.
 - Making `NEW_MAX_AGE_DAYS` a user setting (it is a constant now).
 - Interaction with future RAW+JPEG pairing (pair during Phase 1 or Phase 2).
+
+## 11. Recent session: scan sequencing, tree, and theme
+
+This section records fixes made after section 10. Read it before you change the
+scan, the album tree, or reconciliation.
+
+### 11.1 Enrichment does not run during a scan (tree first)
+- The scan worker (`ui::actions`) sends two message types. `ReloadOnly`
+  refreshes the sidebars and the grid but does NOT start Phase 2. It is sent on
+  the periodic tick and after each root completes. `ReloadAndEnrich` refreshes
+  and then calls `enrich::ensure_running`. It is sent one time, after the whole
+  scan queue drains.
+- Result: the file tree lands in Library first. Bulk "Reading photo info"
+  starts only after the scan finishes.
+- Exception: if the user opens a folder during the scan, that folder is enriched
+  at once. `load_folder_into_grid` calls `enrich::prioritize_folder`, which
+  front-loads that folder's ids and starts the pool. Keep this behavior.
+- Do not add a call that starts bulk enrichment during the scan.
+
+### 11.2 The album tree builds live during the scan
+- The problem before: folders showed under "New folders" until the scan
+  finished, because the album sync ran only at the end.
+- `scan::Scanner::scan_folder` now takes a second closure, `on_folder`. The
+  scanner calls it once per directory, right after it writes that directory's
+  rows.
+- The scan worker gives `on_folder` a per-root `albumtree::DiskAlbumMapper`. The
+  mapper files each folder into its disk-mirrored album at once, so a folder
+  never waits under "New folders". A completion sweep (`sync_disk_tree`) runs
+  per root as a safety net. Both paths skip folders that are already in an album,
+  so user placements are kept.
+- `DiskAlbumMapper` caches albums by `(parent_id, name)` so repeated calls stay
+  cheap.
+
+### 11.3 Albums sort alphabetically
+- `ui::sidebar::reload` sorts albums by name, case-insensitive, before it builds
+  the tree. This is display-only. The `position` column is not changed.
+
+### 11.4 No phantom 0-image folders; empty leaf folders are removed
+- A directory that holds only subfolders (no images) is an album only. It never
+  gets a `folders` row. The scanner records only directories that hold images.
+- `reconcile.rs` matched this rule. In `reconcile_dir`, a directory with no
+  images uses `Library::folder_id_by_path` (a non-creating lookup). If no row
+  exists, reconcile skips the directory. So reconciliation no longer creates
+  phantom 0-image folder rows for container directories.
+- Decision (user): a folder with no images on disk AND no image-containing
+  subfolders is removed outright (`Library::delete_folder`), even if it held
+  photos before. `dir_has_images` guards this: a container is never removed.
+  This wins over the "soft missing" rule when the LAST image in a folder is
+  deleted. `Report` has a `removed` count.
+
+### 11.5 Phase 1 inserts are batched (lock contention)
+- `Library::insert_structure_batch` records a whole directory's photos in one
+  transaction. Before, each photo took the single SQLite mutex twice. The tight
+  loop starved the enrichment and thumbnail workers and the UI thread.
+- The scan yields between directories. The DB has one connection behind one
+  `Mutex`, so all DB access is serialized. Keep the batch pattern for any new
+  bulk write during a scan.
+
+### 11.6 Theme override (Adwaita) — fixes an unexpandable tree
+- Some environments (for example Kasm remote desktops) ship a broken GTK3-era
+  system theme. GTK4 cannot parse it. The theme gives no expander size and no
+  expander image, so the folder tree cannot expand in either the Library or the
+  Folders tab. The data is correct; only the theme is broken.
+- `app::apply_theme(force_adwaita)` sets `gtk-theme-name` to `Adwaita` when the
+  override is on, or resets the property when it is off. It runs at startup in
+  `build_ui`, before any widget is built.
+- Settings has an Appearance pane with a checkbox, "Use recommended theme
+  (Adwaita)". It is on by default. The change applies live. The setting key is
+  `ui.theme_override` (`prefs::KEY_THEME_OVERRIDE`, `Prefs::theme_override`).
+- If a user reports a tree that will not expand, tell them to keep this on.
+
+### 11.7 Other UI fixes in this session
+- Viewer: `show()` clears the old image at once and tags each async load with a
+  generation, so opening a second photo does not show the previous one.
+- Sidebar: the context-menu popover crashed the app after a library folder was
+  removed. Every menu action now calls `dismiss_menu` first, and the album
+  actions use `reload_deferred` (an idle rebuild), so the tree is not rebuilt
+  while the popover's row is recycled.
+- Settings: removing a library folder calls `AppState::clear_grid_if_folder_gone`
+  so the grid does not keep showing the deleted folder's thumbnails.
+- Sidebar order: "New Files" then "New folders" then albums, all at the top.
+- Status bar: the scan counter is cumulative across all queued folders, not per
+  folder.
 
 ## 2. What is ported
 
