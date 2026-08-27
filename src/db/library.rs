@@ -212,6 +212,24 @@ impl Library {
         Ok(())
     }
 
+    /// Count photos currently marked missing (soft-deleted from disk).
+    pub fn missing_photo_count(&self) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        let n: i64 = conn.query_row("SELECT COUNT(*) FROM photos WHERE missing = 1", [], |r| {
+            r.get(0)
+        })?;
+        Ok(n)
+    }
+
+    /// Hard-delete all photo rows marked missing. Their tags and virtual-album
+    /// memberships are removed by ON DELETE CASCADE. Returns the number of rows
+    /// deleted.
+    pub fn delete_missing_photos(&self) -> Result<usize> {
+        let conn = self.conn.lock().unwrap();
+        let n = conn.execute("DELETE FROM photos WHERE missing = 1", [])?;
+        Ok(n)
+    }
+
     /// All scanned folders ordered by year (desc) then name.
     pub fn folders(&self) -> Result<Vec<Folder>> {
         let conn = self.conn.lock().unwrap();

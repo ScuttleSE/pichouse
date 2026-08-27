@@ -296,6 +296,53 @@ fn thumb_pane(state: &Rc<AppState>) -> GtkBox {
         });
     }
     root.append(&clear);
+
+    root.append(&Separator::new(Orientation::Horizontal));
+    let cleanup = Button::with_label("Clean Up Missing Photos");
+    cleanup.add_css_class("destructive-action");
+    cleanup.set_tooltip_text(Some(
+        "Permanently remove photos that are no longer on disk (marked missing).",
+    ));
+    {
+        let state = state.clone();
+        cleanup.connect_clicked(move |btn| {
+            let parent = btn.root().and_downcast::<Window>();
+            let n = state.lib.missing_photo_count().unwrap_or(0);
+            if n == 0 {
+                show_message(&state, "Clean Up Missing", "No missing photos to remove.");
+                return;
+            }
+            let state2 = state.clone();
+            confirm(
+                &state,
+                parent.as_ref(),
+                "Clean up missing",
+                &format!(
+                    "Permanently delete {n} missing photo(s) from the library? \
+                     Their tags and album memberships are also removed. \
+                     This does not touch any files on disk."
+                ),
+                move || {
+                    match state2.lib.delete_missing_photos() {
+                        Ok(deleted) => {
+                            state2.refresh_new_files_if_active();
+                            if let Some(sb) = state2.sidebar.borrow().as_ref() {
+                                sb.reload();
+                            }
+                            state2.grid().refresh_current();
+                            show_message(
+                                &state2,
+                                "Clean Up Missing",
+                                &format!("Removed {deleted} missing photo(s)."),
+                            );
+                        }
+                        Err(e) => show_error(&state2, &e.to_string()),
+                    }
+                },
+            );
+        });
+    }
+    root.append(&cleanup);
     root
 }
 
