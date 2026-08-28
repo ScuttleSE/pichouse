@@ -18,7 +18,7 @@ use crate::version;
 use super::controller::Controller;
 use super::foldertree::FolderTree;
 use super::grid::Grid;
-use super::prefs::{load_ai_config, Prefs};
+use super::prefs::{load_ai_config, load_face_config, Prefs};
 use super::properties::Properties;
 use super::shortcuts::Shortcuts;
 use super::sidebar::Sidebar;
@@ -51,6 +51,7 @@ fn build_ui(app: &Application) {
 
     let prefs = Prefs::load(&lib);
     let ai_config = load_ai_config(&lib);
+    let face_config = load_face_config(&lib);
     let shortcuts = Shortcuts::load(&lib);
 
     // Apply the theme choice before building any widgets. Forcing Adwaita
@@ -70,6 +71,8 @@ fn build_ui(app: &Application) {
         shortcuts: RefCell::new(shortcuts),
         scan: Controller::default(),
         ai_job: Controller::default(),
+        face_job: Controller::default(),
+        face_config: RefCell::new(face_config),
         enrich_job: Controller::default(),
         reconcile_job: Controller::default(),
         immich_upload: Controller::default(),

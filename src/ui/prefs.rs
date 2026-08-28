@@ -2,6 +2,7 @@
 
 use crate::ai;
 use crate::db::Library;
+use crate::face::FaceConfig;
 
 /// Setting keys stored in `library.db`.
 pub const KEY_THUMB_SIZES: &str = "thumb.sizes";
@@ -28,6 +29,18 @@ pub const KEY_AI_PROMPT: &str = "ai.prompt";
 pub const KEY_AI_NUM_THREAD: &str = "ai.num_thread";
 pub const KEY_AI_NUM_CTX: &str = "ai.num_ctx";
 pub const KEY_AI_NUM_PREDICT: &str = "ai.num_predict";
+
+/// Face recognition setting keys stored in `library.db`.
+pub const KEY_FACE_ENABLED: &str = "face.enabled";
+pub const KEY_FACE_AUTOSCAN: &str = "face.autoscan";
+pub const KEY_FACE_DETECTOR_ID: &str = "face.detector_id";
+pub const KEY_FACE_EMBEDDING_ID: &str = "face.embedding_id";
+pub const KEY_FACE_DETECTOR_PATH: &str = "face.detector_path";
+pub const KEY_FACE_EMBEDDING_PATH: &str = "face.embedding_path";
+pub const KEY_FACE_EMBEDDING_DIM: &str = "face.embedding_dim";
+pub const KEY_FACE_MIN_SCORE: &str = "face.min_score";
+pub const KEY_FACE_CLUSTER_THRESHOLD: &str = "face.cluster_threshold";
+pub const KEY_FACE_CONCURRENCY: &str = "face.concurrency";
 
 /// Immich setting keys stored in `library.db`.
 pub const KEY_IMMICH_PAGE_SIZE: &str = "immich.page_size";
@@ -226,4 +239,49 @@ pub fn bool_to_str(b: bool) -> &'static str {
     } else {
         "0"
     }
+}
+
+/// Read the face recognition configuration from the library database.
+pub fn load_face_config(lib: &Library) -> FaceConfig {
+    let mut c = FaceConfig {
+        enabled: bool_setting(lib, KEY_FACE_ENABLED, false),
+        autoscan: bool_setting(lib, KEY_FACE_AUTOSCAN, false),
+        ..FaceConfig::default()
+    };
+    if let Ok(v) = lib.get_setting(KEY_FACE_DETECTOR_PATH, "") {
+        if !v.is_empty() {
+            c.detector_path = v;
+        }
+    }
+    if let Ok(v) = lib.get_setting(KEY_FACE_EMBEDDING_PATH, "") {
+        if !v.is_empty() {
+            c.embedding_path = v;
+        }
+    }
+    if let Ok(v) = lib.get_setting(KEY_FACE_EMBEDDING_DIM, "") {
+        if let Ok(n) = v.parse::<i32>() {
+            if n > 0 {
+                c.embedding_dim = n;
+            }
+        }
+    }
+    if let Ok(v) = lib.get_setting(KEY_FACE_MIN_SCORE, "") {
+        if let Ok(n) = v.parse::<f32>() {
+            c.min_score = n;
+        }
+    }
+    if let Ok(v) = lib.get_setting(KEY_FACE_CLUSTER_THRESHOLD, "") {
+        if let Ok(n) = v.parse::<f32>() {
+            c.cluster_threshold = n;
+        }
+    }
+    if let Ok(v) = lib.get_setting(KEY_FACE_CONCURRENCY, "") {
+        if let Ok(n) = v.parse::<usize>() {
+            if n > 0 {
+                c.concurrency = n;
+            }
+        }
+    }
+    c.normalize();
+    c
 }

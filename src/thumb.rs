@@ -229,6 +229,41 @@ pub fn encode_for_ai(src_path: &Path, rotation: i32, max_side: i32) -> Result<Ve
     encode(&src, max_side)
 }
 
+/// Decode a photo, apply its orientation rotation, and return tightly-packed
+/// RGB8 bytes plus the width and height. The long side is capped at `max_side`
+/// pixels to keep face detection fast and memory light. Face boxes come back in
+/// per-mille, so the downscale does not change the stored coordinates.
+///
+/// The result is in the same coordinate space the face module expects: after
+/// `Photo::orientation`, before any non-destructive edit.
+pub fn decode_oriented_rgb(
+    src_path: &Path,
+    rotation: i32,
+    max_side: i32,
+) -> Result<(Vec<u8>, u32, u32)> {
+    let src = decode(src_path)?;
+    let src = rotate(src, rotation);
+    let (w, h) = (src.width(), src.height());
+    let long = w.max(h);
+    let rgba = if max_side > 0 && long > max_side as u32 {
+        let scale = max_side as f32 / long as f32;
+        let nw = ((w as f32 * scale).round() as u32).max(1);
+        let nh = ((h as f32 * scale).round() as u32).max(1);
+        image::imageops::resize(&src, nw, nh, image::imageops::FilterType::Triangle)
+    } else {
+        src
+    };
+    let (rw, rh) = (rgba.width(), rgba.height());
+    // Drop the alpha channel to give the models tight RGB8.
+    let mut rgb = Vec::with_capacity((rw as usize) * (rh as usize) * 3);
+    for px in rgba.pixels() {
+        rgb.push(px[0]);
+        rgb.push(px[1]);
+        rgb.push(px[2]);
+    }
+    Ok((rgb, rw, rh))
+}
+
 /// The thumbnail cache key for a photo. An identity edit uses the bare `hash`,
 /// keeping caches made before editing valid; any real edit appends the edit
 /// revision so edited thumbnails never collide with the original.

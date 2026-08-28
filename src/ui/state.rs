@@ -43,6 +43,10 @@ pub struct AppState {
 
     pub scan: Controller,
     pub ai_job: Controller,
+    /// The face-detection worker session (see `super::facescan`).
+    pub face_job: Controller,
+    /// The loaded face recognition configuration.
+    pub face_config: RefCell<crate::face::FaceConfig>,
     /// The Phase 2 enrichment worker session (see `super::enrich`).
     pub enrich_job: Controller,
     /// The library-freshness reconciliation session (see `super::freshness`).

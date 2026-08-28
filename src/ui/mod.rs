@@ -9,6 +9,7 @@ mod dialogs;
 mod editor;
 mod enrich;
 mod export;
+mod facescan;
 mod foldertree;
 mod freshness;
 mod grid;
