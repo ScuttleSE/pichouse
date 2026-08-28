@@ -339,6 +339,8 @@ pub enum RuleField {
     Filename,
     /// Owning folder id. `value` is the folder id.
     Folder,
+    /// A named person the photo contains. `value` is the person name.
+    Person,
 }
 
 impl RuleField {
@@ -349,6 +351,7 @@ impl RuleField {
             RuleField::DateTo => "date_to",
             RuleField::Filename => "filename",
             RuleField::Folder => "folder",
+            RuleField::Person => "person",
         }
     }
 
@@ -359,6 +362,7 @@ impl RuleField {
             "date_to" => RuleField::DateTo,
             "filename" => RuleField::Filename,
             "folder" => RuleField::Folder,
+            "person" => RuleField::Person,
             _ => RuleField::Tag,
         }
     }

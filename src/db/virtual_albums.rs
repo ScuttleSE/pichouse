@@ -325,6 +325,12 @@ fn rule_clause(rule: &VirtualRule, params: &mut Vec<Box<dyn rusqlite::ToSql>>) -
             params.push(Box::new(fid));
             "folder_id = ?".to_string()
         }
+        RuleField::Person => {
+            params.push(Box::new(rule.value.clone()));
+            "id IN (SELECT f.photo_id FROM faces f JOIN persons p ON p.id = f.person_id \
+             WHERE p.name = ? COLLATE NOCASE)"
+                .to_string()
+        }
     }
 }
 
@@ -550,6 +556,50 @@ mod tests {
         ids.sort();
         assert_eq!(ids, vec![p2, p3]);
         assert_eq!(lib.virtual_album_photo_count(al).unwrap(), 2);
+        cleanup(p);
+    }
+
+    #[test]
+    fn person_rule_matches_photos_of_that_person() {
+        use crate::model::Face;
+        let (lib, p) = temp_lib();
+        let fid = lib
+            .upsert_folder(&Folder {
+                path: "/tmp/vroot".into(),
+                name: "vroot".into(),
+                mtime: 0,
+                year: 2020,
+                ..Default::default()
+            })
+            .unwrap();
+        let p1 = mk_photo(&lib, fid, "a.jpg", 100);
+        let p2 = mk_photo(&lib, fid, "b.jpg", 200);
+        // p1 has a face of Alice, p2 does not.
+        let f = lib
+            .insert_face(&Face {
+                photo_id: p1,
+                embedding: vec![1.0, 0.0],
+                ..Default::default()
+            })
+            .unwrap();
+        let alice = lib.create_person("Alice").unwrap();
+        lib.set_face_person(f, alice).unwrap();
+
+        let al = lib.create_virtual_album("Alice photos", 0).unwrap();
+        lib.set_virtual_album_rules(
+            al,
+            RuleMatch::Or,
+            &[rule(RuleField::Person, RuleOp::Has, "Alice")],
+        )
+        .unwrap();
+        let ids: Vec<i64> = lib
+            .photos_in_virtual_album(al)
+            .unwrap()
+            .iter()
+            .map(|x| x.id)
+            .collect();
+        assert_eq!(ids, vec![p1]);
+        assert!(!ids.contains(&p2));
         cleanup(p);
     }
 }

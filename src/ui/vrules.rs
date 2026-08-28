@@ -23,6 +23,7 @@ const FIELDS: &[(RuleField, &str)] = &[
     (RuleField::DateTo, "Date on or before (YYYY-MM-DD)"),
     (RuleField::Filename, "Filename contains"),
     (RuleField::Folder, "Folder id is"),
+    (RuleField::Person, "Contains person"),
 ];
 
 /// One editable rule row: a field dropdown and a value entry.
@@ -236,6 +237,7 @@ fn collect_rule(album_id: i64, row: &RuleRow) -> Option<VirtualRule> {
         RuleField::DateTo => (RuleOp::Lte, date_to_unix(raw)?.to_string()),
         RuleField::Filename => (RuleOp::Contains, raw.to_string()),
         RuleField::Folder => (RuleOp::Eq, raw.parse::<i64>().ok()?.to_string()),
+        RuleField::Person => (RuleOp::Has, raw.to_string()),
     };
     Some(VirtualRule {
         id: 0,
