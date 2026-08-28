@@ -7,13 +7,20 @@
 //! The ONNX Runtime library and the models are not shipped. They download into
 //! the data folder the first time the user enables faces. See `runtime.rs`.
 
+#[cfg(test)]
+mod inference_test;
+
 pub mod cluster;
 pub mod config;
 pub mod detector;
 pub mod embedder;
+pub mod models;
 pub mod runtime;
 
 pub use config::FaceConfig;
+
+use detector::Detector;
+use embedder::Embedder;
 
 /// One detected face before it becomes a database row. Coordinates are in
 /// per-mille (0..1000) of the oriented source image.
@@ -29,4 +36,53 @@ pub struct DetectedFace {
     pub embedding: Vec<f32>,
     /// Detector confidence, 0.0..1.0.
     pub det_score: f32,
+}
+
+/// The loaded detect-and-embed pipeline. It owns a detector and an embedder.
+/// Build one per scan run, after the runtime and the models are ready.
+pub struct FacePipeline {
+    detector: Detector,
+    embedder: Embedder,
+    min_score: f32,
+}
+
+impl FacePipeline {
+    /// Load both models. The runtime must be initialized first (see
+    /// `runtime::init_runtime`).
+    pub fn load(
+        detector_path: &str,
+        embedding_path: &str,
+        min_score: f32,
+    ) -> Result<FacePipeline, String> {
+        Ok(FacePipeline {
+            detector: Detector::load(detector_path)?,
+            embedder: Embedder::load(embedding_path)?,
+            min_score,
+        })
+    }
+
+    /// The embedding length the loaded model produces.
+    pub fn embedding_dim(&self) -> i32 {
+        self.embedder.embedding_dim()
+    }
+
+    /// Detect faces in one oriented RGB image and embed each one. `rgb` is
+    /// tightly-packed RGB8 of the image after `Photo::orientation` rotation.
+    pub fn detect_and_embed(
+        &self,
+        rgb: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<Vec<DetectedFace>, String> {
+        let mut faces = self.detector.detect(rgb, width, height, self.min_score)?;
+        for f in faces.iter_mut() {
+            match self.embedder.embed(rgb, width, height, &f.landmarks) {
+                Ok(emb) => f.embedding = emb,
+                Err(e) => log::warn!("embed face: {e}"),
+            }
+        }
+        // Keep only faces that got an embedding, so clustering has a vector.
+        faces.retain(|f| !f.embedding.is_empty());
+        Ok(faces)
+    }
 }
