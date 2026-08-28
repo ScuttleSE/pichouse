@@ -38,6 +38,9 @@ pub struct ClusterItem {
     pub cluster_id: i64,
     /// The assigned person, or 0. A person anchors its cluster.
     pub person_id: i64,
+    /// Person ids this face was rejected from. Clustering never attaches the
+    /// face to a rejected person's cluster.
+    pub rejected: Vec<i64>,
 }
 
 /// The result of a clustering pass: face id -> new cluster id.
@@ -104,6 +107,13 @@ pub fn cluster(
         let mut best_idx: Option<usize> = None;
         let mut best_sim = threshold;
         for (idx, c) in centroids.iter().enumerate() {
+            // Skip a person's cluster this face was rejected from.
+            if c.cluster_id >= PERSON_CLUSTER_BASE {
+                let pid = c.cluster_id - PERSON_CLUSTER_BASE;
+                if it.rejected.contains(&pid) {
+                    continue;
+                }
+            }
             let centroid = mean(&c.sum, c.count);
             let sim = cosine_similarity(&it.embedding, &centroid);
             if sim >= best_sim {
@@ -175,10 +185,10 @@ mod tests {
     fn two_tight_groups_form_two_clusters() {
         // Group one near (1,0), group two near (0,1).
         let items = vec![
-            ClusterItem { face_id: 1, embedding: vec![1.0, 0.02], cluster_id: 0, person_id: 0 },
-            ClusterItem { face_id: 2, embedding: vec![0.98, 0.0], cluster_id: 0, person_id: 0 },
-            ClusterItem { face_id: 3, embedding: vec![0.0, 1.0], cluster_id: 0, person_id: 0 },
-            ClusterItem { face_id: 4, embedding: vec![0.03, 0.99], cluster_id: 0, person_id: 0 },
+            ClusterItem { face_id: 1, embedding: vec![1.0, 0.02], cluster_id: 0, person_id: 0, rejected: vec![] },
+            ClusterItem { face_id: 2, embedding: vec![0.98, 0.0], cluster_id: 0, person_id: 0, rejected: vec![] },
+            ClusterItem { face_id: 3, embedding: vec![0.0, 1.0], cluster_id: 0, person_id: 0, rejected: vec![] },
+            ClusterItem { face_id: 4, embedding: vec![0.03, 0.99], cluster_id: 0, person_id: 0, rejected: vec![] },
         ];
         let asg = cluster(&items, 0.5, 1);
         let cid = |fid: i64| asg.iter().find(|a| a.face_id == fid).unwrap().cluster_id;
@@ -192,12 +202,26 @@ mod tests {
         // Face 1 belongs to person 7. Face 2 is similar and unnamed. It must
         // join person 7's cluster.
         let items = vec![
-            ClusterItem { face_id: 1, embedding: vec![1.0, 0.0], cluster_id: 0, person_id: 7 },
-            ClusterItem { face_id: 2, embedding: vec![0.99, 0.01], cluster_id: 0, person_id: 0 },
+            ClusterItem { face_id: 1, embedding: vec![1.0, 0.0], cluster_id: 0, person_id: 7, rejected: vec![] },
+            ClusterItem { face_id: 2, embedding: vec![0.99, 0.01], cluster_id: 0, person_id: 0, rejected: vec![] },
         ];
         let asg = cluster(&items, 0.5, 1);
         let cid = |fid: i64| asg.iter().find(|a| a.face_id == fid).unwrap().cluster_id;
         assert_eq!(cid(1), PERSON_CLUSTER_BASE + 7);
         assert_eq!(cid(2), PERSON_CLUSTER_BASE + 7);
+    }
+
+    #[test]
+    fn rejected_face_does_not_rejoin_person() {
+        // Face 2 is similar to person 7 but was rejected from person 7. It must
+        // NOT join person 7's cluster; it starts its own instead.
+        let items = vec![
+            ClusterItem { face_id: 1, embedding: vec![1.0, 0.0], cluster_id: 0, person_id: 7, rejected: vec![] },
+            ClusterItem { face_id: 2, embedding: vec![0.99, 0.01], cluster_id: 0, person_id: 0, rejected: vec![7] },
+        ];
+        let asg = cluster(&items, 0.5, 1);
+        let cid = |fid: i64| asg.iter().find(|a| a.face_id == fid).unwrap().cluster_id;
+        assert_eq!(cid(1), PERSON_CLUSTER_BASE + 7);
+        assert_ne!(cid(2), PERSON_CLUSTER_BASE + 7);
     }
 }

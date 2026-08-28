@@ -287,6 +287,30 @@ fn scan_one_photo(lib: &Library, pipeline: &FacePipeline, id: i64) -> bool {
     true
 }
 
+/// Re-cluster in the background after a manual correction (for example a
+/// rejection), then refresh the sidebar and Faces view. Cheap: it reads
+/// embeddings and rewrites cluster ids only.
+pub fn recluster_now(state: &Rc<AppState>) {
+    let lib = state.lib.clone();
+    let threshold = state.face_config.borrow().cluster_threshold;
+    let (tx, rx) = glib::MainContext::channel::<()>(glib::Priority::DEFAULT);
+    {
+        let state = state.clone();
+        rx.attach(None, move |_| {
+            if let Some(sb) = state.sidebar.borrow().as_ref() {
+                sb.reload_deferred();
+            }
+            state.refresh_faces_if_active();
+            state.grid().reload_from_source();
+            glib::ControlFlow::Break
+        });
+    }
+    std::thread::spawn(move || {
+        let _ = recluster(&lib, threshold);
+        let _ = tx.send(());
+    });
+}
+
 /// Re-cluster every embedded face in the library. Person-assigned faces anchor
 /// stable clusters, so named people keep their identity across runs.
 fn recluster(lib: &Library, threshold: f32) -> Result<(), String> {
@@ -296,6 +320,7 @@ fn recluster(lib: &Library, threshold: f32) -> Result<(), String> {
     if rows.is_empty() {
         return Ok(());
     }
+    let rejections = lib.face_rejection_map().unwrap_or_default();
     let items: Vec<ClusterItem> = rows
         .into_iter()
         .map(|(face_id, cluster_id, person_id, embedding)| ClusterItem {
@@ -303,6 +328,7 @@ fn recluster(lib: &Library, threshold: f32) -> Result<(), String> {
             embedding,
             cluster_id,
             person_id,
+            rejected: rejections.get(&face_id).cloned().unwrap_or_default(),
         })
         .collect();
     // Unnamed cluster ids start above any existing unnamed id to avoid reuse.

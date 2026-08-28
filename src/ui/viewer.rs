@@ -500,9 +500,13 @@ impl Viewer {
         };
         super::people::assign_face_dialog(&state, face.id, {
             let this = self.clone();
+            let state = state.clone();
             move || {
                 this.load_faces();
                 this.face_area.queue_draw();
+                // A reassignment or rejection changes grouping; re-cluster so
+                // the People view and sidebar reflect it.
+                super::facescan::recluster_now(&state);
             }
         });
     }

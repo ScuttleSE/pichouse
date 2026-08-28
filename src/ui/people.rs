@@ -69,6 +69,41 @@ pub fn assign_face_dialog<F: Fn() + 'static>(state: &Rc<AppState>, face_id: i64,
 
     let on_done = Rc::new(on_done);
 
+    // If this face is currently assigned, offer to remove it from that person.
+    // Removing records a rejection so a re-scan never re-attaches it there.
+    let current = state.lib.face_by_id(face_id).ok().flatten();
+    if let Some(face) = &current {
+        if face.person_id != 0 {
+            let pname = state
+                .lib
+                .persons()
+                .unwrap_or_default()
+                .into_iter()
+                .find(|(p, _)| p.id == face.person_id)
+                .map(|(p, _)| p.name)
+                .unwrap_or_default();
+            let remove = Button::with_label(&format!("Not {pname} — remove from this person"));
+            remove.add_css_class("destructive-action");
+            root.append(&remove);
+            root.append(&Separator::new(Orientation::Horizontal));
+            let state2 = state.clone();
+            let win2 = win.clone();
+            let on_done2 = on_done.clone();
+            let person_id = face.person_id;
+            remove.connect_clicked(move |_| {
+                if let Err(e) = state2.lib.reject_face_from_person(face_id, person_id) {
+                    show_error(&state2, &e.to_string());
+                    return;
+                }
+                if let Some(sb) = state2.sidebar.borrow().as_ref() {
+                    sb.reload_deferred();
+                }
+                on_done2();
+                win2.close();
+            });
+        }
+    }
+
     if !people.is_empty() {
         root.append(&Label::new(Some("Assign to an existing person:")));
         let labels: Vec<String> = people.iter().map(|p| p.name.clone()).collect();

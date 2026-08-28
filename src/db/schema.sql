@@ -277,3 +277,14 @@ CREATE TABLE IF NOT EXISTS face_scan (
     state      INTEGER NOT NULL DEFAULT 0,
     scanned_at INTEGER NOT NULL DEFAULT 0
 );
+
+-- A rejection: the user said this face is NOT this person. Clustering never
+-- attaches a rejected face to that person's cluster again, so a correction
+-- sticks across re-scans. A face can be rejected from several people.
+CREATE TABLE IF NOT EXISTS face_rejections (
+    face_id   INTEGER NOT NULL REFERENCES faces(id) ON DELETE CASCADE,
+    person_id INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+    PRIMARY KEY (face_id, person_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_face_rejections_face ON face_rejections(face_id);

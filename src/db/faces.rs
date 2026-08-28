@@ -169,6 +169,37 @@ impl Library {
         Ok(())
     }
 
+    /// A map of face id -> the person ids it was rejected from. Used by
+    /// clustering so a rejected face never rejoins that person.
+    pub fn face_rejection_map(&self) -> Result<std::collections::HashMap<i64, Vec<i64>>> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare("SELECT face_id, person_id FROM face_rejections")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?;
+        let mut map: std::collections::HashMap<i64, Vec<i64>> = std::collections::HashMap::new();
+        for row in rows {
+            let (fid, pid) = row?;
+            map.entry(fid).or_default().push(pid);
+        }
+        Ok(map)
+    }
+
+    /// Remove a face from a person and record the rejection, so a later re-scan
+    /// never re-attaches this face to that person. The face becomes available
+    /// for another group. Its cluster is cleared so the next clustering pass
+    /// re-places it.
+    pub fn reject_face_from_person(&self, face_id: i64, person_id: i64) -> Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "INSERT OR IGNORE INTO face_rejections(face_id, person_id) VALUES(?1, ?2)",
+            params![face_id, person_id],
+        )?;
+        conn.execute(
+            "UPDATE faces SET person_id = NULL, confirmed = 0, cluster_id = NULL WHERE id = ?1",
+            params![face_id],
+        )?;
+        Ok(())
+    }
+
     /// Set the cluster id of a face (0 clears it).
     pub fn set_face_cluster(&self, face_id: i64, cluster_id: i64) -> Result<()> {
         let conn = self.lock();
