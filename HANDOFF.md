@@ -2,8 +2,10 @@
 
 This document is for an agent with no memory of the last session. It uses
 Simplified Technical English (ASD-STE100, Strict). Read AGENTS.md first. Read
-ROADMAP.md for planned features. Read section 00000000 first — it describes the
-most recent work (the CCIP embedder swap and six face and character features).
+ROADMAP.md for planned features. Read section 000000000 first — it describes the
+most recent work (four fixes: a sidebar crash, an album drag bug, a scan freeze,
+and a smaller release binary). Then read section 00000000 — it describes the
+CCIP embedder swap and six face and character features.
 Then read section 0000000 — it describes the duplicate image finder. Then read
 section 000000 — it
 describes stylised face recognition for art, and the album Face type. Then read
@@ -15,7 +17,112 @@ Then read section 00 — it describes four earlier follow-up features. Then read
 section 0 — it describes the Immich integration. The later sections describe
 earlier features and are still correct.
 
-## 00000000. CCIP embedder and face features (most recent work — read this first)
+## 000000000. Four fixes (most recent work — read this first)
+
+This section describes the last session. All work is complete. The application
+builds clean in release. All work is on `main`. All work is pushed. The version
+was 0.0.84 at the start of the session. CI increases the version on each push.
+Do not change the version by hand.
+
+The session fixed four problems the user reported. Each fix is a separate
+commit. The four fixes do not depend on each other.
+
+### 000000000.1 Sidebar right-click crash during a scan
+
+The user reported a crash. A right-click on the Albums tree during a scan
+crashed the application with a SIGSEGV. The console showed `G_IS_OBJECT` and
+`GTK_IS_WIDGET` assertion failures first.
+
+The cause was the popover parent. `show_row_menu` in `src/ui/sidebar.rs`
+parented the row context-menu popover to the per-row `TreeExpander`. A `reload`
+during a scan tears down and rebuilds the tree rows. GTK destroys the expander
+widgets. A popover parented to a destroyed expander became a dangling reference.
+The next right-click reused it.
+
+The fix parents the popover to the `ListView`, not the expander. The `ListView`
+lives for the whole sidebar lifetime. The fix translates the pointer position
+from the expander to the `ListView` with `translate_coordinates`, so the menu
+still appears at the click point.
+
+### 000000000.2 Album multi-drag moved only one album
+
+The user reported that a drag of two marked albums onto a target album moved
+only the first album.
+
+The cause was in `attach_row_drag` in `src/ui/sidebar.rs`. The album drop path
+moved only the single dragged album. The folder drop path already moved the
+whole selection with `selected_folder_ids`. The album path had no twin.
+
+The fix adds `selected_album_ids` (mirrors `selected_folder_ids`) and
+`reparent_albums` (moves a list of albums, reloads once). The drop handler now
+moves every selected album, plus the dragged album if it sits outside the
+selection. The old single-album `reparent_album` is gone.
+
+### 000000000.3 UI freeze during a large face or art scan
+
+The user reported that a scan of many art faces made the UI unresponsive. The
+console showed many `db lock: waited 11-15s` warnings.
+
+The cause was the progressive recluster step. `recluster` in
+`src/ui/stylefacescan.rs` and `src/ui/facescan.rs` runs every 20 photos. It had
+two faults:
+
+1. It wrote one cluster id per face, each in its own transaction. A large
+   library made thousands of write transactions. Each transaction is an fsync.
+   Each held the single DB lock. The main thread waited many seconds for the
+   lock.
+2. Multiple scan workers could run a full recluster at the same time. This
+   wasted CPU and multiplied the lock pressure.
+
+The fix has two parts:
+
+1. New batch writers `set_face_clusters` in `src/db/faces.rs` and
+   `set_style_face_clusters` in `src/db/style_faces.rs`. Each writes every
+   assignment in one transaction. The lock is held once, not thousands of times.
+   The `recluster` functions now build a `Vec<(face_id, cluster_id)>` and call
+   the batch writer. The old single-face setters `set_face_cluster` and
+   `set_style_face_cluster` are gone.
+2. An `AtomicBool` guard in each scan worker loop. Only one worker reclusters at
+   a time. A worker that finds a recluster in progress skips its turn. The guard
+   uses `compare_exchange`.
+
+### 000000000.4 Smaller release binary
+
+The user asked why the release binary was about 23 MB. It was not a debug build.
+It was a normal `cargo build --release` binary that kept symbols and did no
+cross-crate inlining.
+
+The fix adds size options to `[profile.release]` in `Cargo.toml`:
+- `strip = true` (remove symbols).
+- `lto = "thin"` (cross-crate dead-code removal and inlining).
+- `codegen-units = 1` (better optimisation).
+- `opt-level = 3` stays (keep speed).
+- `panic` stays as unwind (keep normal crash behaviour). The user chose to not
+  set `panic = "abort"`.
+
+The binary is now about 14 MB. CI needs no change. `cargo build --release` reads
+these profile settings. The one cost is a slower CI build.
+
+### 000000000.5 Files changed this session
+
+- `src/ui/sidebar.rs` — popover parent fix, `selected_album_ids`,
+  `reparent_albums`.
+- `src/db/faces.rs` — `set_face_clusters`, removed `set_face_cluster`.
+- `src/db/style_faces.rs` — `set_style_face_clusters`, removed
+  `set_style_face_cluster`.
+- `src/ui/facescan.rs` — batch recluster write, `AtomicBool` recluster guard.
+- `src/ui/stylefacescan.rs` — batch recluster write, `AtomicBool` recluster
+  guard.
+- `Cargo.toml` — release-profile size options.
+
+### 000000000.6 Open follow-ups (not built)
+
+- The progressive recluster still reads and re-groups every face in the library
+  every 20 photos. The batch write and the guard remove the freeze. They do not
+  remove the O(N) read that grows with the library. A future agent could
+  recluster only new faces, or recluster less often as the library grows.
+
+## 00000000. CCIP embedder and face features (read after section 000000000)
 
 This section describes the last session. The work is complete. The application
 builds clean. `cargo test` passes 66 tests plus 2 ignored tests. The work is on
