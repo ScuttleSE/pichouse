@@ -63,6 +63,8 @@ struct TreeData {
     /// cover face id for the icon.
     persons: Vec<crate::model::Person>,
     person_counts: HashMap<i64, i64>,
+    /// Total detected faces, so the People header shows even before naming.
+    total_faces: i64,
     /// Immich servers, ordered as shown. Each is `(id, name)`.
     immich_servers: Vec<(i64, String)>,
     /// Cached albums per Immich server id, as `(album_uuid, name, count)`.
@@ -443,6 +445,12 @@ impl Sidebar {
                     return;
                 }
             }
+            if id == PEOPLE_HEADER_ID {
+                if let Some(state) = self.state() {
+                    state.show_faces();
+                    return;
+                }
+            }
             if let Some(vid) = valbum_id_of(&id) {
                 let name = self
                     .data
@@ -604,6 +612,7 @@ impl Sidebar {
             data.person_counts.insert(person.id, count);
             data.persons.push(person);
         }
+        data.total_faces = state.lib.total_face_count().unwrap_or(0);
         for f in &folders {
             data.folders.insert(f.id, f.clone());
             if let Some(&aid) = folder_album.get(&f.id) {
@@ -651,8 +660,8 @@ impl Sidebar {
             // Virtual albums section, shown above normal folder-albums. Always
             // present so the user has a place to create the first one.
             roots.push(VIRTUAL_HEADER_ID.to_string());
-            // People section, shown only when at least one named person exists.
-            if !data.persons.is_empty() {
+            // People section, shown once any face is detected (named or not).
+            if data.total_faces > 0 {
                 roots.push(PEOPLE_HEADER_ID.to_string());
             }
             for &aid in data.album_children.get(&0).into_iter().flatten() {

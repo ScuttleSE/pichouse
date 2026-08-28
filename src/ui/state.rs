@@ -70,6 +70,7 @@ pub struct AppState {
     pub status: RefCell<Option<Rc<StatusBar>>>,
     pub grid: RefCell<Option<Rc<Grid>>>,
     pub new_files: RefCell<Option<Rc<super::newfiles::NewFilesView>>>,
+    pub faces_view: RefCell<Option<Rc<super::facesview::FacesView>>>,
     pub properties: RefCell<Option<Rc<Properties>>>,
     pub viewer: RefCell<Option<Rc<Viewer>>>,
     pub sidebar: RefCell<Option<Rc<super::sidebar::Sidebar>>>,
@@ -94,6 +95,9 @@ impl AppState {
     }
     pub fn new_files(&self) -> Rc<super::newfiles::NewFilesView> {
         self.new_files.borrow().clone().expect("new_files set")
+    }
+    pub fn faces_view(&self) -> Rc<super::facesview::FacesView> {
+        self.faces_view.borrow().clone().expect("faces_view set")
     }
     pub fn properties(&self) -> Rc<Properties> {
         self.properties.borrow().clone().expect("properties set")
@@ -207,6 +211,31 @@ impl AppState {
         }
         self.status()
             .set_message(&format!("New Files — {count} recently added"));
+    }
+
+    /// Show the Faces view in the center, rebuilding its group tiles.
+    pub fn show_faces(self: &Rc<Self>) {
+        *self.current_folder.borrow_mut() = 0;
+        self.faces_view().reload();
+        if let Some(stack) = self.center_stack.borrow().as_ref() {
+            stack.set_visible_child_name("faces");
+        }
+        self.status().set_message("People");
+    }
+
+    /// Rebuild the Faces view if it is the visible center child. Used by the
+    /// scan to show new groups progressively.
+    pub fn refresh_faces_if_active(self: &Rc<Self>) {
+        let active = self
+            .center_stack
+            .borrow()
+            .as_ref()
+            .and_then(|s| s.visible_child_name())
+            .map(|n| n == "faces")
+            .unwrap_or(false);
+        if active {
+            self.faces_view().reload();
+        }
     }
 
     /// Show the normal thumbnail grid in the center.

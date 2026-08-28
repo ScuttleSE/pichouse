@@ -83,6 +83,7 @@ fn build_ui(app: &Application) {
         status: RefCell::new(None),
         grid: RefCell::new(None),
         new_files: RefCell::new(None),
+        faces_view: RefCell::new(None),
         properties: RefCell::new(None),
         viewer: RefCell::new(None),
         sidebar: RefCell::new(None),
@@ -107,7 +108,9 @@ fn build_ui(app: &Application) {
 
     let new_files = super::newfiles::NewFilesView::new(gen.clone(), prefs.active_size());
     *state.new_files.borrow_mut() = Some(new_files.clone());
-
+    let faces_view = super::facesview::FacesView::new();
+    faces_view.bind_state(state.clone());
+    *state.faces_view.borrow_mut() = Some(faces_view.clone());
     let properties = Properties::new();
     properties.bind_state(state.clone());
     *state.properties.borrow_mut() = Some(properties.clone());
@@ -154,6 +157,7 @@ fn build_ui(app: &Application) {
     center_stack.set_hexpand(true);
     center_stack.add_named(grid.widget(), Some("grid"));
     center_stack.add_named(new_files.widget(), Some("newfiles"));
+    center_stack.add_named(faces_view.widget(), Some("faces"));
     center_stack.add_named(viewer.widget(), Some("viewer"));
     center_stack.set_visible_child_name("grid");
     *state.center_stack.borrow_mut() = Some(center_stack.clone());

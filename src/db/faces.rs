@@ -4,7 +4,7 @@
 //! person is a named group of faces. Clustering groups similar faces before the
 //! user names them. See `src/db/schema.sql` for the coordinate convention.
 
-use rusqlite::{params, Row};
+use rusqlite::{params, OptionalExtension, Row};
 
 use crate::model::{Face, Person, Photo};
 
@@ -291,6 +291,39 @@ impl Library {
             |r| r.get(0),
         )?;
         Ok(n)
+    }
+
+    /// The total number of detected faces in the library.
+    pub fn total_face_count(&self) -> Result<i64> {
+        let conn = self.lock();
+        let n: i64 = conn.query_row("SELECT COUNT(*) FROM faces", [], |r| r.get(0))?;
+        Ok(n)
+    }
+
+    /// A representative face id for a person: the cover face if set, else the
+    /// highest-scoring assigned face. Returns 0 when the person has no face.
+    pub fn person_representative_face(&self, id: i64) -> Result<i64> {
+        let conn = self.lock();
+        // Prefer the stored cover face.
+        let cover: Option<i64> = conn
+            .query_row(
+                "SELECT cover_face_id FROM persons WHERE id = ?1",
+                params![id],
+                |r| r.get::<_, Option<i64>>(0),
+            )
+            .optional()?
+            .flatten();
+        if let Some(fid) = cover {
+            return Ok(fid);
+        }
+        let fid: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM faces WHERE person_id = ?1 ORDER BY det_score DESC LIMIT 1",
+                params![id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(fid.unwrap_or(0))
     }
 
     /// All photos that contain a face of the given person, newest first.

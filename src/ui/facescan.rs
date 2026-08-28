@@ -24,11 +24,17 @@ enum Msg {
     Progress(f64),
     Scanning(bool),
     Error(String),
+    /// New faces were clustered; refresh the People UI now.
+    Refresh,
     Done,
 }
 
 /// How many photo ids to pull for one scan session.
 const SCAN_BATCH: i64 = 100_000;
+
+/// Re-cluster and refresh the People UI after this many photos are scanned, so
+/// groups appear progressively instead of only at the end.
+const REFRESH_EVERY: usize = 20;
 
 /// Start a background face-detection session over all photos that need one.
 pub fn scan_faces(state: &Rc<AppState>) {
@@ -103,12 +109,19 @@ fn scan_faces_impl(state: &Rc<AppState>, quiet: bool) {
                 Msg::Progress(p) => status.set_progress(p),
                 Msg::Scanning(s) => status.set_scanning(s),
                 Msg::Error(e) => show_error(&state, &e),
+                Msg::Refresh => {
+                    if let Some(sb) = state.sidebar.borrow().as_ref() {
+                        sb.reload_deferred();
+                    }
+                    state.refresh_faces_if_active();
+                }
                 Msg::Done => {
                     state.face_job.finish();
                     // Refresh the People section after new faces and clusters.
                     if let Some(sb) = state.sidebar.borrow().as_ref() {
                         sb.reload_deferred();
                     }
+                    state.refresh_faces_if_active();
                 }
             }
             glib::ControlFlow::Continue
@@ -149,6 +162,7 @@ fn scan_faces_impl(state: &Rc<AppState>, quiet: bool) {
             Arc::new(Mutex::new(ids.into_iter().collect()));
 
         let workers = cfg.concurrency.max(1);
+        let cfg_threshold = cfg.cluster_threshold;
         let mut handles = Vec::new();
         for _ in 0..workers {
             let jobs = jobs.clone();
@@ -179,6 +193,16 @@ fn scan_faces_impl(state: &Rc<AppState>, quiet: bool) {
                 };
                 let _ = tx.send(Msg::Progress(d as f64 / total as f64));
                 let _ = tx.send(Msg::Message(format!("Scanning faces {d}/{total}…")));
+
+                // Progressive grouping: every REFRESH_EVERY photos, re-cluster
+                // and ask the UI to refresh so new people appear during the
+                // scan. The boundary check makes exactly one worker do it.
+                if d % REFRESH_EVERY == 0 {
+                    if let Err(e) = recluster(&lib, cfg_threshold) {
+                        log::warn!("progressive clustering: {e}");
+                    }
+                    let _ = tx.send(Msg::Refresh);
+                }
             }));
         }
         for h in handles {
@@ -315,6 +339,7 @@ pub fn download_models(state: &Rc<AppState>, detector_id: String, embedding_id: 
                     *state.face_config.borrow_mut() = cfg;
                 }
                 Msg::Progress(_) => {}
+                Msg::Refresh => {}
             }
             glib::ControlFlow::Continue
         });

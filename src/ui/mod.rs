@@ -10,6 +10,7 @@ mod editor;
 mod enrich;
 mod export;
 mod facescan;
+mod facesview;
 mod foldertree;
 mod freshness;
 mod grid;
