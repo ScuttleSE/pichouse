@@ -2,21 +2,189 @@
 
 This document is for an agent with no memory of the last session. It uses
 Simplified Technical English (ASD-STE100, Strict). Read AGENTS.md first. Read
-ROADMAP.md for planned features. Read section 00000 first — it describes the most
-recent work (facial detection and recognition). Then read section 0000 — it
-describes four small features, console logging, and scan-time performance and
-freeze fixes. Then read section 000 — it describes non-destructive editing and
-color levels. Then read section 00 — it describes four earlier follow-up
-features. Then read section 0 — it describes the Immich integration. The later
-sections describe earlier features and are still correct.
+ROADMAP.md for planned features. Read section 000000 first — it describes the
+most recent work (stylised face recognition for art, and album Face type). Then
+read section 00000 — it describes the human facial detection and recognition
+system that the stylised system mirrors. Then read section 0000 — it describes
+four small features, console logging, and scan-time performance and freeze
+fixes. Then read section 000 — it describes non-destructive editing and color
+levels. Then read section 00 — it describes four earlier follow-up features.
+Then read section 0 — it describes the Immich integration. The later sections
+describe earlier features and are still correct.
 
-## 00000. Facial detection and recognition (most recent work — read this first)
+## 000000. Stylised face recognition and album Face type (most recent work — read this first)
 
 This section describes the last session. The work is complete. The application
-builds. `cargo test` passes 55 tests plus 2 ignored tests. The work is on
+builds clean. `cargo test` passes 60 tests plus 2 ignored tests. The work is on
 `main`. The work is pushed. Every CI build in the session was green. The version
-is 0.0.70. CI increases the version on each push. Do not change the version by
-hand.
+was 0.0.73 at the end of the session. CI increases the version on each push. Do
+not change the version by hand.
+
+The session added two features:
+
+1. A second face system for stylised art (anime, cartoon, furry). It mirrors the
+   human face system in `src/face/` but uses different models and a different
+   clustering method. A named group is a "character", not a "person".
+2. An album "Face type" (Photo or Art). The user marks an album, and the mark
+   controls which face method scans that album's photos. A right-click menu
+   scans or rescans an album.
+
+See ROADMAP.md section "Facial detection & recognition" for the feature summary
+of both systems.
+
+### 000000.1 Why two systems, not one
+
+SFace (the human embedder) is trained on photographs. It gives poor vectors on
+drawings. DINOv2 (the stylised embedder) is not tuned for photograph identity.
+The two embedders make vectors of different lengths (128 vs 384) in different
+spaces, so they cannot share one cluster pool. The user asked about merging the
+two. The decision, after analysis, was to keep them separate. The only shared
+part is the ONNX Runtime loader (`src/face/runtime.rs`). The user considered
+using HDBSCAN for photos too. The decision was no, because SFace has a
+calibrated cosine threshold that HDBSCAN would discard, and HDBSCAN would put
+valid photo faces into a noise bucket.
+
+### 000000.2 Stylised models
+
+The models are an anime YOLOv8-nano detector (deepghs, MIT, 12 MB) and DINOv2
+ViT-S/14 (onnx-community export, Apache 2.0, 384-D, 88 MB fp32). Both are pinned
+to fixed Hugging Face commits with verified SHA-256 in `src/styleface/models.rs`.
+The catalog also offers a larger detector (YOLOv8-small, 44 MB) and a smaller
+embedder (DINOv2 fp16, 44 MB) as alternatives. Warning: the fp16 embedder outputs
+f16 tensors, but `embedder.rs` extracts f32. Do not select fp16 without adding
+f16 handling. fp32 is the default and is safe. The models download into
+`~/.local/share/pichouse/models/` on first use, next to the human models.
+
+### 000000.3 Stylised inference
+
+`src/styleface/detector.rs` runs YOLOv8: it letterboxes the oriented RGB image
+into a 640x640 RGB NCHW tensor (values 0..1, gray padding), reads `output0`
+`[1, 5, anchors]` (cx, cy, w, h, score), applies NMS, and returns per-mille
+boxes. There are NO landmarks. `src/styleface/embedder.rs` runs DINOv2: it
+enlarges the box 25 percent on each side, crops a square, resizes to 224x224,
+normalises with the ImageNet mean and standard deviation, runs the model, takes
+the CLS token (index 0 of `last_hidden_state`), and L2-normalises the 384-float
+vector. `src/styleface/mod.rs` has `StyleFacePipeline` (`detect_and_embed`).
+
+The coordinate rule is the same as the human system: a box is per-mille (0..1000)
+of the photo AFTER `photos.orientation` rotation. Face crops reuse
+`thumb::render_face_crop`, which adds its own 30 percent margin.
+
+### 000000.4 Stylised clustering (HDBSCAN)
+
+`src/styleface/cluster.rs` uses the `hdbscan` crate (version 0.12, MIT/Apache).
+`Cargo.toml` gained this one dependency. The algorithm runs on L2-normalised
+384-D vectors with the euclidean metric, `min_cluster_size = 2`, `min_samples =
+1`. The design goal is many small groups, per the roadmap. HDBSCAN marks unclear
+faces as noise; a noise face gets `cluster_id = -1` (constant `NOISE_CLUSTER_ID`).
+The UI shows the noise group as "Unclear". A named character anchors a stable
+cluster (`CHARACTER_CLUSTER_BASE + character_id`). Before HDBSCAN runs, an
+unnamed face very near a named character joins it (constant
+`CHARACTER_JOIN_MAX_DIST`), so characters pull in new matches. Rejections are
+honoured, like the human system.
+
+### 000000.5 Stylised storage
+
+`src/db/schema.sql` gained `characters`, `style_faces`, `style_face_scan`, and
+`style_face_rejections`. They mirror `persons`/`faces`/`face_scan`/
+`face_rejections`. `style_faces` has NO landmarks column (the stylised embedder
+uses the box only). `photos.style_face_status` is added by `migrate`.
+`src/db/style_faces.rs` holds all access, mirroring `src/db/faces.rs`. A
+character is a `crate::model::Character`; a stylised face is a
+`crate::model::StyleFace`. Stylised face crops live in `style-face-thumbs.db`
+(`src/db/style_face_thumbs.rs`), which reuses the `FaceThumbs` struct with a
+separate file.
+
+### 000000.6 Stylised UI
+
+The UI mirrors the human "People" UI, with "character" vocabulary.
+
+- Settings pane `src/ui/settings_characters.rs`: enable toggle, opt-in
+  auto-scan, detector dropdown, embedder dropdown, Download models, Scan, and
+  Delete all stylised face data. Registered in `src/ui/settings.rs`. Keys are
+  `styleface.*` in `src/ui/prefs.rs`; `load_styleface_config` reads them.
+  `AppState` holds `style_face_config`, `style_face_job`, and
+  `style_face_thumbs`.
+- Scan `src/ui/stylefacescan.rs`: mirrors `facescan.rs` (channel, coordinator,
+  worker pool, progressive re-cluster, `download_models`, `run_scan`).
+- Sidebar `src/ui/sidebar.rs`: a Characters header (id `charactersheader`, item
+  prefix `character:`) appears once any stylised face exists. Rename and delete
+  a character from the row menu. Helper `character_id_of`.
+- Characters view `src/ui/charactersview.rs`: a center-stack child named
+  `characters`, mirroring `facesview.rs`. It shows the noise group as "Unclear".
+  `AppState`: `show_characters`, `refresh_characters_if_active`.
+- Character dialogs `src/ui/characters.rs`: `name_style_cluster_dialog` (name or
+  merge a cluster).
+- Grid `src/ui/grid.rs`: `Source::Character` and `Source::StyleCluster`, with
+  `show_character`/`show_style_cluster` and re-query arms.
+
+### 000000.7 Album Face type (Photo / Art)
+
+A user marks an album as Inherit, Photo, or Art. The mark controls the face
+method. The kind is three-state and inherits down the tree. An album with
+Inherit takes its parent's kind. A top-level album with Inherit resolves to
+Photo.
+
+- Model/DB: `crate::model::AlbumKind` (Inherit=0, Photo=1, Art=2, with
+  `from_i64`/`as_i64`). `Album` gained a `kind` field. `albums.kind` column
+  added in `schema.sql` and in `migrate`.
+- Resolve: `Library::album_effective_kind` walks the parent chain and returns 1
+  (Photo) or 2 (Art). `Library::folders_under_album` returns all folder ids in
+  the album subtree. `Library::photo_effective_face_kind` gives a photo's kind
+  (its folder's album's kind, default Photo when in no album).
+- Scoped scan: `photos_needing_face_scan_in(folder_ids, limit)` and the style
+  twin scan only a folder set. `clear_face_scan_in` / `clear_style_face_scan_in`
+  clear prior faces and scan state for a rescan. The scan bodies were refactored
+  into a public `run_scan(state, ids, cfg)` so any id list can be scanned.
+- Router `src/ui/albumscan.rs`: `scan_album_faces(state, album_id, rescan)`
+  resolves the album's folders, reads the effective kind, and dispatches to the
+  human pipeline (Photo) or the stylised pipeline (Art). It shows a message when
+  the routed system is off or its models are missing.
+- Autoscan now routes by kind. `albumscan::autoscan_routed` splits eligible
+  photos by `photo_effective_face_kind` and feeds each pipeline its own list, so
+  a photo is scanned by exactly one method (no double-scan). `freshness.rs` calls
+  it. The old `scan_faces_quiet`/`scan_style_faces_quiet` are now unused but kept
+  with `#[allow(dead_code)]`.
+- Sidebar: an album row shows a `(Photo)` or `(Art)` suffix when its OWN kind is
+  explicit (not the inherited kind). The album context menu gained a "Face type"
+  submenu (title shows the current value; three items Inherit/Photo/Art) and
+  "Scan faces in album" / "Rescan faces in album". Actions:
+  `album-kind-inherit/photo/art`, `scan-album-faces`, `rescan-album-faces`.
+  Methods `set_album_kind` and `scan_album_faces` on the sidebar.
+
+### 000000.8 Design decisions the user made this session
+
+- Use the `hdbscan` crate for stylised faces, not a hand-written clusterer. The
+  user preferred a maintained external crate.
+- Keep two separate face systems. Do not merge them and do not use HDBSCAN for
+  photos.
+- Album kind is three-state with inheritance. Scan routes by kind (one item, not
+  a method chooser). The sidebar shows a badge. The Face type submenu uses plain
+  items with the current value in the title (not radio checkmarks, to avoid a
+  stateful-action refactor). Album scan offers both Scan and Rescan. Autoscan
+  routes by kind too.
+
+### 000000.9 Open follow-ups (not built)
+
+- No automatic art-vs-photo classifier. The album kind is the routing signal. A
+  photo in no album defaults to Photo. This is deliberate.
+- The sidebar badge shows an album's own explicit kind, not the inherited
+  effective kind. A child that inherits "Art" shows no badge. Showing the
+  effective kind on every album is a possible follow-up.
+- No per-face reject/reassign UI for stylised faces (the human system has one in
+  the viewer). `reject_style_face_from_character` and `recluster_now` exist in
+  the backend for this future work, marked `#[allow(dead_code)]`.
+- Roadmap Phases 3–5 for stylised faces (nearest-part incremental assign, merge
+  suggestions, a learned metric) are not built.
+- The fp16 embedder catalog entry needs f16 tensor handling before use.
+
+## 00000. Facial detection and recognition (read after section 000000)
+
+This section describes an earlier session (the human face system). The stylised
+face system in section 000000 mirrors this design. The work is complete. The
+application builds. `cargo test` passed 55 tests plus 2 ignored tests at that
+time. The work is on `main`. The work is pushed. The version was 0.0.70 at that
+time. CI increases the version on each push. Do not change the version by hand.
 
 The feature detects faces, groups the same person across the library, lets the
 user name people, and shows each person's photos. All processing stays local.

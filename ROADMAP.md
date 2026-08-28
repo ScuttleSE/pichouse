@@ -376,62 +376,85 @@ Detect faces in photos, group the same person's face across the library, let the
 user name a person, and surface all their photos — Picasa "People"-style. Fits
 alongside the existing local AI tagging pipeline; all processing stays local.
 
-**Status: implemented.** Off by default. The models and the ONNX Runtime
-download into the data folder on first use. The pipeline is YuNet (detection,
-MIT) plus SFace (128-D embedding, Apache 2.0), both from the OpenCV Zoo, run
-in-process through `ort` (ONNX Runtime, loaded at run time). Faces, people, and
-per-photo scan state live in `library.db` (`persons`, `faces`, `face_scan`);
-face-crop thumbnails live in `face-thumbs.db`. A background worker session
-(`src/ui/facescan.rs`, the AI-tagging pattern) detects and embeds faces, then
-clusters embeddings by cosine similarity; named people anchor stable clusters so
-new matches attach automatically. The sidebar gains a **People** section
+There are TWO parallel systems: a **human face** system for photographs and a
+**stylised face** system for anime, cartoon, and furry art. They share only the
+ONNX Runtime loader. Each has its own models, database tables, clustering, and
+sidebar section. An album's **Face type** (Photo or Art) decides which system
+scans that album's photos (see "Album Face type" below).
+
+**Status: both systems implemented.** Off by default. The models and the ONNX
+Runtime download into the data folder on first use.
+
+### Human faces (implemented)
+
+The pipeline is YuNet (detection, MIT) plus SFace (128-D embedding, Apache 2.0),
+both from the OpenCV Zoo, run in-process through `ort` (ONNX Runtime, loaded at
+run time). Faces, people, and per-photo scan state live in `library.db`
+(`persons`, `faces`, `face_scan`, `face_rejections`); face-crop thumbnails live
+in `face-thumbs.db`. A background worker session (`src/ui/facescan.rs`) detects
+and embeds faces, then clusters embeddings by cosine similarity (greedy
+nearest-centroid, SFace threshold 0.363); named people anchor stable clusters so
+new matches attach automatically. The sidebar has a **People** section
 (`person:<id>`); selecting a person shows every photo they appear in
-(`Source::Person`). A **Review people** dialog (`src/ui/people.rs`) turns
-unnamed clusters into named people and merges clusters into an existing person. A
-`RuleField::Person` lets a smart virtual album hold "contains person X". The
-full-image viewer has a **Show faces** overlay that draws each face box (green
-when named, yellow when not) with the person name, and a click on a box assigns
-that face to a person. Settings (`src/ui/settings_faces.rs`) hold the enable
-toggle, an opt-in auto-scan (off by default), the embedding-model choice with a
-license note and a re-scan warning, the model download, the scan action, and a
-"Delete all face data" privacy reset. See `src/face/` (config, runtime, models,
+(`Source::Person`). A **Faces** view (`src/ui/facesview.rs`) and dialogs
+(`src/ui/people.rs`) turn unnamed clusters into named people and merge clusters.
+A `RuleField::Person` lets a smart virtual album hold "contains person X". The
+viewer has a **Show faces** overlay that draws each face box and assigns a face
+on click. Settings (`src/ui/settings_faces.rs`) hold the enable toggle, an opt-in
+auto-scan, the embedding-model choice, the model download, the scan action, and
+a "Delete all face data" reset. See `src/face/` (config, runtime, models,
 detector, embedder, cluster).
 
+### Stylised faces — anime / cartoon / furry (implemented)
+
+A parallel system for drawn faces. It uses an anime YOLOv8-nano detector
+(deepghs, MIT, 12 MB) and DINOv2 ViT-S/14 (Apache 2.0, 384-D) — SFace gives bad
+vectors on drawings, so a different embedder is required. It clusters with the
+`hdbscan` crate (euclidean on L2-normalised vectors, `min_cluster_size = 2`,
+leaf-like small groups); HDBSCAN marks unclear faces as noise (cluster `-1`),
+shown in the UI as "Unclear". A named group is a **character**. Data lives in
+`characters`, `style_faces`, `style_face_scan`, `style_face_rejections`, and
+`style-face-thumbs.db`. The sidebar has a **Characters** section
+(`character:<id>`); the center **Characters** view
+(`src/ui/charactersview.rs`) names and merges clusters. Settings
+(`src/ui/settings_characters.rs`) offer two detectors and two embedders. See
+`src/styleface/` (config, models, detector, embedder, cluster) and
+`src/ui/stylefacescan.rs`.
+
+Design note: for art, the art style often matters more than the character, and
+hair colour dominates. Two drawings of one character can land far apart, and two
+characters by one artist can land close. The merge function is the fix: HDBSCAN
+is tuned to make many small groups, and the user merges them in two clicks.
+
+### Album Face type — routing (implemented)
+
+An album has a **Face type**: Inherit, Photo, or Art. It is three-state and
+inherits down the tree (a top-level Inherit resolves to Photo). Set it once at
+the top; sub-albums and folders inherit. Right-click an album → a **Face type**
+submenu sets the kind, and **Scan / Rescan faces in album** scans the album's
+photos with the routed method (Photo → human system, Art → stylised system). The
+opt-in auto-scan also routes by album kind, so each photo is scanned by exactly
+one method (no double-scan). A photo in no album defaults to Photo. Album rows
+show a `(Photo)`/`(Art)` badge when the kind is set explicitly. See
+`src/model.rs` (`AlbumKind`), `src/db/albums.rs` (`album_effective_kind`,
+`folders_under_album`, `photo_effective_face_kind`), and `src/ui/albumscan.rs`.
+
 ### Deferred follow-ups
-- Higher-accuracy optional models (ArcFace 512-D, non-commercial) in the
-  catalog, and a custom `.onnx` path.
+
+- Higher-accuracy optional human models (ArcFace 512-D, non-commercial) and a
+  custom `.onnx` path.
 - A split control that pulls a mis-grouped face out of a person and re-clusters
-  it (today a face is reassigned by clicking it in the viewer).
+  it (today a human face is reassigned by clicking it in the viewer). No per-face
+  reject/reassign UI exists for stylised faces yet (the backend supports it).
+- Stylised follow-ups from the source roadmap: nearest-part incremental assign
+  for new images, "is this also X?" merge suggestions, and a learned metric
+  trained from user merges.
+- A cache-only clear for face crops (a slider or model change refreshes crops
+  without a full "Delete all face data").
+- An automatic art-vs-photo classifier. Today the album Face type is the routing
+  signal; there is no per-image auto-detection.
+- The stylised fp16 embedder catalog entry needs f16 tensor handling before use.
 - Interaction with Immich's own people feature (kept separate for now).
-
-### Behaviour
-- Detect faces in library images (a per-photo face-detection pass).
-- **Group** faces that belong to the same person automatically (face clustering
-  by similarity).
-- Let the user **name** a face/cluster (assign a person name), and confirm or
-  correct grouping (merge/split clusters, reassign a face).
-- Once named, a person's photos are available as a **virtual album** containing
-  every image that person appears in (ties into Virtual albums).
-- Membership updates as new matching faces are found in newly scanned photos.
-
-### Open questions / to decide
-- Backend: reuse the existing Ollama/AI stack vs. a dedicated local face
-  pipeline (detector + embedding model, e.g. a face-embedding network + a
-  clustering step). All local, consistent with offline AI tagging.
-- Storage: how faces, bounding boxes, embeddings, clusters, and person names are
-  persisted in library.db (e.g. `faces`, `persons` tables; embedding blobs).
-- Clustering method and threshold, and how re-clustering works as the library
-  grows (incremental assignment vs. periodic re-cluster).
-- Person -> virtual album mapping: a rule-based virtual album ("contains person
-  X") vs. a dedicated People section with its own UI.
-- UI: a People view (named/unnamed faces), naming flow, and confirm/merge/split
-  controls; showing face thumbnails cropped from the source image.
-- Interaction with edits (detect on original), RAW+JPEG pairing (detect once per
-  paired photo), and adult content (faces in NSFW images).
-- Interaction with Immich (Immich has its own people/face feature — map to it or
-  keep separate).
-- Privacy: all face data stays local; how to delete/reset a person or all face
-  data.
 
 ## Duplicate image finder
 
