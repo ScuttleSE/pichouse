@@ -98,6 +98,10 @@ pub struct Grid {
     /// The source the current photos came from, so the grid can re-query the
     /// database/disk (a true "refresh visible").
     source: RefCell<Source>,
+    /// The active sort order for the photo grid.
+    sort_order: std::cell::Cell<SortOrder>,
+    /// The header dropdown that selects the sort order.
+    sort_dropdown: gtk4::DropDown,
     /// Called with (photos, index) when a cell is activated (double-clicked).
     on_activate: RefCell<Option<Box<dyn Fn(Vec<Photo>, usize)>>>,
     /// Called with a photo when the selection changes (single click).
@@ -139,6 +143,33 @@ struct DupCellUi {
     photo: Photo,
     marked: std::cell::Cell<bool>,
     x_widget: Label,
+}
+
+/// The order the grid sorts its photos in.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SortOrder {
+    /// Capture time first, then filename. Matches the database query order.
+    Date,
+    /// Filename only, case-insensitive.
+    Filename,
+}
+
+impl SortOrder {
+    /// Parse a stored setting value. Unknown values fall back to `Date`.
+    fn from_setting(v: &str) -> SortOrder {
+        match v {
+            "filename" => SortOrder::Filename,
+            _ => SortOrder::Date,
+        }
+    }
+
+    /// The setting value string for this order.
+    fn as_setting(self) -> &'static str {
+        match self {
+            SortOrder::Date => "date",
+            SortOrder::Filename => "filename",
+        }
+    }
 }
 
 /// Where the grid's current photos came from.
@@ -191,6 +222,24 @@ impl Grid {
         let header_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
         header_box.append(&back_btn);
         header_box.append(&header);
+
+        // The sort-order dropdown, at the right of the header. "Date" sorts by
+        // capture time then filename. "Name" sorts by filename only.
+        let sort_setting = lib
+            .get_setting(super::prefs::KEY_SORT_ORDER, "date")
+            .unwrap_or_else(|_| "date".to_string());
+        let sort_order = SortOrder::from_setting(&sort_setting);
+        let sort_dropdown =
+            gtk4::DropDown::from_strings(&["Date", "Name"]);
+        sort_dropdown.set_selected(match sort_order {
+            SortOrder::Date => 0,
+            SortOrder::Filename => 1,
+        });
+        sort_dropdown.set_margin_end(6);
+        let sort_label = Label::new(Some("Sort:"));
+        sort_label.set_margin_start(6);
+        header_box.append(&sort_label);
+        header_box.append(&sort_dropdown);
 
         // The duplicate-results action bar. Hidden unless a duplicate view is
         // shown. It holds a hint label and a "Delete marked" button.
@@ -400,6 +449,8 @@ impl Grid {
             lib,
             tex_cache,
             source: RefCell::new(Source::None),
+            sort_order: std::cell::Cell::new(sort_order),
+            sort_dropdown,
             on_activate: RefCell::new(None),
             on_select: RefCell::new(None),
             on_context_menu: RefCell::new(None),
@@ -417,6 +468,21 @@ impl Grid {
 
     fn into_rc(self) -> Rc<Grid> {
         let rc = Rc::new(self);
+        // The sort dropdown re-orders the current photos and persists the choice.
+        {
+            let rc2 = rc.clone();
+            rc.sort_dropdown.connect_selected_notify(move |dd| {
+                let order = match dd.selected() {
+                    1 => SortOrder::Filename,
+                    _ => SortOrder::Date,
+                };
+                rc2.sort_order.set(order);
+                let _ = rc2
+                    .lib
+                    .set_setting(super::prefs::KEY_SORT_ORDER, order.as_setting());
+                rc2.reload_from_source();
+            });
+        }
         // Activation (double-click / Enter) opens the viewer.
         {
             let rc2 = rc.clone();
@@ -975,11 +1041,36 @@ impl Grid {
     }
 
     /// Store a photo set and rebuild the view.
+    /// Order a photo list by the active sort order. `Date` sorts by capture
+    /// time first, then filename, to match the database query order. Photos
+    /// with no capture time come first. `Filename` sorts by filename only,
+    /// case-insensitive.
+    fn sort_photos(&self, photos: &mut [Photo]) {
+        match self.sort_order.get() {
+            SortOrder::Date => {
+                photos.sort_by(|a, b| {
+                    a.taken_at
+                        .cmp(&b.taken_at)
+                        .then_with(|| a.filename.cmp(&b.filename))
+                });
+            }
+            SortOrder::Filename => {
+                photos.sort_by(|a, b| {
+                    a.filename
+                        .to_lowercase()
+                        .cmp(&b.filename.to_lowercase())
+                });
+            }
+        }
+    }
+
     fn set_photos(&self, title: &str, photos: Vec<Photo>) {
         // Default to no back button. The person and cluster views re-enable it
         // right after, via `set_back`.
         self.hide_back();
         self.exit_dup_mode();
+        let mut photos = photos;
+        self.sort_photos(&mut photos);
         *self.all_photos.borrow_mut() = photos;
         *self.title.borrow_mut() = title.to_string();
         self.rebuild();
@@ -998,6 +1089,8 @@ impl Grid {
     /// set differs (folder switch, files added/removed), it falls back to a full
     /// rebuild.
     fn set_photos_preserving(&self, title: &str, photos: Vec<Photo>) {
+        let mut photos = photos;
+        self.sort_photos(&mut photos);
         *self.all_photos.borrow_mut() = photos;
         *self.title.borrow_mut() = title.to_string();
 

@@ -23,6 +23,9 @@ pub const KEY_LAST_LIB_DIR: &str = "ui.last_lib_dir";
 /// When "1", scan a folder into the library right after it is added. When "0",
 /// add the folder to the DB only. Default "1".
 pub const KEY_AUTOSCAN_ON_ADD: &str = "ui.autoscan_on_add";
+/// The grid sort order. Value "date" sorts by capture time then filename.
+/// Value "filename" sorts by filename only. Default "date".
+pub const KEY_SORT_ORDER: &str = "grid.sort_order";
 
 /// AI setting keys stored in `library.db`.
 pub const KEY_AI_ENABLED: &str = "ai.enabled";
