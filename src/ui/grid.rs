@@ -783,6 +783,15 @@ impl Grid {
         self.set_photos(title, photos.to_vec());
     }
 
+    /// True when the current source is a stylised character or style cluster.
+    /// The viewer uses this to draw stylised face boxes instead of human faces.
+    pub fn is_style_source(&self) -> bool {
+        matches!(
+            *self.source.borrow(),
+            Source::Character(..) | Source::StyleCluster(..)
+        )
+    }
+
     /// Show a scanned library folder, remembering it as the source so the grid
     /// can re-query the database later (e.g. after a scan or rotation).
     pub fn show_folder(&self, folder_id: i64, name: &str) {

@@ -23,6 +23,7 @@ use super::state::{show_error, AppState};
 
 const NEW_FOLDERS_ID: &str = "newfolders";
 const NEW_FILES_ID: &str = "newfiles";
+const MISSING_FILES_ID: &str = "missingfiles";
 const ALBUM_PREFIX: &str = "album:";
 const FOLDER_PREFIX: &str = "folder:";
 const VALBUM_PREFIX: &str = "valbum:";
@@ -58,6 +59,8 @@ struct TreeData {
     unassigned: Vec<i64>,
     /// Count of "new files" across the library (for the New Files row).
     new_files_count: i64,
+    /// Count of photos gone from disk (for the Missing Files row).
+    missing_files_count: i64,
     /// Virtual albums by id, plus the parent→children adjacency and per-album
     /// photo counts.
     virtual_albums: HashMap<i64, VirtualAlbum>,
@@ -366,6 +369,11 @@ impl Sidebar {
                 format!("New Files ({})", data.new_files_count),
                 "document-open-recent-symbolic",
             )
+        } else if id == MISSING_FILES_ID {
+            (
+                format!("Missing Files ({})", data.missing_files_count),
+                "edit-delete-symbolic",
+            )
         } else if id == VIRTUAL_HEADER_ID {
             ("Virtual Albums".to_string(), "starred-symbolic")
         } else if id == PEOPLE_HEADER_ID {
@@ -471,6 +479,12 @@ impl Sidebar {
             if id == NEW_FILES_ID {
                 if let Some(state) = self.state() {
                     state.show_new_files();
+                    return;
+                }
+            }
+            if id == MISSING_FILES_ID {
+                if let Some(state) = self.state() {
+                    state.show_missing_files();
                     return;
                 }
             }
@@ -625,6 +639,8 @@ impl Sidebar {
             .unwrap_or(0);
         let new_ms = t_new.elapsed();
 
+        let missing_files_count = state.lib.missing_photo_count().unwrap_or(0);
+
         folders.sort_by(|a, b| a.name.cmp(&b.name));
         // Show albums alphabetically at every level (case-insensitive). They are
         // pushed into album_children in this order, so children sort too.
@@ -634,6 +650,7 @@ impl Sidebar {
         let mut data = TreeData {
             counts,
             new_files_count,
+            missing_files_count,
             ..TreeData::default()
         };
         for a in &albums {
@@ -708,6 +725,9 @@ impl Sidebar {
             let data = self.data.borrow();
             if data.new_files_count > 0 {
                 roots.push(NEW_FILES_ID.to_string());
+            }
+            if data.missing_files_count > 0 {
+                roots.push(MISSING_FILES_ID.to_string());
             }
             if !data.unassigned.is_empty() {
                 roots.push(NEW_FOLDERS_ID.to_string());
@@ -1094,6 +1114,58 @@ impl Sidebar {
         );
     }
 
+    fn clear_missing_files(self: &Rc<Self>) {
+        let Some(state) = self.state() else { return };
+        let n = state.lib.missing_photo_count().unwrap_or(0);
+        if n == 0 {
+            return;
+        }
+        let this = self.clone();
+        let state2 = state.clone();
+        confirm(
+            &state,
+            None,
+            "Clear Missing Files",
+            &format!("Permanently remove {n} missing photo(s) from the library? The files are already gone from disk. This cannot be undone."),
+            move || {
+                match state2.lib.delete_missing_photos() {
+                    Ok(_) => {
+                        this.reload_deferred();
+                        state2.show_missing_files();
+                    }
+                    Err(e) => show_error(&state2, &e.to_string()),
+                }
+            },
+        );
+    }
+
+    fn delete_person_and_ban(self: &Rc<Self>, id: i64) {
+        let Some(state) = self.state() else { return };
+        let name = self
+            .data
+            .borrow()
+            .persons
+            .iter()
+            .find(|p| p.id == id)
+            .map(|p| p.name.clone())
+            .unwrap_or_default();
+        let this = self.clone();
+        let state2 = state.clone();
+        confirm(
+            &state,
+            None,
+            "Delete and Ban Person",
+            &format!("Delete person \"{name}\" and ban its faces? A future scan never groups these faces as a person again. Photos on disk are not affected."),
+            move || {
+                if let Err(e) = state2.lib.delete_person_and_ban(id) {
+                    show_error(&state2, &e.to_string());
+                    return;
+                }
+                this.reload_deferred();
+            },
+        );
+    }
+
     fn prompt_rename_character(self: &Rc<Self>, id: i64) {
         let Some(state) = self.state() else { return };
         let current = self
@@ -1141,6 +1213,33 @@ impl Sidebar {
             &format!("Delete character \"{name}\"? The faces stay but lose the name. Photos on disk are not affected."),
             move || {
                 if let Err(e) = state2.lib.delete_character(id) {
+                    show_error(&state2, &e.to_string());
+                    return;
+                }
+                this.reload_deferred();
+            },
+        );
+    }
+
+    fn delete_character_and_ban(self: &Rc<Self>, id: i64) {
+        let Some(state) = self.state() else { return };
+        let name = self
+            .data
+            .borrow()
+            .characters
+            .iter()
+            .find(|c| c.id == id)
+            .map(|c| c.name.clone())
+            .unwrap_or_default();
+        let this = self.clone();
+        let state2 = state.clone();
+        confirm(
+            &state,
+            None,
+            "Delete and Ban Character",
+            &format!("Delete character \"{name}\" and ban its faces? A future scan never groups these faces as a character again. Photos on disk are not affected."),
+            move || {
+                if let Err(e) = state2.lib.delete_character_and_ban(id) {
                     show_error(&state2, &e.to_string());
                     return;
                 }
@@ -1542,6 +1641,22 @@ impl Sidebar {
         {
             let this = self.clone();
             add(
+                "delete-person-ban",
+                &group,
+                Rc::new(move |t| this.delete_person_and_ban(person_id_of(t).unwrap_or(0))),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "clear-missing",
+                &group,
+                Rc::new(move |_| this.clear_missing_files()),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
                 "rename-character",
                 &group,
                 Rc::new(move |t| this.prompt_rename_character(character_id_of(t).unwrap_or(0))),
@@ -1553,6 +1668,14 @@ impl Sidebar {
                 "delete-character",
                 &group,
                 Rc::new(move |t| this.delete_character(character_id_of(t).unwrap_or(0))),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "delete-character-ban",
+                &group,
+                Rc::new(move |t| this.delete_character_and_ban(character_id_of(t).unwrap_or(0))),
             );
         }
 
@@ -1710,6 +1833,11 @@ impl Sidebar {
                 Some("New Virtual Album…"),
                 Some(&detailed("new-valbum", id)),
             );
+        } else if id == MISSING_FILES_ID {
+            menu.append(
+                Some("Clear Missing Files…"),
+                Some(&detailed("clear-missing", id)),
+            );
         } else if valbum_id_of(id).is_some() {
             menu.append(Some("New Sub-Album…"), Some(&detailed("new-subvalbum", id)));
             menu.append(Some("Rename Album…"), Some(&detailed("rename-valbum", id)));
@@ -1721,6 +1849,10 @@ impl Sidebar {
         } else if person_id_of(id).is_some() {
             menu.append(Some("Rename Person…"), Some(&detailed("rename-person", id)));
             menu.append(Some("Delete Person"), Some(&detailed("delete-person", id)));
+            menu.append(
+                Some("Delete and Ban Person"),
+                Some(&detailed("delete-person-ban", id)),
+            );
         } else if character_id_of(id).is_some() {
             menu.append(
                 Some("Rename Character…"),
@@ -1729,6 +1861,10 @@ impl Sidebar {
             menu.append(
                 Some("Delete Character"),
                 Some(&detailed("delete-character", id)),
+            );
+            menu.append(
+                Some("Delete and Ban Character"),
+                Some(&detailed("delete-character-ban", id)),
             );
         } else if album_id_of(id).is_some() {
             menu.append(Some("New Sub-Album…"), Some(&detailed("new-subalbum", id)));

@@ -114,6 +114,16 @@ pub fn model_present(id: &str) -> bool {
 /// does not match. Returns the file path. This does blocking network work.
 /// Call it off the GTK main thread.
 pub fn ensure_model(id: &str) -> Result<PathBuf, String> {
+    ensure_model_progress(id, &|_| {})
+}
+
+/// Like `ensure_model`, but reports download progress through `on_progress`.
+/// The callback gets a fraction 0.0..1.0, or a negative value when the total
+/// size is unknown.
+pub fn ensure_model_progress(
+    id: &str,
+    on_progress: &dyn Fn(f64),
+) -> Result<PathBuf, String> {
     let e = entry(id).ok_or_else(|| format!("unknown model id {id}"))?;
     let dest = model_path(e.file_name).map_err(|err| format!("models dir: {err}"))?;
     if dest.exists() && verify(&dest, e.sha256)? {
@@ -133,7 +143,7 @@ pub fn ensure_model(id: &str) -> Result<PathBuf, String> {
     if !resp.status().is_success() {
         return Err(format!("download status {}", resp.status()));
     }
-    let bytes = resp.bytes().map_err(|err| format!("read body: {err}"))?;
+    let bytes = read_with_progress(resp, on_progress)?;
 
     let mut h = Sha256::new();
     h.update(&bytes);
@@ -153,6 +163,36 @@ pub fn ensure_model(id: &str) -> Result<PathBuf, String> {
     std::fs::rename(&tmp, &dest).map_err(|err| format!("finalize: {err}"))?;
     log::info!("stylised face model {} ready at {}", e.id, dest.display());
     Ok(dest)
+}
+
+/// Read a blocking HTTP response body into memory while reporting progress.
+/// Uses `Content-Length` when present. Reports a negative fraction when the
+/// total size is unknown, so the caller can show an indeterminate state.
+pub fn read_with_progress(
+    resp: reqwest::blocking::Response,
+    on_progress: &dyn Fn(f64),
+) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+    let total = resp.content_length();
+    let mut reader = resp;
+    let mut bytes: Vec<u8> = Vec::with_capacity(total.unwrap_or(0) as usize);
+    let mut buf = [0u8; 64 * 1024];
+    let mut read_total: u64 = 0;
+    loop {
+        let n = reader
+            .read(&mut buf)
+            .map_err(|e| format!("read body: {e}"))?;
+        if n == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&buf[..n]);
+        read_total += n as u64;
+        match total {
+            Some(t) if t > 0 => on_progress(read_total as f64 / t as f64),
+            _ => on_progress(-1.0),
+        }
+    }
+    Ok(bytes)
 }
 
 fn verify(path: &std::path::Path, want_hex: &str) -> Result<bool, String> {

@@ -228,6 +228,12 @@ builds the root id list. `child_ids` maps a node id to its child ids.
 `node_label` gives a node its text and icon. `on_selection_changed` dispatches
 by id prefix.
 
+The "New Files" and "Missing Files" rows are leaf sections (no children). A
+leaf needs an id constant, a `TreeData` count field, a `reload` push when the
+count is over zero, a `node_label` branch, and an `on_selection_changed`
+dispatch. "Missing Files" lists photos with `missing = 1` and offers a
+right-click "Clear Missing Files…" action that calls `delete_missing_photos`.
+
 To add a section, do these steps:
 1. Add id constants for the header and the item prefix.
 2. Add data fields to `TreeData` and fill them in `reload`.

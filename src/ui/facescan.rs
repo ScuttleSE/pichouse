@@ -372,7 +372,7 @@ pub fn download_models(state: &Rc<AppState>, detector_id: String, embedding_id: 
                     let cfg = super::prefs::load_face_config(&state.lib);
                     *state.face_config.borrow_mut() = cfg;
                 }
-                Msg::Progress(_) => {}
+                Msg::Progress(p) => status.set_progress(p),
                 Msg::Refresh => {}
             }
             glib::ControlFlow::Continue
@@ -382,29 +382,47 @@ pub fn download_models(state: &Rc<AppState>, detector_id: String, embedding_id: 
     let lib = state.lib.clone();
     std::thread::spawn(move || {
         let _ = tx.send(Msg::Message("Downloading ONNX Runtime…".into()));
-        if let Err(e) = runtime::ensure_runtime() {
-            let _ = tx.send(Msg::Scanning(false));
-            let _ = tx.send(Msg::Error(format!("ONNX Runtime download failed: {e}")));
-            return;
+        {
+            let tx = tx.clone();
+            if let Err(e) = runtime::ensure_runtime_progress(&|p| {
+                let _ = tx.send(Msg::Progress(p));
+            }) {
+                let _ = tx.send(Msg::Scanning(false));
+                let _ = tx.send(Msg::Error(format!("ONNX Runtime download failed: {e}")));
+                return;
+            }
         }
+        let _ = tx.send(Msg::Progress(-1.0));
         let _ = tx.send(Msg::Message("Downloading detector model…".into()));
-        let det = match models::ensure_model(&detector_id) {
-            Ok(p) => p,
-            Err(e) => {
-                let _ = tx.send(Msg::Scanning(false));
-                let _ = tx.send(Msg::Error(format!("Detector download failed: {e}")));
-                return;
+        let det = {
+            let tx = tx.clone();
+            match models::ensure_model_progress(&detector_id, &|p| {
+                let _ = tx.send(Msg::Progress(p));
+            }) {
+                Ok(p) => p,
+                Err(e) => {
+                    let _ = tx.send(Msg::Scanning(false));
+                    let _ = tx.send(Msg::Error(format!("Detector download failed: {e}")));
+                    return;
+                }
             }
         };
+        let _ = tx.send(Msg::Progress(-1.0));
         let _ = tx.send(Msg::Message("Downloading embedding model…".into()));
-        let emb = match models::ensure_model(&embedding_id) {
-            Ok(p) => p,
-            Err(e) => {
-                let _ = tx.send(Msg::Scanning(false));
-                let _ = tx.send(Msg::Error(format!("Embedding download failed: {e}")));
-                return;
+        let emb = {
+            let tx = tx.clone();
+            match models::ensure_model_progress(&embedding_id, &|p| {
+                let _ = tx.send(Msg::Progress(p));
+            }) {
+                Ok(p) => p,
+                Err(e) => {
+                    let _ = tx.send(Msg::Scanning(false));
+                    let _ = tx.send(Msg::Error(format!("Embedding download failed: {e}")));
+                    return;
+                }
             }
         };
+        let _ = tx.send(Msg::Progress(-1.0));
         let dim = models::entry(&embedding_id).map(|e| e.embedding_dim).unwrap_or(0);
 
         let _ = lib.set_setting(super::prefs::KEY_FACE_DETECTOR_ID, &detector_id);

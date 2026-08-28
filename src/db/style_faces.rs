@@ -275,6 +275,36 @@ impl Library {
         Ok(())
     }
 
+    /// Delete a character and ban every one of its faces. Each face records a
+    /// rejection against this character, so a later re-scan and re-cluster never
+    /// re-groups these faces under a character again. Photos on disk are not
+    /// affected.
+    pub fn delete_character_and_ban(&self, id: i64) -> Result<()> {
+        let conn = self.lock();
+        let face_ids: Vec<i64> = {
+            let mut stmt =
+                conn.prepare("SELECT id FROM style_faces WHERE character_id = ?1")?;
+            let rows = stmt.query_map(params![id], |r| r.get::<_, i64>(0))?;
+            let mut v = Vec::new();
+            for row in rows {
+                v.push(row?);
+            }
+            v
+        };
+        for fid in &face_ids {
+            conn.execute(
+                "INSERT OR IGNORE INTO style_face_rejections(face_id, character_id) VALUES(?1, ?2)",
+                params![fid, id],
+            )?;
+            conn.execute(
+                "UPDATE style_faces SET character_id = NULL, confirmed = 0, cluster_id = NULL WHERE id = ?1",
+                params![fid],
+            )?;
+        }
+        conn.execute("DELETE FROM characters WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
     /// Merge `from` character into `into`. All faces move, then `from` is gone.
     pub fn merge_characters(&self, from: i64, into: i64) -> Result<()> {
         let conn = self.lock();

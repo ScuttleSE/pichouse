@@ -267,6 +267,17 @@ impl AppState {
             .set_message(&format!("New Files — {count} recently added"));
     }
 
+    /// Show every photo currently marked missing (gone from disk) in the grid.
+    pub fn show_missing_files(self: &Rc<Self>) {
+        *self.current_folder.borrow_mut() = 0;
+        let photos = self.lib.photos_missing().unwrap_or_default();
+        let n = photos.len();
+        self.grid().show_photos("Missing Files", &photos);
+        self.show_grid();
+        self.status()
+            .set_message(&format!("Missing Files — {n} gone from disk"));
+    }
+
     /// Show the Faces view in the center, rebuilding its group tiles.
     pub fn show_faces(self: &Rc<Self>) {
         *self.current_folder.borrow_mut() = 0;

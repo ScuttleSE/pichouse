@@ -44,6 +44,10 @@ pub struct Viewer {
     faces: RefCell<Vec<crate::model::Face>>,
     /// Person id -> name, for labelling boxes.
     person_names: RefCell<std::collections::HashMap<i64, String>>,
+    /// True when the overlay shows stylised character faces, not human faces.
+    /// In this mode `faces` holds style faces mapped into `Face` (person_id
+    /// carries the character id) and `person_names` maps character ids to names.
+    style_mode: std::cell::Cell<bool>,
 
     photos: RefCell<Vec<Photo>>,
     index: RefCell<usize>,
@@ -149,6 +153,7 @@ impl Viewer {
             faces_mode: std::cell::Cell::new(false),
             faces: RefCell::new(Vec::new()),
             person_names: RefCell::new(std::collections::HashMap::new()),
+            style_mode: std::cell::Cell::new(false),
             photos: RefCell::new(Vec::new()),
             index: RefCell::new(0),
             state: RefCell::new(None),
@@ -458,7 +463,9 @@ impl Viewer {
         self.face_area.queue_draw();
     }
 
-    /// Load the current photo's faces and the person-name map.
+    /// Load the current photo's faces and the name map. In stylised mode this
+    /// loads style faces and character names. Otherwise it loads human faces and
+    /// person names.
     fn load_faces(self: &Rc<Self>) {
         let Some(state) = self.state.borrow().clone() else {
             return;
@@ -466,13 +473,47 @@ impl Viewer {
         let Some(photo) = self.current_photo() else {
             return;
         };
-        let faces = state.lib.faces_for_photo(photo.id).unwrap_or_default();
-        let mut names = std::collections::HashMap::new();
-        for (p, _) in state.lib.persons().unwrap_or_default() {
-            names.insert(p.id, p.name);
+        let style = state.grid().is_style_source();
+        self.style_mode.set(style);
+        if style {
+            // Map each StyleFace into a Face so the draw code stays the same.
+            // person_id carries the character id.
+            let sfaces = state
+                .lib
+                .style_faces_for_photo(photo.id)
+                .unwrap_or_default();
+            let faces = sfaces
+                .into_iter()
+                .map(|s| crate::model::Face {
+                    id: s.id,
+                    photo_id: s.photo_id,
+                    person_id: s.character_id,
+                    cluster_id: s.cluster_id,
+                    bbox_x: s.bbox_x,
+                    bbox_y: s.bbox_y,
+                    bbox_w: s.bbox_w,
+                    bbox_h: s.bbox_h,
+                    det_score: s.det_score,
+                    confirmed: s.confirmed,
+                    source: s.source,
+                    ..Default::default()
+                })
+                .collect();
+            let mut names = std::collections::HashMap::new();
+            for (c, _) in state.lib.characters().unwrap_or_default() {
+                names.insert(c.id, c.name);
+            }
+            *self.faces.borrow_mut() = faces;
+            *self.person_names.borrow_mut() = names;
+        } else {
+            let faces = state.lib.faces_for_photo(photo.id).unwrap_or_default();
+            let mut names = std::collections::HashMap::new();
+            for (p, _) in state.lib.persons().unwrap_or_default() {
+                names.insert(p.id, p.name);
+            }
+            *self.faces.borrow_mut() = faces;
+            *self.person_names.borrow_mut() = names;
         }
-        *self.faces.borrow_mut() = faces;
-        *self.person_names.borrow_mut() = names;
     }
 
     /// Handle a click at widget `(x,y)`: find the face box under it and offer to
@@ -498,17 +539,27 @@ impl Viewer {
         let Some(state) = self.state.borrow().clone() else {
             return;
         };
-        super::people::assign_face_dialog(&state, face.id, {
+        let on_done = {
             let this = self.clone();
             let state = state.clone();
+            let style = self.style_mode.get();
             move || {
                 this.load_faces();
                 this.face_area.queue_draw();
                 // A reassignment or rejection changes grouping; re-cluster so
-                // the People view and sidebar reflect it.
-                super::facescan::recluster_now(&state);
+                // the People/Characters view and sidebar reflect it.
+                if style {
+                    super::stylefacescan::recluster_now(&state);
+                } else {
+                    super::facescan::recluster_now(&state);
+                }
             }
-        });
+        };
+        if self.style_mode.get() {
+            super::characters::assign_style_face_dialog(&state, face.id, on_done);
+        } else {
+            super::people::assign_face_dialog(&state, face.id, on_done);
+        }
     }
 
     /// The displayed image rectangle inside the crop_area, honouring

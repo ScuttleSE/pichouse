@@ -297,6 +297,18 @@ impl Library {
         Ok(n)
     }
 
+    /// All photos currently marked missing (soft-deleted from disk), grouped by
+    /// folder then filename.
+    pub fn photos_missing(&self) -> Result<Vec<Photo>> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare(
+            "SELECT id, folder_id, path, filename, size, mod_time, taken_at, width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing, added_at, phash
+             FROM photos WHERE missing = 1 ORDER BY folder_id ASC, filename ASC",
+        )?;
+        let rows = stmt.query_map([], map_photo)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
     /// All scanned folders ordered by year (desc) then name.
     pub fn folders(&self) -> Result<Vec<Folder>> {
         let conn = self.lock();

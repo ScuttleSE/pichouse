@@ -285,6 +285,37 @@ impl Library {
         Ok(())
     }
 
+    /// Delete a person and ban every one of its faces. Each face records a
+    /// rejection against this person, so a later re-scan and re-cluster never
+    /// re-groups these faces under a person again. Photos on disk are not
+    /// affected.
+    pub fn delete_person_and_ban(&self, id: i64) -> Result<()> {
+        let conn = self.lock();
+        // Collect the person's face ids first.
+        let face_ids: Vec<i64> = {
+            let mut stmt =
+                conn.prepare("SELECT id FROM faces WHERE person_id = ?1")?;
+            let rows = stmt.query_map(params![id], |r| r.get::<_, i64>(0))?;
+            let mut v = Vec::new();
+            for row in rows {
+                v.push(row?);
+            }
+            v
+        };
+        for fid in &face_ids {
+            conn.execute(
+                "INSERT OR IGNORE INTO face_rejections(face_id, person_id) VALUES(?1, ?2)",
+                params![fid, id],
+            )?;
+            conn.execute(
+                "UPDATE faces SET person_id = NULL, confirmed = 0, cluster_id = NULL WHERE id = ?1",
+                params![fid],
+            )?;
+        }
+        conn.execute("DELETE FROM persons WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
     /// Merge `from` person into `into`. All faces move to `into`, then `from`
     /// is deleted.
     pub fn merge_persons(&self, from: i64, into: i64) -> Result<()> {

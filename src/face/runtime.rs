@@ -57,6 +57,13 @@ fn verify_sha256(path: &std::path::Path, want_hex: &str) -> std::io::Result<bool
 /// its hash does not match. This does blocking network work. Call it off the
 /// GTK main thread.
 pub fn ensure_runtime() -> Result<PathBuf, String> {
+    ensure_runtime_progress(&|_| {})
+}
+
+/// Like `ensure_runtime`, but reports download progress through `on_progress`.
+/// Progress covers the compressed archive download only. The callback gets a
+/// fraction 0.0..1.0, or a negative value when the total size is unknown.
+pub fn ensure_runtime_progress(on_progress: &dyn Fn(f64)) -> Result<PathBuf, String> {
     let dest = runtime_path().map_err(|e| format!("data dir: {e}"))?;
     if dest.exists() {
         match verify_sha256(&dest, ORT_SO_SHA256) {
@@ -84,7 +91,7 @@ pub fn ensure_runtime() -> Result<PathBuf, String> {
     if !resp.status().is_success() {
         return Err(format!("download status {}", resp.status()));
     }
-    let bytes = resp.bytes().map_err(|e| format!("read body: {e}"))?;
+    let bytes = crate::styleface::models::read_with_progress(resp, on_progress)?;
 
     // Extract the one library file from the gzip tar archive without a heavy
     // tar dependency: pipe the bytes through the system tar. The runner and
