@@ -1,6 +1,6 @@
 //! Stylised face clustering with HDBSCAN.
 //!
-//! A stylised face embedding is an L2-normalised 384-value vector. HDBSCAN
+//! A stylised face embedding is an L2-normalised 768-value CCIP vector. HDBSCAN
 //! groups the embeddings. HDBSCAN makes many small groups and marks unclear
 //! faces as noise. The design rule is: make many small groups. Two clicks merge
 //! two groups. Two characters in one group is worse.
@@ -21,8 +21,10 @@ pub const DEFAULT_EPSILON: f32 = 0.0;
 const MIN_CLUSTER_SIZE: usize = 2;
 
 /// The cosine-distance limit for an unnamed face to join a named character. A
-/// smaller value is stricter. This runs before HDBSCAN.
-const CHARACTER_JOIN_MAX_DIST: f32 = 0.35;
+/// smaller value is stricter. This runs before HDBSCAN. Tuned for CCIP
+/// features. The CCIP same-character reference threshold is about 0.18 in its
+/// learned metric. This value may need adjustment after real tests.
+const CHARACTER_JOIN_MAX_DIST: f32 = 0.20;
 
 /// The base offset for a character-anchored cluster id. A named character owns a
 /// stable cluster id equal to this base plus the character id.

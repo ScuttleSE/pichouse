@@ -1,7 +1,7 @@
 //! Stylised face storage: `characters`, `style_faces`, and `style_face_scan`.
 //!
 //! This mirrors `faces.rs` for the anime/cartoon/furry face system. A style face
-//! is one detected face box with a 384-value DINOv2 embedding. A character is a
+//! is one detected face box with a 768-value CCIP embedding. A character is a
 //! named group. HDBSCAN groups similar faces before the user names them. Noise
 //! faces have `cluster_id` -1. See `src/db/schema.sql` for the schema.
 

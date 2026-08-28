@@ -162,8 +162,8 @@ are constants in that file.
                          download), detector (YuNet), embedder (SFace), cluster
     src/styleface/       stylised face recognition for anime/cartoon/furry art
                          (shares src/face/runtime): config, models (catalog+
-                         download), detector (anime YOLOv8n), embedder (DINOv2
-                         ViT-S/14), cluster (HDBSCAN crate)
+                         download), detector (anime YOLOv8n), embedder (CCIP
+                         CaFormer), cluster (HDBSCAN crate)
     src/immich/          Immich server integration (blocking HTTP client)
     src/ui/              GTK4 UI (app, state, grid, sidebar, viewer, editor,
                          export, properties, toolbar, status, settings,

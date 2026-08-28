@@ -4,10 +4,10 @@
 //! time the user picks them. Each entry pins a URL to a specific commit of the
 //! source repository and a SHA-256 of the file. The download verifies the hash.
 //!
-//! The default pair is an anime YOLOv8-nano detector (deepghs, MIT) and DINOv2
-//! ViT-S/14 (onnx-community export, Apache 2.0). The detector also finds cartoon
-//! and furry faces. DINOv2 needs no training data and separates characters in
-//! stylised art well.
+//! The default pair is an anime YOLOv8-nano detector (deepghs, MIT) and CCIP
+//! CaFormer (deepghs, OpenRAIL-M). The detector also finds cartoon and furry
+//! faces. CCIP is trained for anime character re-identification, so it separates
+//! different characters in the same art style. It gives a 768-value feature.
 
 #![allow(dead_code)]
 
@@ -46,7 +46,7 @@ pub struct ModelEntry {
 /// The default detector id.
 pub const DEFAULT_DETECTOR_ID: &str = "anime_yolov8n_v1_4";
 /// The default embedding id.
-pub const DEFAULT_EMBEDDING_ID: &str = "dinov2_small";
+pub const DEFAULT_EMBEDDING_ID: &str = "ccip_caformer_24";
 
 /// The catalog of downloadable models.
 pub fn catalog() -> Vec<ModelEntry> {
@@ -73,23 +73,13 @@ pub fn catalog() -> Vec<ModelEntry> {
         },
         ModelEntry {
             id: DEFAULT_EMBEDDING_ID,
-            label: "DINOv2 ViT-S/14 (default, 384-D, fp32, 88 MB)",
+            label: "CCIP CaFormer-24 (default, 768-D, fp32, 150 MB)",
             kind: ModelKind::Embedding,
-            file_name: "styleface_embed_dinov2_small_fp32.onnx",
-            url: "https://huggingface.co/onnx-community/dinov2-small/resolve/8b1f705a3a7f6f062f6bdd21986c1583d3ef105d/onnx/model.onnx",
-            sha256: "f22797eabf810a75e41de68d378541ebea372122b25c4ce3ef25ff618250c20a",
-            embedding_dim: 384,
-            license: "Apache 2.0",
-        },
-        ModelEntry {
-            id: "dinov2_small_fp16",
-            label: "DINOv2 ViT-S/14 (smaller, 384-D, fp16, 44 MB)",
-            kind: ModelKind::Embedding,
-            file_name: "styleface_embed_dinov2_small_fp16.onnx",
-            url: "https://huggingface.co/onnx-community/dinov2-small/resolve/8b1f705a3a7f6f062f6bdd21986c1583d3ef105d/onnx/model_fp16.onnx",
-            sha256: "16845e153bbaf3fd1ef8a2154c454940f901f6fe8a80dd4c6c319eaecdb4d2ee",
-            embedding_dim: 384,
-            license: "Apache 2.0",
+            file_name: "styleface_embed_ccip_caformer24_fp32.onnx",
+            url: "https://huggingface.co/deepghs/ccip_onnx/resolve/eb2acdd29af1703388d3d0c04221add322bc9110/ccip-caformer-24-randaug-pruned/model_feat.onnx",
+            sha256: "4ea118d16496274f4f6e08d3afc768cc592389e8f7f32f8732ce2215c228ac5f",
+            embedding_dim: 768,
+            license: "OpenRAIL-M",
         },
     ]
 }

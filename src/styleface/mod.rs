@@ -3,8 +3,8 @@
 //! This system finds faces in anime art, cartoon art, and furry art. It groups
 //! the faces by character. The design mirrors the human face system in
 //! `src/face/`, but it uses different models. A YOLOv8-nano detector with anime
-//! training finds the boxes. DINOv2 ViT-S/14 makes a 384-value embedding per
-//! face. HDBSCAN groups the embeddings.
+//! training finds the boxes. CCIP CaFormer makes a 768-value embedding per face.
+//! HDBSCAN groups the embeddings.
 //!
 //! The two systems run separate clustering passes. The human system and the
 //! stylised system do not mix. A named group is a "character" here, not a

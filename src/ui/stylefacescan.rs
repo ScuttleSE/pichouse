@@ -392,6 +392,16 @@ pub fn download_models(state: &Rc<AppState>, detector_id: String, embedding_id: 
             .map(|e| e.embedding_dim)
             .unwrap_or(0);
 
+        // A change of the embedding model changes the embedding dimension and
+        // makes old vectors incompatible. Clear all stylised face data so the
+        // next scan recomputes them.
+        let old_embedding_id = lib
+            .get_setting(super::prefs::KEY_STYLEFACE_EMBEDDING_ID, "")
+            .unwrap_or_default();
+        if old_embedding_id != embedding_id {
+            let _ = lib.delete_all_style_face_data();
+        }
+
         let _ = lib.set_setting(super::prefs::KEY_STYLEFACE_DETECTOR_ID, &detector_id);
         let _ = lib.set_setting(super::prefs::KEY_STYLEFACE_EMBEDDING_ID, &embedding_id);
         let _ = lib.set_setting(

@@ -1,10 +1,11 @@
-//! DINOv2 ViT-S/14 stylised face embedder.
+//! CCIP CaFormer stylised face embedder.
 //!
-//! DINOv2 turns a 224x224 crop into a 384-value embedding. The model separates
-//! characters in stylised art without training data. This module enlarges the
-//! detector box by 25 percent on each side, crops a square, resizes to 224x224,
-//! normalises with the ImageNet mean and standard deviation, and runs the model.
-//! It takes the CLS token (index 0) as the embedding, then L2-normalises it.
+//! CCIP turns a 384x384 crop into a 768-value embedding. The model is trained
+//! for anime character re-identification, so two crops of one character match
+//! and two characters differ, even in the same art style. This module enlarges
+//! the detector box by 10 percent on each side, crops a square, resizes to
+//! 384x384, normalises with the CCIP mean and standard deviation, and runs the
+//! model. It takes the output vector, then L2-normalises it.
 
 #![allow(dead_code)]
 
@@ -13,21 +14,21 @@ use std::sync::Mutex;
 use ort::session::Session;
 use ort::value::Tensor;
 
-/// The crop side DINOv2 expects.
-const CROP: usize = 224;
+/// The crop side CCIP expects.
+const CROP: usize = 384;
 
-/// The embedding length DINOv2 ViT-S/14 produces.
-const EMBED_DIM: i32 = 384;
+/// The embedding length CCIP CaFormer produces.
+const EMBED_DIM: i32 = 768;
 
-/// ImageNet channel means (RGB), 0..1.
-const MEAN: [f32; 3] = [0.485, 0.456, 0.406];
-/// ImageNet channel standard deviations (RGB).
-const STD: [f32; 3] = [0.229, 0.224, 0.225];
+/// CCIP channel means (RGB), 0..1.
+const MEAN: [f32; 3] = [0.48145466, 0.4578275, 0.40821073];
+/// CCIP channel standard deviations (RGB).
+const STD: [f32; 3] = [0.26862954, 0.26130258, 0.27577711];
 
-/// The box enlargement on each side. 0.25 makes the box 25 percent larger.
-const MARGIN: f32 = 0.25;
+/// The box enlargement on each side. 0.10 makes the box 10 percent larger.
+const MARGIN: f32 = 0.10;
 
-/// A loaded DINOv2 embedder session.
+/// A loaded CCIP embedder session.
 pub struct Embedder {
     session: Mutex<Session>,
     input_name: String,
@@ -56,7 +57,7 @@ impl Embedder {
     ///
     /// `rgb` is the full oriented image. `bbox` is (x, y, w, h) in per-mille of
     /// the oriented image. The embedder enlarges the box, crops a square, resizes
-    /// to 224x224, and runs the model.
+    /// to 384x384, and runs the model.
     pub fn embed(
         &self,
         rgb: &[u8],
@@ -104,7 +105,7 @@ impl Embedder {
         let input = Tensor::from_array(([1usize, 3, CROP, CROP], chw.into_boxed_slice()))
             .map_err(|e| format!("input tensor: {e}"))?;
 
-        // Run. Output is last_hidden_state [1, tokens, 384]. Take token 0 (CLS).
+        // Run. Output is the feature vector [1, 768]. Take all of it.
         let mut emb = {
             let mut sess = self.session.lock().map_err(|_| "session lock")?;
             let outputs = sess
@@ -118,11 +119,10 @@ impl Embedder {
             let (shape, data) = val
                 .try_extract_tensor::<f32>()
                 .map_err(|e| format!("extract embedding: {e}"))?;
-            // Shape [1, tokens, dim]. CLS token is index 0 along the token axis,
-            // so the first `dim` values are the CLS embedding.
+            // Shape [1, dim]. Take the last dimension as the feature length.
             let dim = *shape.last().ok_or("empty output shape")? as usize;
             if data.len() < dim {
-                return Err("output smaller than one token".into());
+                return Err("output smaller than one feature vector".into());
             }
             data[..dim].to_vec()
         };

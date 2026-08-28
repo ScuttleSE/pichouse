@@ -318,7 +318,7 @@ CREATE TABLE IF NOT EXISTS characters (
 --   character_id  : the assigned character, or NULL when unassigned.
 --   cluster_id    : the automatic cluster, or NULL before clustering. -1 means
 --                   HDBSCAN noise (an unclear or unmatched face).
---   embedding     : embedding_dim little-endian f32 values (384 for DINOv2).
+--   embedding     : embedding_dim little-endian f32 values (768 for CCIP).
 --   embedding_dim : the vector length, so a model change is detectable.
 --   det_score     : detector confidence, 0..1 scaled to 0..1000.
 --   confirmed     : 1 when the user approved the character assignment.
