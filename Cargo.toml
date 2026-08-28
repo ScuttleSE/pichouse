@@ -1,6 +1,6 @@
 [package]
 name = "pichouse"
-version = "0.0.83"
+version = "0.0.84"
 edition = "2021"
 description = "A Picasa-like photo library GUI application for Linux."
 license = "MIT"
