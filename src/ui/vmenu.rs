@@ -201,8 +201,25 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
         dismiss(&pop);
         let popover = PopoverMenu::from_model_full(&menu, gtk4::PopoverMenuFlags::NESTED);
         popover.set_has_arrow(false);
-        popover.set_parent(grid.grid_view());
-        let rect = gdk::Rectangle::new(x as i32, y as i32, 1, 1);
+        // Parent the popover to the grid's root box, not the scrolling GridView.
+        // A popover parented to the scrolled content can be clipped to the
+        // visible height, which forces the menu to scroll. The root box gives it
+        // the full height, so a short menu never needs scrolling. Translate the
+        // click point from GridView space into the root box's space.
+        let anchor = grid.grid_view();
+        let root = grid.widget();
+        let (rx, ry) = anchor
+            .translate_coordinates(root, x, y)
+            .unwrap_or((x, y));
+        popover.set_parent(root);
+        // Open the menu upward when the click is in the lower half, so a tall
+        // menu opens toward the free space and does not need scrolling.
+        if (ry as i32) > root.height() / 2 {
+            popover.set_position(gtk4::PositionType::Top);
+        } else {
+            popover.set_position(gtk4::PositionType::Bottom);
+        }
+        let rect = gdk::Rectangle::new(rx as i32, ry as i32, 1, 1);
         popover.set_pointing_to(Some(&rect));
         popover.popup();
         *pop.borrow_mut() = Some(popover);
