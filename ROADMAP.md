@@ -475,8 +475,8 @@ The first version is in place. Open it from the toolbar "Tools" menu →
   `photos.phash`. Existing photos are backfilled on the first scan.
 - Groups auto-select the "worse" copy for deletion. "Better" means, in order:
   larger pixel area, more lossless format, larger file size, older added date.
-- Results show in the grid. Each group has a coloured outline (alternating), and
-  the auto-selected "worse" copy shows a red X. Click any photo in a group to
+- Results show one group per row. A framed box surrounds each group's photos.
+  The auto-selected "worse" copy shows a red X. Click any photo in a group to
   move the X to it. Click the X to unmark the group. A "Delete marked" button in
   the results bar runs a single confirm, then hard deletes the marked files (and
   their rows, cascading to tags/edits/faces/album membership).

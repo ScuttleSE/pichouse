@@ -257,13 +257,10 @@ fn install_css() {
             font-weight: bold; \
             padding: 2px 8px; \
         } \
-        .dup-group-a { \
-            outline: 3px solid rgba(60, 130, 220, 0.9); \
-            outline-offset: -3px; \
-        } \
-        .dup-group-b { \
-            outline: 3px solid rgba(220, 160, 40, 0.9); \
-            outline-offset: -3px; \
+        .dup-group-frame { \
+            border: 2px solid rgba(60, 130, 220, 0.9); \
+            border-radius: 6px; \
+            background-color: rgba(60, 130, 220, 0.06); \
         } \
         ",
     );

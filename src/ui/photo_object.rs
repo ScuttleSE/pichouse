@@ -33,14 +33,6 @@ mod imp {
         /// bound `Image` observes this property.
         #[property(get, set, nullable)]
         pub texture: RefCell<Option<gdk::Texture>>,
-        /// Duplicate-finder group id. `0` means the cell is not part of a
-        /// duplicate view. Cells in the same group share the same value.
-        #[property(get, set)]
-        pub dup_group: RefCell<i64>,
-        /// `true` when this cell is the marked "delete" copy of its duplicate
-        /// group. The bound cell shows a red X overlay.
-        #[property(get, set)]
-        pub dup_mark: RefCell<bool>,
     }
 
     #[glib::object_subclass]
