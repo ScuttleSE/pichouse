@@ -13,8 +13,8 @@ use gtk4::gio;
 use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{
-    Align, GridView, Image, Label, ListItem, MultiSelection, Overlay, PolicyType, ScrolledWindow,
-    SignalListItemFactory,
+    Align, Button, GridView, Image, Label, ListItem, MultiSelection, Overlay, PolicyType,
+    ScrolledWindow, SignalListItemFactory,
 };
 
 use crate::db::Library;
@@ -73,6 +73,8 @@ pub fn immich_path(server_id: i64, asset_id: &str) -> String {
 pub struct Grid {
     root: gtk4::Box,
     header: Label,
+    back_btn: Button,
+    back_handler: RefCell<Option<gtk4::glib::SignalHandlerId>>,
     store: gio::ListStore,
     grid_view: GridView,
     selection: MultiSelection,
@@ -118,6 +120,8 @@ enum Source {
     VirtualAlbum(i64, String),
     /// A person from facial recognition (id, display name).
     Person(i64, String),
+    /// An unnamed face cluster (id, display name).
+    Cluster(i64, String),
     /// An Immich album (server id, album uuid, display name). Not re-queryable
     /// from the local database; a reload refetches over HTTP through the caller.
     #[allow(dead_code)] // Fields document the album payload.
@@ -135,9 +139,20 @@ impl Grid {
     ) -> Rc<Grid> {
         let header = Label::new(None);
         header.set_xalign(0.0);
-        header.set_margin_start(8);
+        header.set_hexpand(true);
         header.set_margin_top(6);
         header.set_margin_bottom(6);
+
+        // A back button, shown only for the person/cluster views. It sits left
+        // of the title. Its action is set per view with `set_back`.
+        let back_btn = Button::from_icon_name("go-previous-symbolic");
+        back_btn.add_css_class("flat");
+        back_btn.set_visible(false);
+        back_btn.set_margin_start(6);
+
+        let header_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
+        header_box.append(&back_btn);
+        header_box.append(&header);
 
         let store = gio::ListStore::new::<PhotoObject>();
         let selection = MultiSelection::new(Some(store.clone()));
@@ -263,7 +278,7 @@ impl Grid {
             .build();
 
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-        root.append(&header);
+        root.append(&header_box);
         root.append(&scroller);
 
         // Apply finished thumbnails on the UI thread by setting the texture on
@@ -298,6 +313,8 @@ impl Grid {
         Grid {
             root,
             header,
+            back_btn,
+            back_handler: RefCell::new(None),
             store,
             grid_view,
             selection,
@@ -415,6 +432,31 @@ impl Grid {
         &self.root
     }
 
+    /// Show the back button and set its action. Used by the person and cluster
+    /// views to return to the Faces view.
+    pub fn set_back<F: Fn() + 'static>(&self, cb: F) {
+        // Drop any previous handler by disconnecting via a fresh closure. GTK
+        // keeps one handler here; connecting again adds another, so we guard by
+        // clearing first through a stored handler id.
+        self.back_btn.set_visible(true);
+        // Remove old handlers by re-creating the click connection. Simplest is
+        // to disconnect all by setting a new signal; GTK4 lacks a direct clear,
+        // so we track a single handler id.
+        if let Some(id) = self.back_handler.borrow_mut().take() {
+            self.back_btn.disconnect(id);
+        }
+        let id = self.back_btn.connect_clicked(move |_| cb());
+        *self.back_handler.borrow_mut() = Some(id);
+    }
+
+    /// Hide the back button (non-person views).
+    pub fn hide_back(&self) {
+        self.back_btn.set_visible(false);
+        if let Some(id) = self.back_handler.borrow_mut().take() {
+            self.back_btn.disconnect(id);
+        }
+    }
+
     /// The active thumbnail size in pixels.
     #[allow(dead_code)] // Kept API accessor.
     pub fn thumb_size(&self) -> i32 {
@@ -483,6 +525,14 @@ impl Grid {
         self.set_photos(name, photos);
     }
 
+    /// Show every photo in an unnamed face cluster, remembering the cluster as
+    /// the source so the grid can re-query after a new scan.
+    pub fn show_cluster(&self, cluster_id: i64, name: &str) {
+        *self.source.borrow_mut() = Source::Cluster(cluster_id, name.to_string());
+        let photos = self.lib.photos_in_cluster(cluster_id).unwrap_or_default();
+        self.set_photos(name, photos);
+    }
+
     /// Show an Immich album's assets. The caller passes the already-fetched    /// photos (each with an `immich://<server_id>/<asset_id>` path). The grid
     /// downloads each thumbnail over HTTP through the Immich worker pool.
     pub fn show_immich_album(&self, server_id: i64, album_id: &str, name: &str, photos: Vec<Photo>) {
@@ -540,6 +590,10 @@ impl Grid {
                 let photos = self.lib.photos_of_person(id).unwrap_or_default();
                 self.set_photos_preserving(&name, photos);
             }
+            Source::Cluster(id, name) => {
+                let photos = self.lib.photos_in_cluster(id).unwrap_or_default();
+                self.set_photos_preserving(&name, photos);
+            }
             Source::None => {}
             // Immich albums refetch over HTTP. The grid keeps the last-shown
             // photos; the caller re-drives the fetch when it needs fresh data.
@@ -589,6 +643,9 @@ impl Grid {
 
     /// Store a photo set and rebuild the view.
     fn set_photos(&self, title: &str, photos: Vec<Photo>) {
+        // Default to no back button. The person and cluster views re-enable it
+        // right after, via `set_back`.
+        self.hide_back();
         *self.all_photos.borrow_mut() = photos;
         *self.title.borrow_mut() = title.to_string();
         self.rebuild();

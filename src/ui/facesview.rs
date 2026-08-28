@@ -18,9 +18,6 @@ use gtk4::{
 use super::state::AppState;
 use super::util::texture_from_bytes;
 
-/// The face-crop tile side in pixels.
-const TILE: i32 = 96;
-
 /// The Faces view widget and its rebuild logic.
 pub struct FacesView {
     root: GtkBox,
@@ -105,6 +102,10 @@ impl FacesView {
             self.flow.remove(&child);
         }
 
+        // Match the general thumbnail slider size, clamped to a sane range for
+        // face crops.
+        let tile = state.prefs.borrow().active_size().clamp(72, 320);
+
         let people = state.lib.persons().unwrap_or_default();
         let clusters = state.lib.unnamed_clusters().unwrap_or_default();
 
@@ -122,7 +123,7 @@ impl FacesView {
                 .lib
                 .person_representative_face(person.id)
                 .unwrap_or(0);
-            let tile = self.build_tile(
+            let t = self.build_tile(
                 &state,
                 face_id,
                 &person.name,
@@ -130,8 +131,9 @@ impl FacesView {
                 true,
                 person.id,
                 0,
+                tile,
             );
-            self.flow.append(&tile);
+            self.flow.append(&t);
         }
 
         // Unnamed clusters, largest first.
@@ -142,7 +144,7 @@ impl FacesView {
                 .ok()
                 .and_then(|v| v.first().map(|f| f.id))
                 .unwrap_or(0);
-            let tile = self.build_tile(
+            let t = self.build_tile(
                 &state,
                 face_id,
                 "Unnamed",
@@ -150,12 +152,16 @@ impl FacesView {
                 false,
                 0,
                 cluster_id,
+                tile,
             );
-            self.flow.append(&tile);
+            self.flow.append(&t);
         }
     }
 
-    /// Build one group tile: face crop, label, and a click action.
+    /// Build one group tile: a clickable face crop over a clickable label.
+    ///
+    /// Image click opens the group's photos. Label click, for an unnamed group,
+    /// opens the name dialog. For a named group the label also opens the photos.
     #[allow(clippy::too_many_arguments)]
     fn build_tile(
         self: &Rc<Self>,
@@ -166,13 +172,14 @@ impl FacesView {
         named: bool,
         person_id: i64,
         cluster_id: i64,
+        tile_px: i32,
     ) -> GtkBox {
         let tile = GtkBox::new(Orientation::Vertical, 4);
-        tile.set_width_request(TILE + 12);
+        tile.set_width_request(tile_px + 12);
 
         let image = Image::new();
-        image.set_pixel_size(TILE);
-        image.set_size_request(TILE, TILE);
+        image.set_pixel_size(tile_px);
+        image.set_size_request(tile_px, tile_px);
         if face_id != 0 {
             if let Some(jpeg) = state.face_crop_jpeg(face_id) {
                 if let Some(tex) = texture_from_bytes(&jpeg) {
@@ -184,27 +191,45 @@ impl FacesView {
             image.set_icon_name(Some("avatar-default-symbolic"));
         }
 
-        let label = Label::new(Some(&format!("{name} ({count})")));
-        label.set_wrap(true);
-        label.set_max_width_chars(14);
-        label.set_justify(gtk4::Justification::Center);
-        if !named {
-            label.add_css_class("dim-label");
+        // The image opens the group's photos.
+        let img_btn = Button::new();
+        img_btn.set_child(Some(&image));
+        img_btn.add_css_class("flat");
+        {
+            let state = state.clone();
+            let name = name.to_string();
+            img_btn.connect_clicked(move |_| {
+                if named {
+                    state.show_person(person_id, &name);
+                } else {
+                    state.show_cluster(cluster_id, "Unnamed person");
+                }
+            });
         }
 
-        // A button wraps the image so the whole tile is clickable.
-        let btn = Button::new();
-        btn.set_child(Some(&image));
-        btn.add_css_class("flat");
+        // The label. For an unnamed group it opens the name dialog; for a named
+        // group it opens the photos.
+        let label_text = format!("{name} ({count})");
+        let lbl_btn = Button::with_label(&label_text);
+        lbl_btn.add_css_class("flat");
+        if let Some(child) = lbl_btn.child() {
+            if let Ok(l) = child.downcast::<Label>() {
+                l.set_wrap(true);
+                l.set_max_width_chars(16);
+                l.set_justify(gtk4::Justification::Center);
+                if !named {
+                    l.add_css_class("dim-label");
+                }
+            }
+        }
         {
             let state = state.clone();
             let this = self.clone();
             let name = name.to_string();
-            btn.connect_clicked(move |_| {
+            lbl_btn.connect_clicked(move |_| {
                 if named {
                     state.show_person(person_id, &name);
                 } else {
-                    // Name or merge this cluster, then refresh.
                     let this2 = this.clone();
                     let state2 = state.clone();
                     super::people::name_cluster_dialog(&state, cluster_id, move || {
@@ -217,8 +242,8 @@ impl FacesView {
             });
         }
 
-        tile.append(&btn);
-        tile.append(&label);
+        tile.append(&img_btn);
+        tile.append(&lbl_btn);
         tile
     }
 }

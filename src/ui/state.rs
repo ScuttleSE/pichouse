@@ -143,7 +143,9 @@ impl AppState {
             std::path::Path::new(&photo.path),
             photo.orientation,
             (face.bbox_x, face.bbox_y, face.bbox_w, face.bbox_h),
-            160,
+            // Render at a generous size so tiles stay crisp up to the largest
+            // thumbnail-slider size. The Image widget scales down as needed.
+            320,
         )
         .ok()?;
         let _ = ft.put(face_id, &jpeg);
@@ -260,9 +262,26 @@ impl AppState {
         *self.current_folder.borrow_mut() = 0;
         self.grid().show_person(person_id, name);
         let count = self.lib.person_face_count(person_id).unwrap_or(0);
+        {
+            let this = self.clone();
+            self.grid().set_back(move || this.show_faces());
+        }
         self.show_grid();
         self.status()
             .set_message(&format!("{name} — {count} faces"));
+    }
+
+    /// Show every photo in an unnamed face cluster, with a back button to the
+    /// Faces view.
+    pub fn show_cluster(self: &Rc<Self>, cluster_id: i64, name: &str) {
+        *self.current_folder.borrow_mut() = 0;
+        self.grid().show_cluster(cluster_id, name);
+        {
+            let this = self.clone();
+            self.grid().set_back(move || this.show_faces());
+        }
+        self.show_grid();
+        self.status().set_message(name);
     }
 
     /// Clear the grid if the folder it is showing no longer exists (e.g. after

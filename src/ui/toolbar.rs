@@ -122,6 +122,8 @@ pub fn build_toolbar(state: &Rc<AppState>) -> GtkBox {
                 state.grid().clear_texture_cache();
             }
             state.grid().set_thumb_size(new_size);
+            // The Faces view tiles track the slider too; rebuild if it is up.
+            state.refresh_faces_if_active();
         });
     }
 

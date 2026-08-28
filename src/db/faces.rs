@@ -343,6 +343,23 @@ impl Library {
         Ok(v)
     }
 
+    /// All photos that contain a face in the given cluster, newest first.
+    pub fn photos_in_cluster(&self, cluster_id: i64) -> Result<Vec<Photo>> {
+        let conn = self.lock();
+        let sql = format!(
+            "SELECT {PHOTO_COLS} FROM photos WHERE id IN \
+                (SELECT DISTINCT photo_id FROM faces WHERE cluster_id = ?1) \
+             ORDER BY taken_at DESC, filename"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![cluster_id], map_photo)?;
+        let mut v = Vec::new();
+        for row in rows {
+            v.push(row?);
+        }
+        Ok(v)
+    }
+
     // --- Face scan state ---
 
     /// Photo ids that still need a face-detection pass, capped by `limit`.
