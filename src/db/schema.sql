@@ -62,7 +62,10 @@ CREATE TABLE IF NOT EXISTS albums (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
     name      TEXT NOT NULL,
     parent_id INTEGER REFERENCES albums(id) ON DELETE CASCADE,
-    position  INTEGER NOT NULL DEFAULT 0
+    position  INTEGER NOT NULL DEFAULT 0,
+    -- Face-recognition kind: 0 = inherit (root default Photo), 1 = Photo,
+    -- 2 = Art. Controls which face method scans this album's photos.
+    kind      INTEGER NOT NULL DEFAULT 0
 );
 
 -- Membership of a scanned folder in an album. A folder in no album is shown at

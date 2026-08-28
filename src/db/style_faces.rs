@@ -401,6 +401,73 @@ impl Library {
         Ok(v)
     }
 
+    /// Photo ids in the given folders that still need a stylised-face pass.
+    /// Scoped variant of `photos_needing_style_face_scan`. Empty set -> empty.
+    pub fn photos_needing_style_face_scan_in(
+        &self,
+        folder_ids: &[i64],
+        limit: i64,
+    ) -> Result<Vec<i64>> {
+        if folder_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let conn = self.lock();
+        let placeholders = folder_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT p.id FROM photos p \
+             LEFT JOIN style_face_scan fs ON fs.photo_id = p.id \
+             WHERE p.missing = 0 AND p.scan_state = 2 \
+               AND (fs.state IS NULL OR fs.state <> 2) \
+               AND p.folder_id IN ({placeholders}) \
+             ORDER BY p.added_at DESC LIMIT ?"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let mut ps: Vec<&dyn rusqlite::ToSql> = folder_ids
+            .iter()
+            .map(|f| f as &dyn rusqlite::ToSql)
+            .collect();
+        ps.push(&limit);
+        let rows = stmt.query_map(ps.as_slice(), |r| r.get::<_, i64>(0))?;
+        let mut v = Vec::new();
+        for row in rows {
+            v.push(row?);
+        }
+        Ok(v)
+    }
+
+    /// Clear stylised-face-scan state and faces for photos in the given folders,
+    /// so a rescan re-processes them. Empty folder set does nothing.
+    pub fn clear_style_face_scan_in(&self, folder_ids: &[i64]) -> Result<()> {
+        if folder_ids.is_empty() {
+            return Ok(());
+        }
+        let conn = self.lock();
+        let placeholders = folder_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let ps: Vec<&dyn rusqlite::ToSql> = folder_ids
+            .iter()
+            .map(|f| f as &dyn rusqlite::ToSql)
+            .collect();
+        conn.execute(
+            &format!(
+                "DELETE FROM style_faces WHERE photo_id IN \
+                 (SELECT id FROM photos WHERE folder_id IN ({placeholders}))"
+            ),
+            ps.as_slice(),
+        )?;
+        conn.execute(
+            &format!(
+                "DELETE FROM style_face_scan WHERE photo_id IN \
+                 (SELECT id FROM photos WHERE folder_id IN ({placeholders}))"
+            ),
+            ps.as_slice(),
+        )?;
+        conn.execute(
+            &format!("UPDATE photos SET style_face_status = 0 WHERE folder_id IN ({placeholders})"),
+            ps.as_slice(),
+        )?;
+        Ok(())
+    }
+
     /// Set the stylised-face-scan state of a photo. Mirrors into
     /// `photos.style_face_status`.
     pub fn set_style_face_scan_state(&self, photo_id: i64, state: i64) -> Result<()> {

@@ -286,6 +286,40 @@ pub struct Album {
     /// `0` means top-level.
     pub parent_id: i64,
     pub position: i32,
+    /// The face-recognition kind for this album and (by inheritance) its
+    /// sub-albums and folders. See `AlbumKind`.
+    pub kind: AlbumKind,
+}
+
+/// The face-recognition kind of an album. The integer values are stable and are
+/// stored directly in the database.
+///
+/// `Inherit` takes the parent album's effective kind. A top-level album with
+/// `Inherit` resolves to `Photo`. `Photo` routes to the human face system.
+/// `Art` routes to the stylised (anime/cartoon/furry) face system.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AlbumKind {
+    /// Take the parent album's kind. The root default is `Photo`.
+    #[default]
+    Inherit = 0,
+    /// Real photographs. Route to the human face system.
+    Photo = 1,
+    /// Anime, cartoon, or furry art. Route to the stylised face system.
+    Art = 2,
+}
+
+impl AlbumKind {
+    pub fn from_i64(v: i64) -> Self {
+        match v {
+            1 => AlbumKind::Photo,
+            2 => AlbumKind::Art,
+            _ => AlbumKind::Inherit,
+        }
+    }
+
+    pub fn as_i64(self) -> i64 {
+        self as i64
+    }
 }
 
 /// A virtual album: an organisation of individual *photos* (not folders) drawn

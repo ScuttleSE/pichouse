@@ -436,13 +436,14 @@ impl Sidebar {
                 "folder-symbolic",
             )
         } else if let Some(aid) = album_id_of(id) {
-            (
-                data.albums
-                    .get(&aid)
-                    .map(|a| a.name.clone())
-                    .unwrap_or_default(),
-                "folder-new-symbolic",
-            )
+            let album = data.albums.get(&aid);
+            let name = album.map(|a| a.name.clone()).unwrap_or_default();
+            let suffix = match album.map(|a| a.kind) {
+                Some(crate::model::AlbumKind::Photo) => " (Photo)",
+                Some(crate::model::AlbumKind::Art) => " (Art)",
+                _ => "",
+            };
+            (format!("{name}{suffix}"), "folder-new-symbolic")
         } else if let Some(fid) = folder_id_of(id) {
             let name = data
                 .folders
@@ -899,6 +900,28 @@ impl Sidebar {
         );
     }
 
+    /// Set an album's Face type (0 inherit, 1 Photo, 2 Art) and refresh the row.
+    fn set_album_kind(self: &Rc<Self>, id: i64, kind: i64) {
+        if id == 0 {
+            return;
+        }
+        let Some(state) = self.state() else { return };
+        if let Err(e) = state.lib.set_album_kind(id, kind) {
+            show_error(&state, &e.to_string());
+            return;
+        }
+        self.reload_deferred();
+    }
+
+    /// Scan (or rescan) faces for an album, routed by its Face type.
+    fn scan_album_faces(self: &Rc<Self>, id: i64, rescan: bool) {
+        if id == 0 {
+            return;
+        }
+        let Some(state) = self.state() else { return };
+        super::albumscan::scan_album_faces(&state, id, rescan);
+    }
+
     fn move_folders_to_album(self: &Rc<Self>, fids: &[i64], target: i64) {
         if fids.is_empty() {
             return;
@@ -1260,6 +1283,46 @@ impl Sidebar {
                     let fids = this.selected_folder_ids();
                     this.move_folders_to_album(&fids, target);
                 }),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "album-kind-inherit",
+                &group,
+                Rc::new(move |t| this.set_album_kind(album_id_of(t).unwrap_or(0), crate::model::AlbumKind::Inherit.as_i64())),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "album-kind-photo",
+                &group,
+                Rc::new(move |t| this.set_album_kind(album_id_of(t).unwrap_or(0), crate::model::AlbumKind::Photo.as_i64())),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "album-kind-art",
+                &group,
+                Rc::new(move |t| this.set_album_kind(album_id_of(t).unwrap_or(0), crate::model::AlbumKind::Art.as_i64())),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "scan-album-faces",
+                &group,
+                Rc::new(move |t| this.scan_album_faces(album_id_of(t).unwrap_or(0), false)),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "rescan-album-faces",
+                &group,
+                Rc::new(move |t| this.scan_album_faces(album_id_of(t).unwrap_or(0), true)),
             );
         }
         {
@@ -1675,6 +1738,33 @@ impl Sidebar {
                 menu.append(
                     Some("Move selected here"),
                     Some(&detailed("move-to-album", id)),
+                );
+            }
+            // Face type submenu. The title shows the album's own explicit kind
+            // (Inherit/Photo/Art). The three items set the kind.
+            if let Some(aid) = album_id_of(id) {
+                let own = data
+                    .albums
+                    .get(&aid)
+                    .map(|a| a.kind)
+                    .unwrap_or(crate::model::AlbumKind::Inherit);
+                let title = match own {
+                    crate::model::AlbumKind::Photo => "Face type: Photo",
+                    crate::model::AlbumKind::Art => "Face type: Art",
+                    crate::model::AlbumKind::Inherit => "Face type: Inherit",
+                };
+                let sub = gio::Menu::new();
+                sub.append(Some("Inherit from parent"), Some(&detailed("album-kind-inherit", id)));
+                sub.append(Some("Photo"), Some(&detailed("album-kind-photo", id)));
+                sub.append(Some("Art"), Some(&detailed("album-kind-art", id)));
+                menu.append_submenu(Some(title), &sub);
+                menu.append(
+                    Some("Scan faces in album"),
+                    Some(&detailed("scan-album-faces", id)),
+                );
+                menu.append(
+                    Some("Rescan faces in album"),
+                    Some(&detailed("rescan-album-faces", id)),
                 );
             }
             // Offer upload only when a server exists and the album has photos.

@@ -2,6 +2,7 @@
 
 mod actions;
 mod aitag;
+mod albumscan;
 mod albumtree;
 mod app;
 mod characters;

@@ -41,8 +41,9 @@ pub fn scan_faces(state: &Rc<AppState>) {
     scan_faces_impl(state, false);
 }
 
-/// Start a scan without message boxes when there is nothing to do. Used by the
-/// opt-in auto-scan after a library reconcile.
+/// Start a scan without message boxes when there is nothing to do. Kept for the
+/// opt-in auto-scan path and external callers.
+#[allow(dead_code)]
 pub fn scan_faces_quiet(state: &Rc<AppState>) {
     scan_faces_impl(state, true);
 }
@@ -93,6 +94,13 @@ fn scan_faces_impl(state: &Rc<AppState>, quiet: bool) {
         return;
     }
 
+    run_scan(state, ids, cfg);
+}
+
+/// Scan an explicit list of photo ids with the human face pipeline. Used by the
+/// whole-library scan and the album-scoped scan. The caller ensures the config
+/// is enabled and ready, and that no scan is running.
+pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::face::FaceConfig) {
     let cancel = state.face_job.begin();
     let status = state.status();
     status.set_scanning(true);

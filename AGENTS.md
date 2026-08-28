@@ -154,7 +154,8 @@ are constants in that file.
                          export, properties, toolbar, status, settings,
                          settings_ai, settings_immich, settings_faces,
                          settings_characters, aitag, facescan, stylefacescan,
-                         people, characters, facesview, charactersview, immich,
+                         albumscan, people, characters, facesview,
+                         charactersview, immich,
                          tagmanager, shortcuts, dialogs, actions, controller,
                          prefs, photo_object, util, enrich, freshness, watcher,
                          newfiles, vrules, vmenu)

@@ -80,7 +80,7 @@ impl Library {
     pub fn albums(&self) -> Result<Vec<Album>> {
         let conn = self.lock();
         let mut stmt = conn.prepare(
-            "SELECT id, name, COALESCE(parent_id, 0), position
+            "SELECT id, name, COALESCE(parent_id, 0), position, kind
              FROM albums ORDER BY position ASC, name ASC",
         )?;
         let rows = stmt.query_map([], |r| {
@@ -89,9 +89,104 @@ impl Library {
                 name: r.get(1)?,
                 parent_id: r.get(2)?,
                 position: r.get(3)?,
+                kind: crate::model::AlbumKind::from_i64(r.get::<_, i64>(4)?),
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Set an album's face-recognition kind (0 inherit, 1 Photo, 2 Art).
+    pub fn set_album_kind(&self, id: i64, kind: i64) -> Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "UPDATE albums SET kind = ?1 WHERE id = ?2",
+            params![kind, id],
+        )?;
+        Ok(())
+    }
+
+    /// The effective face-recognition kind of an album: 1 = Photo, 2 = Art.
+    /// Walks up the parent chain. An explicit Photo/Art wins. If every ancestor
+    /// is Inherit (0), the default is Photo (1).
+    pub fn album_effective_kind(&self, album_id: i64) -> Result<i64> {
+        let conn = self.lock();
+        let mut cur = album_id;
+        while cur != 0 {
+            let row: Option<(i64, Option<i64>)> = conn
+                .query_row(
+                    "SELECT kind, parent_id FROM albums WHERE id = ?1",
+                    params![cur],
+                    |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Option<i64>>(1)?)),
+                )
+                .optional()?;
+            let Some((kind, parent)) = row else { break };
+            if kind == 1 || kind == 2 {
+                return Ok(kind);
+            }
+            cur = parent.unwrap_or(0);
+        }
+        Ok(1)
+    }
+
+    /// The album id a photo belongs to through its folder, or 0 when the photo's
+    /// folder is in no album.
+    pub fn album_of_photo(&self, photo_id: i64) -> Result<i64> {
+        let conn = self.lock();
+        let aid: Option<i64> = conn
+            .query_row(
+                "SELECT af.album_id FROM photos p \
+                 JOIN album_folders af ON af.folder_id = p.folder_id \
+                 WHERE p.id = ?1",
+                params![photo_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(aid.unwrap_or(0))
+    }
+
+    /// The effective face kind for one photo: 1 = Photo, 2 = Art. A photo whose
+    /// folder is in no album defaults to Photo.
+    pub fn photo_effective_face_kind(&self, photo_id: i64) -> Result<i64> {
+        let aid = self.album_of_photo(photo_id)?;
+        if aid == 0 {
+            return Ok(1);
+        }
+        self.album_effective_kind(aid)
+    }
+
+    /// All folder ids under an album and its sub-albums (the album subtree).
+    pub fn folders_under_album(&self, album_id: i64) -> Result<Vec<i64>> {
+        let conn = self.lock();
+        // Build parent -> children from the album list.
+        let mut children: std::collections::HashMap<i64, Vec<i64>> =
+            std::collections::HashMap::new();
+        {
+            let mut stmt = conn.prepare("SELECT id, COALESCE(parent_id, 0) FROM albums")?;
+            let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?;
+            for row in rows {
+                let (id, parent) = row?;
+                children.entry(parent).or_default().push(id);
+            }
+        }
+        // Collect the subtree album ids (breadth-first from album_id).
+        let mut subtree = Vec::new();
+        let mut stack = vec![album_id];
+        while let Some(a) = stack.pop() {
+            subtree.push(a);
+            if let Some(kids) = children.get(&a) {
+                stack.extend(kids.iter().copied());
+            }
+        }
+        // Gather folder ids for every album in the subtree.
+        let mut folders = Vec::new();
+        let mut stmt = conn.prepare("SELECT folder_id FROM album_folders WHERE album_id = ?1")?;
+        for a in subtree {
+            let rows = stmt.query_map(params![a], |r| r.get::<_, i64>(0))?;
+            for row in rows {
+                folders.push(row?);
+            }
+        }
+        Ok(folders)
     }
 
     /// Place a folder into an album, removing it from any other album first (a
@@ -212,6 +307,65 @@ mod tests {
         lib.rename_album(aid, "Renamed").unwrap();
         lib.delete_album(aid).unwrap();
         assert!(lib.albums().unwrap().is_empty());
+
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("db-wal"));
+        let _ = std::fs::remove_file(path.with_extension("db-shm"));
+    }
+
+    #[test]
+    fn album_kind_inherits_down_the_tree() {
+        let (lib, path) = temp_lib();
+        // root(Art) -> mid(Inherit) -> leaf(Inherit). Leaf resolves to Art.
+        let root = lib.create_album("root", 0).unwrap();
+        let mid = lib.create_album("mid", root).unwrap();
+        let leaf = lib.create_album("leaf", mid).unwrap();
+        // Default is Inherit -> root resolves to Photo (1).
+        assert_eq!(lib.album_effective_kind(leaf).unwrap(), 1);
+        lib.set_album_kind(root, 2).unwrap();
+        assert_eq!(lib.album_effective_kind(root).unwrap(), 2);
+        assert_eq!(lib.album_effective_kind(mid).unwrap(), 2);
+        assert_eq!(lib.album_effective_kind(leaf).unwrap(), 2);
+        // An explicit Photo on mid overrides the inherited Art for mid + leaf.
+        lib.set_album_kind(mid, 1).unwrap();
+        assert_eq!(lib.album_effective_kind(mid).unwrap(), 1);
+        assert_eq!(lib.album_effective_kind(leaf).unwrap(), 1);
+        // root is still Art.
+        assert_eq!(lib.album_effective_kind(root).unwrap(), 2);
+
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("db-wal"));
+        let _ = std::fs::remove_file(path.with_extension("db-shm"));
+    }
+
+    #[test]
+    fn folders_under_album_covers_subtree() {
+        let (lib, path) = temp_lib();
+        let rootdir = "/tmp/pichouse-albkind-root";
+        lib.add_library_folder(rootdir).unwrap();
+        let mk = |name: &str| -> i64 {
+            lib.upsert_folder(&Folder {
+                path: format!("{rootdir}/{name}"),
+                name: name.into(),
+                mtime: 0,
+                year: 2020,
+                ..Default::default()
+            })
+            .unwrap()
+        };
+        let f_root = mk("a");
+        let f_sub = mk("b");
+        let root = lib.create_album("root", 0).unwrap();
+        let sub = lib.create_album("sub", root).unwrap();
+        lib.add_folder_to_album(f_root, root).unwrap();
+        lib.add_folder_to_album(f_sub, sub).unwrap();
+        let mut got = lib.folders_under_album(root).unwrap();
+        got.sort();
+        let mut want = vec![f_root, f_sub];
+        want.sort();
+        assert_eq!(got, want);
+        // The sub album alone yields only its own folder.
+        assert_eq!(lib.folders_under_album(sub).unwrap(), vec![f_sub]);
 
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(path.with_extension("db-wal"));

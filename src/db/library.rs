@@ -105,6 +105,20 @@ fn migrate(conn: &Connection) -> Result<()> {
             "ALTER TABLE photos ADD COLUMN style_face_status INTEGER NOT NULL DEFAULT 0;",
         )?;
     }
+    // albums.kind: face-recognition kind (0 inherit, 1 Photo, 2 Art).
+    {
+        let mut ac: std::collections::HashSet<String> = std::collections::HashSet::new();
+        {
+            let mut stmt = conn.prepare("PRAGMA table_info(albums)")?;
+            let rows = stmt.query_map([], |r| r.get::<_, String>(1))?;
+            for name in rows {
+                ac.insert(name?);
+            }
+        }
+        if !ac.contains("kind") {
+            conn.execute_batch("ALTER TABLE albums ADD COLUMN kind INTEGER NOT NULL DEFAULT 0;")?;
+        }
+    }
     // library_folders.first_scan_done_at (freshness "new files" boundary).
     {
         let mut lf: std::collections::HashSet<String> = std::collections::HashSet::new();

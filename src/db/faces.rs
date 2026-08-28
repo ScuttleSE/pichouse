@@ -413,6 +413,70 @@ impl Library {
         Ok(v)
     }
 
+    /// Photo ids in the given folders that still need a face-detection pass.
+    /// The same rule as `photos_needing_face_scan`, scoped to a folder set. An
+    /// empty folder set returns an empty list.
+    pub fn photos_needing_face_scan_in(&self, folder_ids: &[i64], limit: i64) -> Result<Vec<i64>> {
+        if folder_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let conn = self.lock();
+        let placeholders = folder_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT p.id FROM photos p \
+             LEFT JOIN face_scan fs ON fs.photo_id = p.id \
+             WHERE p.missing = 0 AND p.scan_state = 2 \
+               AND (fs.state IS NULL OR fs.state <> 2) \
+               AND p.folder_id IN ({placeholders}) \
+             ORDER BY p.added_at DESC LIMIT ?"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let mut ps: Vec<&dyn rusqlite::ToSql> = folder_ids
+            .iter()
+            .map(|f| f as &dyn rusqlite::ToSql)
+            .collect();
+        ps.push(&limit);
+        let rows = stmt.query_map(ps.as_slice(), |r| r.get::<_, i64>(0))?;
+        let mut v = Vec::new();
+        for row in rows {
+            v.push(row?);
+        }
+        Ok(v)
+    }
+
+    /// Clear the face-scan state and detected faces for photos in the given
+    /// folders, so a rescan re-processes them. An empty folder set does nothing.
+    pub fn clear_face_scan_in(&self, folder_ids: &[i64]) -> Result<()> {
+        if folder_ids.is_empty() {
+            return Ok(());
+        }
+        let conn = self.lock();
+        let placeholders = folder_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let ps: Vec<&dyn rusqlite::ToSql> = folder_ids
+            .iter()
+            .map(|f| f as &dyn rusqlite::ToSql)
+            .collect();
+        conn.execute(
+            &format!(
+                "DELETE FROM faces WHERE photo_id IN \
+                 (SELECT id FROM photos WHERE folder_id IN ({placeholders}))"
+            ),
+            ps.as_slice(),
+        )?;
+        conn.execute(
+            &format!(
+                "DELETE FROM face_scan WHERE photo_id IN \
+                 (SELECT id FROM photos WHERE folder_id IN ({placeholders}))"
+            ),
+            ps.as_slice(),
+        )?;
+        conn.execute(
+            &format!("UPDATE photos SET face_status = 0 WHERE folder_id IN ({placeholders})"),
+            ps.as_slice(),
+        )?;
+        Ok(())
+    }
+
     /// Set the face-scan state of a photo (0 pending, 1 scanning, 2 done,
     /// 3 error). Also mirrors the value into `photos.face_status`.
     pub fn set_face_scan_state(&self, photo_id: i64, state: i64) -> Result<()> {

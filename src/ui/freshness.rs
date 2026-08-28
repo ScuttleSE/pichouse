@@ -48,26 +48,22 @@ pub fn reconcile_now(state: &Rc<AppState>) {
                     super::enrich::enqueue(&state, report.added.clone());
                     super::immich::autoupload_added(&state, &report.added);
                 }
-                // Auto-scan faces when the user opted in. The scan reads
-                // photos_needing_face_scan, which only lists enriched photos, so
+                // Auto-scan faces when the user opted in, routed by album kind.
+                // A photo goes to the human or the stylised method based on its
+                // album's Face type, so nothing is scanned twice. The scan reads
+                // photos_needing_*_face_scan, which only list enriched photos, so
                 // this picks up newly added photos once enrichment finishes.
                 {
-                    let fc = state.face_config.borrow();
-                    if fc.enabled && fc.autoscan && fc.models_ready() && !state.face_job.running() {
-                        drop(fc);
-                        super::facescan::scan_faces_quiet(&state);
-                    }
-                }
-                // Auto-scan stylised faces when the user opted in.
-                {
-                    let sc = state.style_face_config.borrow();
-                    if sc.enabled
-                        && sc.autoscan
-                        && sc.models_ready()
-                        && !state.style_face_job.running()
-                    {
-                        drop(sc);
-                        super::stylefacescan::scan_style_faces_quiet(&state);
+                    let want_face = {
+                        let fc = state.face_config.borrow();
+                        fc.enabled && fc.autoscan
+                    };
+                    let want_style = {
+                        let sc = state.style_face_config.borrow();
+                        sc.enabled && sc.autoscan
+                    };
+                    if want_face || want_style {
+                        super::albumscan::autoscan_routed(&state, want_face, want_style);
                     }
                 }
                 let mut parts = Vec::new();
