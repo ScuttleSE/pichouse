@@ -35,6 +35,7 @@ impl StatusBar {
             stop.connect_clicked(move |_| {
                 state.scan.stop();
                 state.ai_job.stop();
+                state.dedup_job.stop();
             });
         }
 

@@ -105,6 +105,14 @@ fn migrate(conn: &Connection) -> Result<()> {
             "ALTER TABLE photos ADD COLUMN style_face_status INTEGER NOT NULL DEFAULT 0;",
         )?;
     }
+    // photos.phash: 64-bit perceptual hash (dHash) for the duplicate finder,
+    // stored as a signed INTEGER bit-cast from u64. 0 means not yet computed.
+    // Existing rows are backfilled lazily on the first duplicate scan.
+    if !have.contains("phash") {
+        conn.execute_batch(
+            "ALTER TABLE photos ADD COLUMN phash INTEGER NOT NULL DEFAULT 0;",
+        )?;
+    }
     // albums.kind: face-recognition kind (0 inherit, 1 Photo, 2 Art).
     {
         let mut ac: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -458,12 +466,13 @@ impl Library {
         width: i32,
         height: i32,
         hash: &str,
+        phash: u64,
     ) -> Result<()> {
         let conn = self.lock();
         conn.execute(
-            "UPDATE photos SET taken_at = ?1, width = ?2, height = ?3, hash = ?4, scan_state = 2
-             WHERE id = ?5",
-            params![taken_at, width, height, hash, id],
+            "UPDATE photos SET taken_at = ?1, width = ?2, height = ?3, hash = ?4, phash = ?5, scan_state = 2
+             WHERE id = ?6",
+            params![taken_at, width, height, hash, phash as i64, id],
         )?;
         Ok(())
     }
@@ -607,7 +616,7 @@ impl Library {
     pub fn photos_in_folder(&self, folder_id: i64) -> Result<Vec<Photo>> {
         let conn = self.lock();
         let mut stmt = conn.prepare(
-            "SELECT id, folder_id, path, filename, size, mod_time, taken_at, width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing, added_at
+            "SELECT id, folder_id, path, filename, size, mod_time, taken_at, width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing, added_at, phash
              FROM photos WHERE folder_id = ?1 ORDER BY taken_at ASC, filename ASC",
         )?;
         let rows = stmt.query_map(params![folder_id], map_photo)?;
@@ -619,7 +628,7 @@ impl Library {
         let conn = self.lock();
         let p = conn
             .query_row(
-                "SELECT id, folder_id, path, filename, size, mod_time, taken_at, width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing, added_at
+                "SELECT id, folder_id, path, filename, size, mod_time, taken_at, width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing, added_at, phash
                  FROM photos WHERE id = ?1",
                 params![id],
                 map_photo,
@@ -762,6 +771,7 @@ pub(super) fn map_photo(r: &rusqlite::Row) -> rusqlite::Result<Photo> {
         scan_state: crate::model::PhotoScanState::from_i64(r.get::<_, i64>(13)?),
         missing: r.get::<_, i64>(14)? != 0,
         added_at: r.get(15)?,
+        phash: r.get::<_, i64>(16)? as u64,
     })
 }
 

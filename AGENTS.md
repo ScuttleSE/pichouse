@@ -133,10 +133,13 @@ are constants in that file.
                           (characters, stylised faces, style-face-scan state,
                           HDBSCAN clustering helpers), style_face_thumbs.rs
                           (stylised face-crop cache), edits.rs
-                          (non-destructive per-photo edits) and presets.rs
-                          (levels presets)
+                          (non-destructive per-photo edits), presets.rs
+                          (levels presets) and duplicates.rs (duplicate-finder
+                          queries: in-scope photos, phash backfill, hard delete)
     src/scan.rs          filesystem scanner (Phase 1 structure walk + Phase 2
-                         per-file enrich helper)
+                         per-file enrich helper; also computes the dHash)
+    src/phash.rs         perceptual hash (64-bit dHash) for the duplicate finder
+    src/dedup.rs         duplicate finder engine (exact + near grouping, ranking)
     src/reconcile.rs     library freshness: diff disk against the DB per folder
     src/thumb.rs         thumbnail generation + cache (applies edits at render)
     src/edit.rs          non-destructive edit pipeline (flip, straighten, crop,
@@ -158,7 +161,7 @@ are constants in that file.
                          charactersview, immich,
                          tagmanager, shortcuts, dialogs, actions, controller,
                          prefs, photo_object, util, enrich, freshness, watcher,
-                         newfiles, vrules, vmenu)
+                         newfiles, vrules, vmenu, dedup_scan)
     .gitea/workflows/    CI (build/test/release on push to main)
 
 ## Architecture patterns

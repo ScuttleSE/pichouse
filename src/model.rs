@@ -43,6 +43,9 @@ pub struct Photo {
     pub height: i32,
     /// Content hash, used as the thumbnail cache key.
     pub hash: String,
+    /// 64-bit perceptual hash (dHash) of the oriented image. `0` when not yet
+    /// computed. Used by the duplicate finder for near-duplicate matching.
+    pub phash: u64,
     pub thumb_ready: bool,
     /// User-applied rotation in degrees clockwise (0, 90, 180, 270). Stored
     /// only in the database, never written to disk.

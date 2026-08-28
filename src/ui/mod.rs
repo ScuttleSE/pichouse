@@ -8,6 +8,7 @@ mod app;
 mod characters;
 mod charactersview;
 mod controller;
+mod dedup_scan;
 mod dialogs;
 mod editor;
 mod enrich;

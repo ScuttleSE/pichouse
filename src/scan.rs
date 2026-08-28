@@ -246,6 +246,9 @@ pub struct Enrichment {
     pub width: i32,
     pub height: i32,
     pub hash: String,
+    /// 64-bit perceptual hash (dHash) of the decoded image, `0` when the file
+    /// could not be decoded. Used by the duplicate finder.
+    pub phash: u64,
 }
 
 /// Compute the Phase 2 enrichment for a file: EXIF `taken_at`, dimensions, and
@@ -264,6 +267,7 @@ pub fn enrich_file(path: &Path) -> Option<Enrichment> {
         width,
         height,
         hash,
+        phash: 0,
     })
 }
 
@@ -295,12 +299,29 @@ pub fn enrich_file_with_image(path: &Path) -> Option<(Enrichment, Option<image::
         None => (0, 0),
     };
 
+    // Perceptual hash from the decoded pixels (dropping alpha). `0` when the
+    // image did not decode.
+    let phash = match &decoded {
+        Some(img) => {
+            let (w, h) = (img.width(), img.height());
+            let mut rgb = Vec::with_capacity((w as usize) * (h as usize) * 3);
+            for px in img.pixels() {
+                rgb.push(px[0]);
+                rgb.push(px[1]);
+                rgb.push(px[2]);
+            }
+            crate::phash::dhash_rgb(&rgb, w, h)
+        }
+        None => 0,
+    };
+
     Some((
         Enrichment {
             taken_at,
             width,
             height,
             hash,
+            phash,
         },
         decoded,
     ))
@@ -567,7 +588,7 @@ mod tests {
         let need = lib.photos_needing_enrichment(None).unwrap();
         assert_eq!(need, vec![photos[0].id]);
         let enr = enrich_file(std::path::Path::new(&photos[0].path)).unwrap();
-        lib.enrich_photo(photos[0].id, enr.taken_at, enr.width, enr.height, &enr.hash)
+        lib.enrich_photo(photos[0].id, enr.taken_at, enr.width, enr.height, &enr.hash, enr.phash)
             .unwrap();
         let photos = lib.photos_in_folder(folders[0].id).unwrap();
         assert_eq!((photos[0].width, photos[0].height), (1, 1));

@@ -70,6 +70,26 @@ pub fn build_toolbar(state: &Rc<AppState>) -> GtkBox {
     }
     ai_btn.insert_action_group("ai", Some(&group));
 
+    // Tools menu button (duplicate finder, and future tools).
+    let tools_btn = Button::from_icon_name("applications-utilities-symbolic");
+    tools_btn.set_tooltip_text(Some("Tools"));
+    let tools_menu = gio::Menu::new();
+    tools_menu.append(Some("Find Duplicates…"), Some("tools.duplicates"));
+    let tools_pop = gtk4::PopoverMenu::from_model(Some(&tools_menu));
+    tools_pop.set_parent(&tools_btn);
+    {
+        let tools_pop = tools_pop.clone();
+        tools_btn.connect_clicked(move |_| tools_pop.popup());
+    }
+    let tools_group = gio::SimpleActionGroup::new();
+    {
+        let state = state.clone();
+        let act = gio::SimpleAction::new("duplicates", None);
+        act.connect_activate(move |_, _| super::actions::find_duplicates(&state));
+        tools_group.add_action(&act);
+    }
+    tools_btn.insert_action_group("tools", Some(&tools_group));
+
     let search = SearchEntry::new();
     search.set_hexpand(true);
     {
@@ -145,6 +165,7 @@ pub fn build_toolbar(state: &Rc<AppState>) -> GtkBox {
     box_.append(&rescan);
     box_.append(&refresh);
     box_.append(&ai_btn);
+    box_.append(&tools_btn);
     box_.append(&search);
     box_.append(&zoom);
     box_.append(&slider);

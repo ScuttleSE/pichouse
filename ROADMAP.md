@@ -461,6 +461,33 @@ show a `(Photo)`/`(Art)` badge when the kind is set explicitly. See
 Find duplicate (and near-duplicate) images within the library and help the user
 clean them up by auto-selecting the "worse" copy for potential deletion.
 
+### Status: implemented (v1)
+
+The first version is in place. Open it from the toolbar "Tools" menu →
+"Find Duplicates…".
+
+- Scope: the current folder, selected albums (recursive, with sub-albums), or
+  the entire library.
+- Similarity: a slider sets the maximum Hamming distance (0..16) on a 64-bit
+  dHash. `0` finds exact and visually identical copies. Byte-identical files
+  always match by their stored SHA-256 hash.
+- The dHash is computed during Phase 2 enrichment and stored in
+  `photos.phash`. Existing photos are backfilled on the first scan.
+- Groups auto-select the "worse" copy for deletion. "Better" means, in order:
+  larger pixel area, more lossless format, larger file size, older added date.
+- Results show in the grid (best copy first per group). A confirm dialog lists
+  the count and the reclaimed size before a hard delete (file + row, cascading
+  to tags/edits/faces/album membership).
+
+### Deferred / not yet done
+
+- RAW+JPEG pairing: the app does not scan RAW files yet, so this concern does
+  not apply. Add RAW support first.
+- A richer per-group review UI (side-by-side, per-photo keep/delete toggles).
+  The v1 review is the confirm dialog plus the grouped grid.
+
+### Original design notes
+
 ### Scope (where to search)
 - Run the finder at different scope levels:
   - the **current album** only;

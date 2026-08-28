@@ -84,6 +84,19 @@ model. Nothing leaves your machine and no models are downloaded automatically.
 All tags are stored in `library.db`. AI and user tags share one table and are
 distinguished by a source flag.
 
+## Duplicate image finder
+
+Open the toolbar **Tools** menu and pick **Find Duplicates…**. Choose a scope
+(current folder, selected albums, or the whole library) and a similarity level.
+
+- Byte-identical files match by their stored SHA-256 hash.
+- Visually similar files (resized, re-compressed, minor edits) match by a
+  64-bit perceptual hash (dHash). The slider sets the maximum Hamming distance.
+- Each group auto-selects the "worse" copy for deletion and keeps the best one
+  (larger pixel area, then more lossless format, then larger file, then older).
+- Results show in the grid. A confirm dialog reports the count and the reclaimed
+  space before a permanent delete (the file and its database row).
+
 ## Facial recognition (local, optional)
 
 pichouse can detect faces, group the same person across your library, and let

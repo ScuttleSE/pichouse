@@ -81,6 +81,7 @@ fn build_ui(app: &Application) {
         enrich_job: Controller::default(),
         reconcile_job: Controller::default(),
         immich_upload: Controller::default(),
+        dedup_job: Controller::default(),
         scan_queue: std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new())),
         enrich_queue: std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new())),
         enrich_pause_until: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),

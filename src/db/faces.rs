@@ -12,7 +12,7 @@ use super::{library::map_photo, library::now, Library, Result};
 
 /// The `photos` columns in `map_photo` order, for person photo queries.
 const PHOTO_COLS: &str = "id, folder_id, path, filename, size, mod_time, taken_at, \
-     width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing, added_at";
+     width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing, added_at, phash";
 
 /// The `faces` columns in a fixed order, shared by the reader below.
 const FACE_COLS: &str = "id, photo_id, person_id, cluster_id, \

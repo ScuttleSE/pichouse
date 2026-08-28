@@ -279,7 +279,7 @@ fn enrich_one(lib: &Library, gen: &Generator, id: i64) -> i64 {
     match scan::enrich_file_with_image(std::path::Path::new(&p.path)) {
         Some((enr, decoded)) => {
             let read_ms = t.elapsed();
-            let _ = lib.enrich_photo(id, enr.taken_at, enr.width, enr.height, &enr.hash);
+            let _ = lib.enrich_photo(id, enr.taken_at, enr.width, enr.height, &enr.hash, enr.phash);
             // Generate (and cache) the thumbnail from the pixels we already have.
             let t_thumb = std::time::Instant::now();
             match decoded {

@@ -29,6 +29,10 @@ CREATE TABLE IF NOT EXISTS photos (
     width       INTEGER NOT NULL DEFAULT 0,
     height      INTEGER NOT NULL DEFAULT 0,
     hash        TEXT NOT NULL DEFAULT '',
+    -- 64-bit perceptual hash (dHash) of the oriented image, stored as a signed
+    -- INTEGER (bit-cast from u64). 0 means not yet computed. Used by the
+    -- duplicate finder for near-duplicate matching.
+    phash       INTEGER NOT NULL DEFAULT 0,
     thumb_ready INTEGER NOT NULL DEFAULT 0,
     orientation INTEGER NOT NULL DEFAULT 0,
     ai_status   INTEGER NOT NULL DEFAULT 0,
@@ -49,6 +53,8 @@ CREATE INDEX IF NOT EXISTS idx_photos_folder ON photos(folder_id);
 CREATE INDEX IF NOT EXISTS idx_photos_scan_state ON photos(scan_state);
 -- Fast selection of recently added photos for the New Files view.
 CREATE INDEX IF NOT EXISTS idx_photos_added_at ON photos(added_at);
+-- Fast bucketing of byte-identical photos for the duplicate finder.
+CREATE INDEX IF NOT EXISTS idx_photos_hash ON photos(hash);
 
 CREATE TABLE IF NOT EXISTS scan_state (
     folder_id    INTEGER PRIMARY KEY REFERENCES folders(id) ON DELETE CASCADE,

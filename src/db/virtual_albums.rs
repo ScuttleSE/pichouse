@@ -14,7 +14,7 @@ use super::{Library, Result};
 
 /// The 16-column photo projection, in schema order, matching `map_photo`.
 const PHOTO_COLS: &str = "id, folder_id, path, filename, size, mod_time, taken_at, \
-     width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing, added_at";
+     width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing, added_at, phash";
 
 impl Library {
     /// Insert a new virtual album. `parent_id` of 0 creates a top-level album.

@@ -237,3 +237,139 @@ fn start_scan_worker(state: &Rc<AppState>) {
         let _ = tx.send(Msg::Finished);
     });
 }
+
+/// Show the duplicate-finder scope and similarity dialog, then start the scan.
+pub fn find_duplicates(state: &Rc<AppState>) {
+    use gtk4::prelude::*;
+    use gtk4::{
+        Box as GtkBox, Button, CheckButton, Label, Orientation, PositionType, Scale,
+        ScrolledWindow, Window,
+    };
+
+    let albums = state.lib.albums().unwrap_or_default();
+    let current_folder = *state.current_folder.borrow();
+
+    let root = GtkBox::new(Orientation::Vertical, 10);
+    root.set_margin_top(12);
+    root.set_margin_bottom(12);
+    root.set_margin_start(12);
+    root.set_margin_end(12);
+
+    // Similarity slider: 0 = exact only, up to 16 = loose visual match. The
+    // value maps directly to the maximum Hamming distance on the 64-bit dHash.
+    root.append(&{
+        let l = Label::new(Some("Similarity (left = exact, right = looser matches):"));
+        l.set_xalign(0.0);
+        l
+    });
+    let sim = Scale::with_range(Orientation::Horizontal, 0.0, 16.0, 1.0);
+    sim.set_draw_value(true);
+    sim.set_digits(0);
+    sim.set_value(6.0);
+    sim.set_size_request(280, -1);
+    for i in (0..=16).step_by(4) {
+        sim.add_mark(i as f64, PositionType::Bottom, None);
+    }
+    root.append(&sim);
+
+    // Scope radios.
+    root.append(&{
+        let l = Label::new(Some("Search scope:"));
+        l.set_xalign(0.0);
+        l
+    });
+    let r_library = CheckButton::with_label("Entire library");
+    r_library.set_active(true);
+    let r_folder = CheckButton::with_label("Current folder");
+    r_folder.set_group(Some(&r_library));
+    r_folder.set_sensitive(current_folder != 0);
+    let r_albums = CheckButton::with_label("Selected albums");
+    r_albums.set_group(Some(&r_library));
+    root.append(&r_library);
+    root.append(&r_folder);
+    root.append(&r_albums);
+
+    // Album checkboxes (only relevant when "Selected albums" is chosen).
+    let album_box = GtkBox::new(Orientation::Vertical, 2);
+    album_box.set_margin_start(20);
+    let mut album_checks: Vec<(i64, CheckButton)> = Vec::new();
+    for a in &albums {
+        let cb = CheckButton::with_label(&a.name);
+        album_box.append(&cb);
+        album_checks.push((a.id, cb));
+    }
+    let album_scroll = ScrolledWindow::new();
+    album_scroll.set_min_content_height(120);
+    album_scroll.set_child(Some(&album_box));
+    album_scroll.set_sensitive(false);
+    root.append(&album_scroll);
+    {
+        let album_scroll = album_scroll.clone();
+        r_albums.connect_toggled(move |b| album_scroll.set_sensitive(b.is_active()));
+    }
+
+    let find = Button::with_label("Find Duplicates");
+    find.add_css_class("suggested-action");
+    let cancel = Button::with_label("Cancel");
+    let buttons = GtkBox::new(Orientation::Horizontal, 6);
+    buttons.set_halign(gtk4::Align::End);
+    buttons.append(&cancel);
+    buttons.append(&find);
+    root.append(&buttons);
+
+    let window = Window::builder()
+        .title("Find Duplicates")
+        .modal(true)
+        .default_width(360)
+        .child(&root)
+        .build();
+    if let Some(w) = state.window() {
+        window.set_transient_for(Some(&w));
+    }
+
+    {
+        let window = window.clone();
+        cancel.connect_clicked(move |_| window.close());
+    }
+    {
+        let state = state.clone();
+        let window = window.clone();
+        find.connect_clicked(move |_| {
+            let threshold = (sim.value() + 0.5) as u32;
+            let (folder_ids, label): (Vec<i64>, String) = if r_folder.is_active() {
+                (vec![current_folder], "current folder".to_string())
+            } else if r_albums.is_active() {
+                let mut ids = Vec::new();
+                for (aid, cb) in &album_checks {
+                    if cb.is_active() {
+                        ids.extend(state.lib.folders_under_album(*aid).unwrap_or_default());
+                    }
+                }
+                ids.sort_unstable();
+                ids.dedup();
+                (ids, "selected albums".to_string())
+            } else {
+                let ids = state
+                    .lib
+                    .folders()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|f| f.id)
+                    .collect();
+                (ids, "the library".to_string())
+            };
+            window.close();
+            if folder_ids.is_empty() {
+                show_message(&state, "Find Duplicates", "No folders in the chosen scope.");
+                return;
+            }
+            super::dedup_scan::find_duplicates(
+                &state,
+                super::dedup_scan::Scope::Folders(folder_ids, label),
+                threshold,
+            );
+        });
+    }
+
+    window.set_visible(true);
+}
