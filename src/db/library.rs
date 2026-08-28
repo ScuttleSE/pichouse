@@ -409,6 +409,96 @@ impl Library {
         Ok(id)
     }
 
+    /// Apply a whole reconcile plan in one short transaction. The disk walk
+    /// runs with no DB lock and builds the plan in memory. This method takes
+    /// the lock once, so a long library walk never starves the UI on the
+    /// single connection mutex. Returns the new photo ids that need Phase 2
+    /// enrichment (fresh inserts plus moved rows).
+    pub fn apply_reconcile_plan(
+        &self,
+        plan: &crate::reconcile::ReconcilePlan,
+    ) -> Result<Vec<i64>> {
+        let ts = now();
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        let mut added: Vec<i64> = Vec::new();
+        {
+            // 1. Upsert folders for directories that hold images. Build a
+            //    path -> id map so photo inserts can resolve their folder id.
+            let mut folder_ids: std::collections::HashMap<String, i64> =
+                std::collections::HashMap::new();
+            for f in &plan.folder_upserts {
+                tx.execute(
+                    "INSERT INTO folders(path, name, mtime, year) VALUES(?1, ?2, ?3, ?4)
+                     ON CONFLICT(path) DO UPDATE SET name=excluded.name, mtime=excluded.mtime, year=excluded.year",
+                    params![f.path, f.name, f.mtime, f.year],
+                )?;
+                let id: i64 = tx.query_row(
+                    "SELECT id FROM folders WHERE path = ?1",
+                    params![f.path],
+                    |r| r.get(0),
+                )?;
+                folder_ids.insert(f.path.clone(), id);
+            }
+
+            // 2. Reappeared: a missing row's file is back at the same path.
+            for id in &plan.reappeared {
+                tx.execute(
+                    "UPDATE photos SET missing = 0 WHERE id = ?1",
+                    params![id],
+                )?;
+            }
+
+            // 3. Moves: re-point a missing row at a new path (keeps tags/edits).
+            for m in &plan.moves {
+                let Some(fid) = folder_ids.get(&m.new_dir) else {
+                    continue; // folder upsert failed; skip
+                };
+                tx.execute(
+                    "UPDATE photos SET folder_id = ?1, path = ?2, filename = ?3, missing = 0 WHERE id = ?4",
+                    params![fid, m.new_path, m.new_name, m.id],
+                )?;
+                added.push(m.id); // re-hash to confirm identity
+            }
+
+            // 4. New photos: insert a Phase-1 structure row, collect its id.
+            {
+                let mut ins = tx.prepare(
+                    "INSERT INTO photos(folder_id, path, filename, size, mod_time, scan_state, missing, added_at)
+                     VALUES(?1, ?2, ?3, ?4, ?5, 0, 0, ?6)
+                     ON CONFLICT(path) DO UPDATE SET
+                       folder_id=excluded.folder_id, filename=excluded.filename,
+                       size=excluded.size, mod_time=excluded.mod_time, missing=0",
+                )?;
+                let mut sel = tx.prepare("SELECT id FROM photos WHERE path = ?1")?;
+                for p in &plan.photo_inserts {
+                    let Some(fid) = folder_ids.get(&p.dir) else {
+                        continue; // folder upsert failed; skip
+                    };
+                    ins.execute(params![fid, p.path, p.filename, p.size, p.mod_time, ts])?;
+                    let id: i64 = sel.query_row(params![p.path], |r| r.get(0))?;
+                    added.push(id);
+                }
+            }
+
+            // 5. Missing: soft-mark rows whose file is gone from disk.
+            for id in &plan.mark_missing {
+                tx.execute(
+                    "UPDATE photos SET missing = 1 WHERE id = ?1",
+                    params![id],
+                )?;
+            }
+
+            // 6. Delete folder rows that hold no images and have no image
+            //    subfolders (cascades their now-missing photos).
+            for id in &plan.folder_deletes {
+                tx.execute("DELETE FROM folders WHERE id = ?1", params![id])?;
+            }
+        }
+        tx.commit()?;
+        Ok(added)
+    }
+
     /// Record a whole directory's photos in one transaction (Phase 1). Far
     /// cheaper than `upsert_photo_structure` per file: it takes the DB lock once
     /// for the batch instead of twice per photo, which speeds up the scan and,
