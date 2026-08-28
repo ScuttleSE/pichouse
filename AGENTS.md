@@ -104,15 +104,13 @@ GTK4 (>= 4.10) must be present at runtime; Debian 13 ships GTK 4.18.
 
 The face feature uses `ort` with the `load-dynamic` feature. It loads
 `libonnxruntime.so` at run time. The library is not built into the binary. The
-library is not committed to the repo. Fetch the pinned version once before the
-first build or run:
+library is not committed. The build and CI do not need it.
 
-    ./scripts/fetch-onnxruntime.sh
-
-The script downloads ONNX Runtime 1.22.0 from the official Microsoft release
-into `vendor/onnxruntime/`, with a verified SHA-256. The build script bakes that
-path in. A release ships `libonnxruntime.so.*` beside the binary. The build does
-not need the library. The run needs it.
+Face detection is off by default. The first time the user turns it on, pichouse
+downloads ONNX Runtime 1.22.0 from the official Microsoft release into the data
+folder (`~/.local/share/pichouse/runtime/`), with a verified SHA-256. It then
+loads the library from there. See `src/face/runtime.rs`. The URL and the hash
+are constants in that file.
 
 ## Build / run / test
 
