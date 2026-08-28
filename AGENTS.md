@@ -70,6 +70,18 @@ The version format is major.minor.build. The series starts at 0.0.0.
 
 ---
 
+## RULE FOUR — CLEAN THE DEBUG BUILD CACHE
+
+The debug build cache fills the disk fast on this machine.
+
+- The `target/debug/incremental` directory grows to many gigabytes. It is a
+  disposable cache. Cargo rebuilds it on the next build.
+- Delete it after each test cycle. Run `rm -rf target/debug/incremental`.
+- Do not delete `target/release`. CI builds with `--release`.
+- Check free space with `df -h /` if a build fails with a disk error.
+
+---
+
 ## Project
 
 **pichouse** — a Picasa-like photo library GUI application for Linux, written in Rust.
