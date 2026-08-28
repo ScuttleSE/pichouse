@@ -107,8 +107,7 @@ impl Library {
     }
 
     /// All faces detected in one photo.
-    pub fn faces_for_photo(&self, photo_id: i64) -> Result<Vec<Face>> {
-        let conn = self.lock();
+    pub fn faces_for_photo(&self, photo_id: i64) -> Result<Vec<Face>> {        let conn = self.lock();
         let sql = format!("SELECT {FACE_COLS} FROM faces WHERE photo_id = ?1 ORDER BY id");
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(params![photo_id], map_face)?;
@@ -117,6 +116,18 @@ impl Library {
             v.push(row?);
         }
         Ok(v)
+    }
+
+    /// One face by id, or `None`.
+    pub fn face_by_id(&self, face_id: i64) -> Result<Option<Face>> {
+        let conn = self.lock();
+        let sql = format!("SELECT {FACE_COLS} FROM faces WHERE id = ?1");
+        let mut stmt = conn.prepare(&sql)?;
+        let mut rows = stmt.query_map(params![face_id], map_face)?;
+        match rows.next() {
+            Some(r) => Ok(Some(r?)),
+            None => Ok(None),
+        }
     }
 
     /// All faces that carry an embedding, for clustering. Returns (id, cluster,

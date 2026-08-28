@@ -73,6 +73,7 @@ fn build_ui(app: &Application) {
         ai_job: Controller::default(),
         face_job: Controller::default(),
         face_config: RefCell::new(face_config),
+        face_thumbs: RefCell::new(None),
         enrich_job: Controller::default(),
         reconcile_job: Controller::default(),
         immich_upload: Controller::default(),

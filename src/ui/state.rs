@@ -47,6 +47,8 @@ pub struct AppState {
     pub face_job: Controller,
     /// The loaded face recognition configuration.
     pub face_config: RefCell<crate::face::FaceConfig>,
+    /// The face-crop thumbnail cache, opened on first use.
+    pub face_thumbs: RefCell<Option<Arc<crate::db::FaceThumbs>>>,
     /// The Phase 2 enrichment worker session (see `super::enrich`).
     pub enrich_job: Controller,
     /// The library-freshness reconciliation session (see `super::freshness`).
@@ -103,6 +105,45 @@ impl AppState {
     /// A clone of the shared AI manager handle for background workers.
     pub fn ai_manager_arc(&self) -> Arc<Mutex<ai::Manager>> {
         self.ai_manager.clone()
+    }
+
+    /// The face-crop cache, opened on first use.
+    pub fn face_thumbs(&self) -> Option<Arc<crate::db::FaceThumbs>> {
+        if let Some(ft) = self.face_thumbs.borrow().as_ref() {
+            return Some(ft.clone());
+        }
+        match crate::db::FaceThumbs::open() {
+            Ok(ft) => {
+                let ft = Arc::new(ft);
+                *self.face_thumbs.borrow_mut() = Some(ft.clone());
+                Some(ft)
+            }
+            Err(e) => {
+                log::warn!("open face thumbs: {e}");
+                None
+            }
+        }
+    }
+
+    /// The cached (or freshly rendered) JPEG crop for a face. It renders on a
+    /// cache miss and stores the result. Returns `None` on any error.
+    pub fn face_crop_jpeg(&self, face_id: i64) -> Option<Vec<u8>> {
+        let ft = self.face_thumbs()?;
+        if let Ok(Some(jpeg)) = ft.get(face_id) {
+            return Some(jpeg);
+        }
+        // Load the face and its photo, then render the crop.
+        let face = self.lib.face_by_id(face_id).ok().flatten()?;
+        let photo = self.lib.photo_by_id(face.photo_id).ok().flatten()?;
+        let jpeg = crate::thumb::render_face_crop(
+            std::path::Path::new(&photo.path),
+            photo.orientation,
+            (face.bbox_x, face.bbox_y, face.bbox_w, face.bbox_h),
+            160,
+        )
+        .ok()?;
+        let _ = ft.put(face_id, &jpeg);
+        Some(jpeg)
     }
 
     /// Pause background Phase 2 enrichment for `secs` seconds from now, so the

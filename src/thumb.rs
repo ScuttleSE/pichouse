@@ -304,6 +304,49 @@ fn encode(src: &RgbaImage, max_side: i32) -> Result<Vec<u8>> {
     Ok(buf)
 }
 
+/// Render a square face-crop JPEG from a source photo.
+///
+/// The box is in per-mille (0..1000) of the image after `rotation`. A margin
+/// widens the box so the crop shows the whole head, not only the detected face
+/// rectangle. The result is a square JPEG whose side is at most `size`.
+pub fn render_face_crop(
+    src_path: &Path,
+    rotation: i32,
+    bbox_permille: (i32, i32, i32, i32),
+    size: i32,
+) -> Result<Vec<u8>> {
+    let src = decode(src_path)?;
+    let src = rotate(src, rotation);
+    let (iw, ih) = (src.width() as f32, src.height() as f32);
+
+    let (px, py, pw, ph) = bbox_permille;
+    // Convert per-mille to pixels.
+    let mut x = px as f32 / 1000.0 * iw;
+    let mut y = py as f32 / 1000.0 * ih;
+    let mut w = pw as f32 / 1000.0 * iw;
+    let mut h = ph as f32 / 1000.0 * ih;
+
+    // Add a 30% margin and make the crop square around the box center.
+    let cx = x + w / 2.0;
+    let cy = y + h / 2.0;
+    let side = w.max(h) * 1.3;
+    x = cx - side / 2.0;
+    y = cy - side / 2.0;
+    w = side;
+    h = side;
+
+    // Clamp to the image bounds.
+    let x0 = x.floor().clamp(0.0, iw - 1.0) as u32;
+    let y0 = y.floor().clamp(0.0, ih - 1.0) as u32;
+    let x1 = (x + w).ceil().clamp(1.0, iw) as u32;
+    let y1 = (y + h).ceil().clamp(1.0, ih) as u32;
+    let cw = x1.saturating_sub(x0).max(1);
+    let ch = y1.saturating_sub(y0).max(1);
+
+    let crop = image::imageops::crop_imm(&src, x0, y0, cw, ch).to_image();
+    encode(&crop, size)
+}
+
 /// Return `img` rotated clockwise by the given degrees (0/90/180/270).
 fn rotate(img: RgbaImage, degrees: i32) -> RgbaImage {
     let degrees = ((degrees % 360) + 360) % 360;
