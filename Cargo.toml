@@ -72,3 +72,9 @@ notify = "6"
 
 [profile.release]
 opt-level = 3
+# Shrink the release binary. strip removes symbols. thin LTO and a single
+# codegen unit cut dead code and inline across crates. panic stays as unwind
+# to keep normal crash behaviour. These options make the CI build slower.
+strip = true
+lto = "thin"
+codegen-units = 1
