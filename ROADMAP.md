@@ -388,18 +388,20 @@ new matches attach automatically. The sidebar gains a **People** section
 (`person:<id>`); selecting a person shows every photo they appear in
 (`Source::Person`). A **Review people** dialog (`src/ui/people.rs`) turns
 unnamed clusters into named people and merges clusters into an existing person. A
-`RuleField::Person` lets a smart virtual album hold "contains person X".
-Settings (`src/ui/settings_faces.rs`) hold the enable toggle, an opt-in
-auto-scan (off by default), the embedding-model choice with a license note and a
-re-scan warning, the model download, the scan action, and a "Delete all face
-data" privacy reset. See `src/face/` (config, runtime, models, detector,
-embedder, cluster).
+`RuleField::Person` lets a smart virtual album hold "contains person X". The
+full-image viewer has a **Show faces** overlay that draws each face box (green
+when named, yellow when not) with the person name, and a click on a box assigns
+that face to a person. Settings (`src/ui/settings_faces.rs`) hold the enable
+toggle, an opt-in auto-scan (off by default), the embedding-model choice with a
+license note and a re-scan warning, the model download, the scan action, and a
+"Delete all face data" privacy reset. See `src/face/` (config, runtime, models,
+detector, embedder, cluster).
 
 ### Deferred follow-ups
-- An in-viewer overlay that draws face boxes and names on the open photo, for
-  confirm/correct without the Review dialog.
 - Higher-accuracy optional models (ArcFace 512-D, non-commercial) in the
   catalog, and a custom `.onnx` path.
+- A split control that pulls a mis-grouped face out of a person and re-clusters
+  it (today a face is reassigned by clicking it in the viewer).
 - Interaction with Immich's own people feature (kept separate for now).
 
 ### Behaviour
