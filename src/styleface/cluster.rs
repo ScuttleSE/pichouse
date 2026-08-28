@@ -9,6 +9,8 @@
 //! already assigned to a character keeps that character's cluster id. An unnamed
 //! face that is very near a character joins it. HDBSCAN groups the rest.
 
+#![allow(dead_code)]
+
 use hdbscan::{Center, DistanceMetric, Hdbscan, HdbscanHyperParams};
 
 /// The default HDBSCAN cluster-selection epsilon. Zero uses pure HDBSCAN

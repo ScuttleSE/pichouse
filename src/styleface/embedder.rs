@@ -6,6 +6,8 @@
 //! normalises with the ImageNet mean and standard deviation, and runs the model.
 //! It takes the CLS token (index 0) as the embedding, then L2-normalises it.
 
+#![allow(dead_code)]
+
 use std::sync::Mutex;
 
 use ort::session::Session;
@@ -68,27 +70,25 @@ impl Embedder {
 
         // Per-mille box to pixels.
         let (px, py, pw, ph) = bbox;
-        let mut x = px as f32 / 1000.0 * width as f32;
-        let mut y = py as f32 / 1000.0 * height as f32;
-        let mut w = pw as f32 / 1000.0 * width as f32;
-        let mut h = ph as f32 / 1000.0 * height as f32;
-        if w < 1.0 || h < 1.0 {
+        let x0 = px as f32 / 1000.0 * width as f32;
+        let y0 = py as f32 / 1000.0 * height as f32;
+        let w0 = pw as f32 / 1000.0 * width as f32;
+        let h0 = ph as f32 / 1000.0 * height as f32;
+        if w0 < 1.0 || h0 < 1.0 {
             return Err("degenerate box".into());
         }
 
         // Enlarge and make a square around the center.
-        let cx = x + w / 2.0;
-        let cy = y + h / 2.0;
-        let side = w.max(h) * (1.0 + 2.0 * MARGIN);
-        x = cx - side / 2.0;
-        y = cy - side / 2.0;
-        w = side;
-        h = side;
+        let cx = x0 + w0 / 2.0;
+        let cy = y0 + h0 / 2.0;
+        let side = w0.max(h0) * (1.0 + 2.0 * MARGIN);
+        let x = cx - side / 2.0;
+        let y = cy - side / 2.0;
 
         // Sample the square into a 224x224 RGB NCHW buffer with ImageNet norm.
         let plane = CROP * CROP;
         let mut chw = vec![0f32; 3 * plane];
-        let step = w / CROP as f32;
+        let step = side / CROP as f32;
         for dy in 0..CROP {
             let syf = y + (dy as f32 + 0.5) * step;
             for dx in 0..CROP {

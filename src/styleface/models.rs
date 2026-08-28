@@ -9,6 +9,8 @@
 //! and furry faces. DINOv2 needs no training data and separates characters in
 //! stylised art well.
 
+#![allow(dead_code)]
+
 use std::io::Write;
 use std::path::PathBuf;
 

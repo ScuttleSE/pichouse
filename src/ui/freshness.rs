@@ -58,6 +58,18 @@ pub fn reconcile_now(state: &Rc<AppState>) {
                         super::facescan::scan_faces_quiet(&state);
                     }
                 }
+                // Auto-scan stylised faces when the user opted in.
+                {
+                    let sc = state.style_face_config.borrow();
+                    if sc.enabled
+                        && sc.autoscan
+                        && sc.models_ready()
+                        && !state.style_face_job.running()
+                    {
+                        drop(sc);
+                        super::stylefacescan::scan_style_faces_quiet(&state);
+                    }
+                }
                 let mut parts = Vec::new();
                 if !report.added.is_empty() {
                     parts.push(format!("{} added", report.added.len()));

@@ -3,6 +3,7 @@
 use crate::ai;
 use crate::db::Library;
 use crate::face::FaceConfig;
+use crate::styleface::StyleFaceConfig;
 
 /// Setting keys stored in `library.db`.
 pub const KEY_THUMB_SIZES: &str = "thumb.sizes";
@@ -41,6 +42,18 @@ pub const KEY_FACE_EMBEDDING_DIM: &str = "face.embedding_dim";
 pub const KEY_FACE_MIN_SCORE: &str = "face.min_score";
 pub const KEY_FACE_CLUSTER_THRESHOLD: &str = "face.cluster_threshold";
 pub const KEY_FACE_CONCURRENCY: &str = "face.concurrency";
+
+/// Stylised face (anime/cartoon/furry) setting keys stored in `library.db`.
+pub const KEY_STYLEFACE_ENABLED: &str = "styleface.enabled";
+pub const KEY_STYLEFACE_AUTOSCAN: &str = "styleface.autoscan";
+pub const KEY_STYLEFACE_DETECTOR_ID: &str = "styleface.detector_id";
+pub const KEY_STYLEFACE_EMBEDDING_ID: &str = "styleface.embedding_id";
+pub const KEY_STYLEFACE_DETECTOR_PATH: &str = "styleface.detector_path";
+pub const KEY_STYLEFACE_EMBEDDING_PATH: &str = "styleface.embedding_path";
+pub const KEY_STYLEFACE_EMBEDDING_DIM: &str = "styleface.embedding_dim";
+pub const KEY_STYLEFACE_MIN_SCORE: &str = "styleface.min_score";
+pub const KEY_STYLEFACE_CLUSTER_EPSILON: &str = "styleface.cluster_epsilon";
+pub const KEY_STYLEFACE_CONCURRENCY: &str = "styleface.concurrency";
 
 /// Immich setting keys stored in `library.db`.
 pub const KEY_IMMICH_PAGE_SIZE: &str = "immich.page_size";
@@ -276,6 +289,51 @@ pub fn load_face_config(lib: &Library) -> FaceConfig {
         }
     }
     if let Ok(v) = lib.get_setting(KEY_FACE_CONCURRENCY, "") {
+        if let Ok(n) = v.parse::<usize>() {
+            if n > 0 {
+                c.concurrency = n;
+            }
+        }
+    }
+    c.normalize();
+    c
+}
+
+/// Read the stylised face configuration from the library database.
+pub fn load_styleface_config(lib: &Library) -> StyleFaceConfig {
+    let mut c = StyleFaceConfig {
+        enabled: bool_setting(lib, KEY_STYLEFACE_ENABLED, false),
+        autoscan: bool_setting(lib, KEY_STYLEFACE_AUTOSCAN, false),
+        ..StyleFaceConfig::default()
+    };
+    if let Ok(v) = lib.get_setting(KEY_STYLEFACE_DETECTOR_PATH, "") {
+        if !v.is_empty() {
+            c.detector_path = v;
+        }
+    }
+    if let Ok(v) = lib.get_setting(KEY_STYLEFACE_EMBEDDING_PATH, "") {
+        if !v.is_empty() {
+            c.embedding_path = v;
+        }
+    }
+    if let Ok(v) = lib.get_setting(KEY_STYLEFACE_EMBEDDING_DIM, "") {
+        if let Ok(n) = v.parse::<i32>() {
+            if n > 0 {
+                c.embedding_dim = n;
+            }
+        }
+    }
+    if let Ok(v) = lib.get_setting(KEY_STYLEFACE_MIN_SCORE, "") {
+        if let Ok(n) = v.parse::<f32>() {
+            c.min_score = n;
+        }
+    }
+    if let Ok(v) = lib.get_setting(KEY_STYLEFACE_CLUSTER_EPSILON, "") {
+        if let Ok(n) = v.parse::<f32>() {
+            c.cluster_epsilon = n;
+        }
+    }
+    if let Ok(v) = lib.get_setting(KEY_STYLEFACE_CONCURRENCY, "") {
         if let Ok(n) = v.parse::<usize>() {
             if n > 0 {
                 c.concurrency = n;

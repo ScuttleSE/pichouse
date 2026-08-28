@@ -49,6 +49,12 @@ pub struct AppState {
     pub face_config: RefCell<crate::face::FaceConfig>,
     /// The face-crop thumbnail cache, opened on first use.
     pub face_thumbs: RefCell<Option<Arc<crate::db::FaceThumbs>>>,
+    /// The stylised-face-detection worker session (see `super::stylefacescan`).
+    pub style_face_job: Controller,
+    /// The loaded stylised face configuration.
+    pub style_face_config: RefCell<crate::styleface::StyleFaceConfig>,
+    /// The stylised-face-crop thumbnail cache, opened on first use.
+    pub style_face_thumbs: RefCell<Option<Arc<crate::db::FaceThumbs>>>,
     /// The Phase 2 enrichment worker session (see `super::enrich`).
     pub enrich_job: Controller,
     /// The library-freshness reconciliation session (see `super::freshness`).
@@ -71,6 +77,7 @@ pub struct AppState {
     pub grid: RefCell<Option<Rc<Grid>>>,
     pub new_files: RefCell<Option<Rc<super::newfiles::NewFilesView>>>,
     pub faces_view: RefCell<Option<Rc<super::facesview::FacesView>>>,
+    pub characters_view: RefCell<Option<Rc<super::charactersview::CharactersView>>>,
     pub properties: RefCell<Option<Rc<Properties>>>,
     pub viewer: RefCell<Option<Rc<Viewer>>>,
     pub sidebar: RefCell<Option<Rc<super::sidebar::Sidebar>>>,
@@ -98,6 +105,12 @@ impl AppState {
     }
     pub fn faces_view(&self) -> Rc<super::facesview::FacesView> {
         self.faces_view.borrow().clone().expect("faces_view set")
+    }
+    pub fn characters_view(&self) -> Rc<super::charactersview::CharactersView> {
+        self.characters_view
+            .borrow()
+            .clone()
+            .expect("characters_view set")
     }
     pub fn properties(&self) -> Rc<Properties> {
         self.properties.borrow().clone().expect("properties set")
@@ -145,6 +158,43 @@ impl AppState {
             (face.bbox_x, face.bbox_y, face.bbox_w, face.bbox_h),
             // Render at a generous size so tiles stay crisp up to the largest
             // thumbnail-slider size. The Image widget scales down as needed.
+            320,
+        )
+        .ok()?;
+        let _ = ft.put(face_id, &jpeg);
+        Some(jpeg)
+    }
+
+    /// The stylised-face-crop cache, opened on first use.
+    pub fn style_face_thumbs(&self) -> Option<Arc<crate::db::FaceThumbs>> {
+        if let Some(ft) = self.style_face_thumbs.borrow().as_ref() {
+            return Some(ft.clone());
+        }
+        match crate::db::open_style_face_thumbs() {
+            Ok(ft) => {
+                let ft = Arc::new(ft);
+                *self.style_face_thumbs.borrow_mut() = Some(ft.clone());
+                Some(ft)
+            }
+            Err(e) => {
+                log::warn!("open style face thumbs: {e}");
+                None
+            }
+        }
+    }
+
+    /// The cached (or freshly rendered) JPEG crop for a stylised face.
+    pub fn style_face_crop_jpeg(&self, face_id: i64) -> Option<Vec<u8>> {
+        let ft = self.style_face_thumbs()?;
+        if let Ok(Some(jpeg)) = ft.get(face_id) {
+            return Some(jpeg);
+        }
+        let face = self.lib.style_face_by_id(face_id).ok().flatten()?;
+        let photo = self.lib.photo_by_id(face.photo_id).ok().flatten()?;
+        let jpeg = crate::thumb::render_face_crop(
+            std::path::Path::new(&photo.path),
+            photo.orientation,
+            (face.bbox_x, face.bbox_y, face.bbox_w, face.bbox_h),
             320,
         )
         .ok()?;
@@ -279,6 +329,56 @@ impl AppState {
         {
             let this = self.clone();
             self.grid().set_back(move || this.show_faces());
+        }
+        self.show_grid();
+        self.status().set_message(name);
+    }
+
+    /// Show the Characters view in the center, rebuilding its group tiles.
+    pub fn show_characters(self: &Rc<Self>) {
+        *self.current_folder.borrow_mut() = 0;
+        self.characters_view().reload();
+        if let Some(stack) = self.center_stack.borrow().as_ref() {
+            stack.set_visible_child_name("characters");
+        }
+        self.status().set_message("Characters");
+    }
+
+    /// Rebuild the Characters view if it is the visible center child.
+    pub fn refresh_characters_if_active(self: &Rc<Self>) {
+        let active = self
+            .center_stack
+            .borrow()
+            .as_ref()
+            .and_then(|s| s.visible_child_name())
+            .map(|n| n == "characters")
+            .unwrap_or(false);
+        if active {
+            self.characters_view().reload();
+        }
+    }
+
+    /// Show every photo that contains a given character.
+    pub fn show_character(self: &Rc<Self>, character_id: i64, name: &str) {
+        *self.current_folder.borrow_mut() = 0;
+        self.grid().show_character(character_id, name);
+        let count = self.lib.character_face_count(character_id).unwrap_or(0);
+        {
+            let this = self.clone();
+            self.grid().set_back(move || this.show_characters());
+        }
+        self.show_grid();
+        self.status()
+            .set_message(&format!("{name} — {count} faces"));
+    }
+
+    /// Show every photo in an unnamed stylised cluster, with a back button.
+    pub fn show_style_cluster(self: &Rc<Self>, cluster_id: i64, name: &str) {
+        *self.current_folder.borrow_mut() = 0;
+        self.grid().show_style_cluster(cluster_id, name);
+        {
+            let this = self.clone();
+            self.grid().set_back(move || this.show_characters());
         }
         self.show_grid();
         self.status().set_message(name);

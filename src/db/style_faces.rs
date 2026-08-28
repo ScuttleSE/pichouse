@@ -5,6 +5,8 @@
 //! named group. HDBSCAN groups similar faces before the user names them. Noise
 //! faces have `cluster_id` -1. See `src/db/schema.sql` for the schema.
 
+#![allow(dead_code)]
+
 use rusqlite::{params, OptionalExtension, Row};
 
 use crate::model::{Character, Photo, StyleFace};

@@ -52,6 +52,7 @@ fn build_ui(app: &Application) {
     let prefs = Prefs::load(&lib);
     let ai_config = load_ai_config(&lib);
     let face_config = load_face_config(&lib);
+    let style_face_config = super::prefs::load_styleface_config(&lib);
     let shortcuts = Shortcuts::load(&lib);
 
     // Apply the theme choice before building any widgets. Forcing Adwaita
@@ -74,6 +75,9 @@ fn build_ui(app: &Application) {
         face_job: Controller::default(),
         face_config: RefCell::new(face_config),
         face_thumbs: RefCell::new(None),
+        style_face_job: Controller::default(),
+        style_face_config: RefCell::new(style_face_config),
+        style_face_thumbs: RefCell::new(None),
         enrich_job: Controller::default(),
         reconcile_job: Controller::default(),
         immich_upload: Controller::default(),
@@ -84,6 +88,7 @@ fn build_ui(app: &Application) {
         grid: RefCell::new(None),
         new_files: RefCell::new(None),
         faces_view: RefCell::new(None),
+        characters_view: RefCell::new(None),
         properties: RefCell::new(None),
         viewer: RefCell::new(None),
         sidebar: RefCell::new(None),
@@ -111,6 +116,10 @@ fn build_ui(app: &Application) {
     let faces_view = super::facesview::FacesView::new();
     faces_view.bind_state(state.clone());
     *state.faces_view.borrow_mut() = Some(faces_view.clone());
+
+    let characters_view = super::charactersview::CharactersView::new();
+    characters_view.bind_state(state.clone());
+    *state.characters_view.borrow_mut() = Some(characters_view.clone());
     let properties = Properties::new();
     properties.bind_state(state.clone());
     *state.properties.borrow_mut() = Some(properties.clone());
@@ -158,6 +167,7 @@ fn build_ui(app: &Application) {
     center_stack.add_named(grid.widget(), Some("grid"));
     center_stack.add_named(new_files.widget(), Some("newfiles"));
     center_stack.add_named(faces_view.widget(), Some("faces"));
+    center_stack.add_named(characters_view.widget(), Some("characters"));
     center_stack.add_named(viewer.widget(), Some("viewer"));
     center_stack.set_visible_child_name("grid");
     *state.center_stack.borrow_mut() = Some(center_stack.clone());

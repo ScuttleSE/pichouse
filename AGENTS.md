@@ -129,9 +129,12 @@ are constants in that file.
                          membership, and rule evaluation), immich_thumbs.rs
                          (per-server Immich thumbnail cache), faces.rs (persons,
                          faces, face-scan state, clustering helpers),
-                         face_thumbs.rs (face-crop cache), edits.rs
-                         (non-destructive per-photo edits) and presets.rs
-                         (levels presets)
+                          face_thumbs.rs (face-crop cache), style_faces.rs
+                          (characters, stylised faces, style-face-scan state,
+                          HDBSCAN clustering helpers), style_face_thumbs.rs
+                          (stylised face-crop cache), edits.rs
+                          (non-destructive per-photo edits) and presets.rs
+                          (levels presets)
     src/scan.rs          filesystem scanner (Phase 1 structure walk + Phase 2
                          per-file enrich helper)
     src/reconcile.rs     library freshness: diff disk against the DB per folder
@@ -142,14 +145,19 @@ are constants in that file.
     src/face/            local facial recognition (ort/ONNX Runtime): config,
                          runtime (library download+init), models (catalog+
                          download), detector (YuNet), embedder (SFace), cluster
+    src/styleface/       stylised face recognition for anime/cartoon/furry art
+                         (shares src/face/runtime): config, models (catalog+
+                         download), detector (anime YOLOv8n), embedder (DINOv2
+                         ViT-S/14), cluster (HDBSCAN crate)
     src/immich/          Immich server integration (blocking HTTP client)
     src/ui/              GTK4 UI (app, state, grid, sidebar, viewer, editor,
                          export, properties, toolbar, status, settings,
-                         settings_ai, settings_immich, settings_faces, aitag,
-                         facescan, people, immich, tagmanager, shortcuts,
-                         dialogs, actions, controller, prefs, photo_object,
-                         util, enrich, freshness, watcher, newfiles, vrules,
-                         vmenu)
+                         settings_ai, settings_immich, settings_faces,
+                         settings_characters, aitag, facescan, stylefacescan,
+                         people, characters, facesview, charactersview, immich,
+                         tagmanager, shortcuts, dialogs, actions, controller,
+                         prefs, photo_object, util, enrich, freshness, watcher,
+                         newfiles, vrules, vmenu)
     .gitea/workflows/    CI (build/test/release on push to main)
 
 ## Architecture patterns

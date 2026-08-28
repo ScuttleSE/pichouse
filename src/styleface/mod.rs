@@ -14,6 +14,8 @@
 //! `crate::face::runtime`. The detector and embedder models are separate and
 //! download on first use. See `models.rs`.
 
+#![allow(dead_code)]
+
 pub mod cluster;
 pub mod config;
 pub mod detector;

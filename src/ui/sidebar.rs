@@ -32,6 +32,10 @@ const VIRTUAL_HEADER_ID: &str = "virtualheader";
 const PEOPLE_HEADER_ID: &str = "peopleheader";
 /// A single person node: `person:<person_id>`.
 const PERSON_PREFIX: &str = "person:";
+/// Header row that groups named stylised characters.
+const CHARACTERS_HEADER_ID: &str = "charactersheader";
+/// A single character node: `character:<character_id>`.
+const CHARACTER_PREFIX: &str = "character:";
 /// Header row that groups all Immich servers, shown below normal albums.
 const IMMICH_HEADER_ID: &str = "immichheader";
 /// A single Immich server node: `immichserver:<server_id>`.
@@ -65,6 +69,11 @@ struct TreeData {
     person_counts: HashMap<i64, i64>,
     /// Total detected faces, so the People header shows even before naming.
     total_faces: i64,
+    /// Named stylised characters, plus per-character photo counts.
+    characters: Vec<crate::model::Character>,
+    character_counts: HashMap<i64, i64>,
+    /// Total detected stylised faces, so the Characters header shows early.
+    total_style_faces: i64,
     /// Immich servers, ordered as shown. Each is `(id, name)`.
     immich_servers: Vec<(i64, String)>,
     /// Cached albums per Immich server id, as `(album_uuid, name, count)`.
@@ -239,6 +248,11 @@ impl Sidebar {
                 .iter()
                 .map(|p| format!("{PERSON_PREFIX}{}", p.id))
                 .collect()
+        } else if id == CHARACTERS_HEADER_ID {
+            data.characters
+                .iter()
+                .map(|c| format!("{CHARACTER_PREFIX}{}", c.id))
+                .collect()
         } else if id == IMMICH_HEADER_ID {
             data.immich_servers
                 .iter()
@@ -368,6 +382,20 @@ impl Sidebar {
                 .unwrap_or_default();
             let count = data.person_counts.get(&pid).copied().unwrap_or(0);
             (format!("{name} ({count})"), "avatar-default-symbolic")
+        } else if id == CHARACTERS_HEADER_ID {
+            (
+                format!("Characters ({})", data.characters.len()),
+                "face-smile-symbolic",
+            )
+        } else if let Some(cid) = character_id_of(id) {
+            let name = data
+                .characters
+                .iter()
+                .find(|c| c.id == cid)
+                .map(|c| c.name.clone())
+                .unwrap_or_default();
+            let count = data.character_counts.get(&cid).copied().unwrap_or(0);
+            (format!("{name} ({count})"), "face-smile-symbolic")
         } else if id == IMMICH_HEADER_ID {
             ("Immich".to_string(), "network-server-symbolic")
         } else if immich_timeline_id_of(id).is_some() {
@@ -451,6 +479,12 @@ impl Sidebar {
                     return;
                 }
             }
+            if id == CHARACTERS_HEADER_ID {
+                if let Some(state) = self.state() {
+                    state.show_characters();
+                    return;
+                }
+            }
             if let Some(vid) = valbum_id_of(&id) {
                 let name = self
                     .data
@@ -481,6 +515,20 @@ impl Sidebar {
                     .unwrap_or_default();
                 if let Some(state) = self.state() {
                     state.show_person(pid, &name);
+                    return;
+                }
+            }
+            if let Some(cid) = character_id_of(&id) {
+                let name = self
+                    .data
+                    .borrow()
+                    .characters
+                    .iter()
+                    .find(|c| c.id == cid)
+                    .map(|c| c.name.clone())
+                    .unwrap_or_default();
+                if let Some(state) = self.state() {
+                    state.show_character(cid, &name);
                     return;
                 }
             }
@@ -613,6 +661,12 @@ impl Sidebar {
             data.persons.push(person);
         }
         data.total_faces = state.lib.total_face_count().unwrap_or(0);
+        // Named stylised characters.
+        for (character, count) in state.lib.characters().unwrap_or_default() {
+            data.character_counts.insert(character.id, count);
+            data.characters.push(character);
+        }
+        data.total_style_faces = state.lib.total_style_face_count().unwrap_or(0);
         for f in &folders {
             data.folders.insert(f.id, f.clone());
             if let Some(&aid) = folder_album.get(&f.id) {
@@ -663,6 +717,10 @@ impl Sidebar {
             // People section, shown once any face is detected (named or not).
             if data.total_faces > 0 {
                 roots.push(PEOPLE_HEADER_ID.to_string());
+            }
+            // Characters section, shown once any stylised face is detected.
+            if data.total_style_faces > 0 {
+                roots.push(CHARACTERS_HEADER_ID.to_string());
             }
             for &aid in data.album_children.get(&0).into_iter().flatten() {
                 roots.push(format!("{ALBUM_PREFIX}{aid}"));
@@ -1005,6 +1063,61 @@ impl Sidebar {
             &format!("Delete person \"{name}\"? The faces stay but lose the name. Photos on disk are not affected."),
             move || {
                 if let Err(e) = state2.lib.delete_person(id) {
+                    show_error(&state2, &e.to_string());
+                    return;
+                }
+                this.reload_deferred();
+            },
+        );
+    }
+
+    fn prompt_rename_character(self: &Rc<Self>, id: i64) {
+        let Some(state) = self.state() else { return };
+        let current = self
+            .data
+            .borrow()
+            .characters
+            .iter()
+            .find(|c| c.id == id)
+            .map(|c| c.name.clone())
+            .unwrap_or_default();
+        let this = self.clone();
+        let state2 = state.clone();
+        prompt_text(
+            &state,
+            None,
+            "Rename Character",
+            "Character name:",
+            &current,
+            move |name| {
+                if let Err(e) = state2.lib.rename_character(id, &name) {
+                    show_error(&state2, &e.to_string());
+                    return;
+                }
+                this.reload_deferred();
+            },
+        );
+    }
+
+    fn delete_character(self: &Rc<Self>, id: i64) {
+        let Some(state) = self.state() else { return };
+        let name = self
+            .data
+            .borrow()
+            .characters
+            .iter()
+            .find(|c| c.id == id)
+            .map(|c| c.name.clone())
+            .unwrap_or_default();
+        let this = self.clone();
+        let state2 = state.clone();
+        confirm(
+            &state,
+            None,
+            "Delete Character",
+            &format!("Delete character \"{name}\"? The faces stay but lose the name. Photos on disk are not affected."),
+            move || {
+                if let Err(e) = state2.lib.delete_character(id) {
                     show_error(&state2, &e.to_string());
                     return;
                 }
@@ -1363,6 +1476,22 @@ impl Sidebar {
                 Rc::new(move |t| this.delete_person(person_id_of(t).unwrap_or(0))),
             );
         }
+        {
+            let this = self.clone();
+            add(
+                "rename-character",
+                &group,
+                Rc::new(move |t| this.prompt_rename_character(character_id_of(t).unwrap_or(0))),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "delete-character",
+                &group,
+                Rc::new(move |t| this.delete_character(character_id_of(t).unwrap_or(0))),
+            );
+        }
 
         self.list_view.insert_action_group("sidebar", Some(&group));
     }
@@ -1474,6 +1603,7 @@ impl Sidebar {
                 || valbum_id_of(&id).is_some()
                 || id == VIRTUAL_HEADER_ID
                 || id == PEOPLE_HEADER_ID
+                || id == CHARACTERS_HEADER_ID
                 || id == IMMICH_HEADER_ID
                 || immich_server_id_of(&id).is_some();
             if !toggles {
@@ -1528,6 +1658,15 @@ impl Sidebar {
         } else if person_id_of(id).is_some() {
             menu.append(Some("Rename Person…"), Some(&detailed("rename-person", id)));
             menu.append(Some("Delete Person"), Some(&detailed("delete-person", id)));
+        } else if character_id_of(id).is_some() {
+            menu.append(
+                Some("Rename Character…"),
+                Some(&detailed("rename-character", id)),
+            );
+            menu.append(
+                Some("Delete Character"),
+                Some(&detailed("delete-character", id)),
+            );
         } else if album_id_of(id).is_some() {
             menu.append(Some("New Sub-Album…"), Some(&detailed("new-subalbum", id)));
             menu.append(Some("Rename Album…"), Some(&detailed("rename-album", id)));
@@ -1673,6 +1812,10 @@ fn valbum_id_of(id: &str) -> Option<i64> {
 
 fn person_id_of(id: &str) -> Option<i64> {
     id.strip_prefix(PERSON_PREFIX).and_then(|n| n.parse().ok())
+}
+
+fn character_id_of(id: &str) -> Option<i64> {
+    id.strip_prefix(CHARACTER_PREFIX).and_then(|n| n.parse().ok())
 }
 
 fn immich_server_id_of(id: &str) -> Option<i64> {

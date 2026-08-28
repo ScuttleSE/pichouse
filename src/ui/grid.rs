@@ -122,6 +122,10 @@ enum Source {
     Person(i64, String),
     /// An unnamed face cluster (id, display name).
     Cluster(i64, String),
+    /// A stylised character (id, display name).
+    Character(i64, String),
+    /// An unnamed stylised face cluster (id, display name).
+    StyleCluster(i64, String),
     /// An Immich album (server id, album uuid, display name). Not re-queryable
     /// from the local database; a reload refetches over HTTP through the caller.
     #[allow(dead_code)] // Fields document the album payload.
@@ -533,6 +537,23 @@ impl Grid {
         self.set_photos(name, photos);
     }
 
+    /// Show every photo that contains a given stylised character.
+    pub fn show_character(&self, character_id: i64, name: &str) {
+        *self.source.borrow_mut() = Source::Character(character_id, name.to_string());
+        let photos = self.lib.photos_of_character(character_id).unwrap_or_default();
+        self.set_photos(name, photos);
+    }
+
+    /// Show every photo in an unnamed stylised face cluster.
+    pub fn show_style_cluster(&self, cluster_id: i64, name: &str) {
+        *self.source.borrow_mut() = Source::StyleCluster(cluster_id, name.to_string());
+        let photos = self
+            .lib
+            .photos_in_style_cluster(cluster_id)
+            .unwrap_or_default();
+        self.set_photos(name, photos);
+    }
+
     /// Show an Immich album's assets. The caller passes the already-fetched    /// photos (each with an `immich://<server_id>/<asset_id>` path). The grid
     /// downloads each thumbnail over HTTP through the Immich worker pool.
     pub fn show_immich_album(&self, server_id: i64, album_id: &str, name: &str, photos: Vec<Photo>) {
@@ -592,6 +613,14 @@ impl Grid {
             }
             Source::Cluster(id, name) => {
                 let photos = self.lib.photos_in_cluster(id).unwrap_or_default();
+                self.set_photos_preserving(&name, photos);
+            }
+            Source::Character(id, name) => {
+                let photos = self.lib.photos_of_character(id).unwrap_or_default();
+                self.set_photos_preserving(&name, photos);
+            }
+            Source::StyleCluster(id, name) => {
+                let photos = self.lib.photos_in_style_cluster(id).unwrap_or_default();
                 self.set_photos_preserving(&name, photos);
             }
             Source::None => {}
