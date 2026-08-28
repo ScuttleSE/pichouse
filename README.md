@@ -84,6 +84,35 @@ model. Nothing leaves your machine and no models are downloaded automatically.
 All tags are stored in `library.db`. AI and user tags share one table and are
 distinguished by a source flag.
 
+## Facial recognition (local, optional)
+
+pichouse can detect faces, group the same person across your library, and let
+you name people — Picasa "People"-style. It is **off by default** and all
+processing stays on your machine.
+
+- **Backend:** in-process [ONNX Runtime](https://onnxruntime.ai) through the
+  `ort` crate. The models are **YuNet** (face detection, MIT) and **SFace**
+  (face embedding, Apache 2.0) from the OpenCV Zoo. They run comfortably on a
+  CPU that is a few years old.
+- **First use downloads everything.** The ONNX Runtime library and the two
+  models download into the data folder (`~/.local/share/pichouse/`) the first
+  time you enable faces, each with a verified SHA-256. Nothing is shipped in the
+  binary and nothing is downloaded until you ask.
+- **Enable it** in *Settings → Faces*: toggle it on, click *Download models*,
+  then *Scan for faces now*. Turn on *Scan new photos automatically* if you want
+  new imports scanned without asking.
+- **Name people** with *Review people*: it shows unnamed groups as face crops.
+  Name a group to create a person, or merge a group into an existing person.
+- **Browse a person** from the **People** section in the Library sidebar:
+  selecting a person shows every photo they appear in.
+- **Smart albums** can use a *Contains person* rule, so a virtual album can hold
+  every photo of a chosen person.
+- **Privacy:** *Delete all face data* removes every face, person, and grouping.
+  Photos on disk are never changed by face detection.
+
+Faces, people, and per-photo scan state live in `library.db`; face-crop
+thumbnails live in `face-thumbs.db`.
+
 ### Controlling CPU/GPU load
 
 Even when Ollama runs the model on the GPU, vision models do image

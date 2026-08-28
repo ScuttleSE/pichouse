@@ -376,6 +376,32 @@ Detect faces in photos, group the same person's face across the library, let the
 user name a person, and surface all their photos — Picasa "People"-style. Fits
 alongside the existing local AI tagging pipeline; all processing stays local.
 
+**Status: implemented.** Off by default. The models and the ONNX Runtime
+download into the data folder on first use. The pipeline is YuNet (detection,
+MIT) plus SFace (128-D embedding, Apache 2.0), both from the OpenCV Zoo, run
+in-process through `ort` (ONNX Runtime, loaded at run time). Faces, people, and
+per-photo scan state live in `library.db` (`persons`, `faces`, `face_scan`);
+face-crop thumbnails live in `face-thumbs.db`. A background worker session
+(`src/ui/facescan.rs`, the AI-tagging pattern) detects and embeds faces, then
+clusters embeddings by cosine similarity; named people anchor stable clusters so
+new matches attach automatically. The sidebar gains a **People** section
+(`person:<id>`); selecting a person shows every photo they appear in
+(`Source::Person`). A **Review people** dialog (`src/ui/people.rs`) turns
+unnamed clusters into named people and merges clusters into an existing person. A
+`RuleField::Person` lets a smart virtual album hold "contains person X".
+Settings (`src/ui/settings_faces.rs`) hold the enable toggle, an opt-in
+auto-scan (off by default), the embedding-model choice with a license note and a
+re-scan warning, the model download, the scan action, and a "Delete all face
+data" privacy reset. See `src/face/` (config, runtime, models, detector,
+embedder, cluster).
+
+### Deferred follow-ups
+- An in-viewer overlay that draws face boxes and names on the open photo, for
+  confirm/correct without the Review dialog.
+- Higher-accuracy optional models (ArcFace 512-D, non-commercial) in the
+  catalog, and a custom `.onnx` path.
+- Interaction with Immich's own people feature (kept separate for now).
+
 ### Behaviour
 - Detect faces in library images (a per-photo face-detection pass).
 - **Group** faces that belong to the same person automatically (face clustering

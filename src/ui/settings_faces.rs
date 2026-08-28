@@ -149,6 +149,30 @@ pub fn faces_pane(state: &Rc<AppState>) -> GtkBox {
         });
     }
 
+    root.append(&Separator::new(Orientation::Horizontal));
+
+    // Privacy reset.
+    let reset = Button::with_label("Delete all face data");
+    reset.add_css_class("destructive-action");
+    reset.set_halign(gtk4::Align::Start);
+    {
+        let state = state.clone();
+        reset.connect_clicked(move |_| {
+            let state2 = state.clone();
+            super::dialogs::confirm(
+                &state,
+                None,
+                "Delete all face data",
+                "Delete every detected face, person, and grouping? Photos on disk are \
+                 not affected. This cannot be undone.",
+                move || {
+                    delete_all_face_data(&state2);
+                },
+            );
+        });
+    }
+    root.append(&reset);
+
     // React to a model change: update license, warn about a re-scan.
     {
         let state = state.clone();
@@ -175,3 +199,25 @@ pub fn faces_pane(state: &Rc<AppState>) -> GtkBox {
 
     root
 }
+
+/// Clear every face, person, and grouping, plus the face-crop cache.
+fn delete_all_face_data(state: &Rc<AppState>) {
+    if let Err(e) = state.lib.delete_all_face_data() {
+        super::state::show_error(state, &e.to_string());
+        return;
+    }
+    // Drop the open face-thumbs handle, then remove the file.
+    *state.face_thumbs.borrow_mut() = None;
+    if let Err(e) = crate::db::remove_face_thumbs_database() {
+        log::warn!("remove face thumbs db: {e}");
+    }
+    if let Some(sb) = state.sidebar.borrow().as_ref() {
+        sb.reload_deferred();
+    }
+    super::state::show_message(
+        state,
+        "Face data deleted",
+        "All detected faces, people, and groupings were removed.",
+    );
+}
+
