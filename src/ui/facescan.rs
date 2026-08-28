@@ -13,7 +13,7 @@ use gtk4::glib;
 
 use crate::db::Library;
 use crate::face::cluster::{self, ClusterItem};
-use crate::face::{runtime, FacePipeline};
+use crate::face::{models, runtime, FacePipeline};
 use crate::model::Face;
 
 use super::state::{show_error, show_message, AppState};
@@ -32,38 +32,58 @@ const SCAN_BATCH: i64 = 100_000;
 
 /// Start a background face-detection session over all photos that need one.
 pub fn scan_faces(state: &Rc<AppState>) {
+    scan_faces_impl(state, false);
+}
+
+/// Start a scan without message boxes when there is nothing to do. Used by the
+/// opt-in auto-scan after a library reconcile.
+pub fn scan_faces_quiet(state: &Rc<AppState>) {
+    scan_faces_impl(state, true);
+}
+
+fn scan_faces_impl(state: &Rc<AppState>, quiet: bool) {
     let cfg = state.face_config.borrow().clone();
     if !cfg.enabled {
-        show_message(
-            state,
-            "Face detection",
-            "Face detection is off. Turn it on in Settings → Faces.",
-        );
+        if !quiet {
+            show_message(
+                state,
+                "Face detection",
+                "Face detection is off. Turn it on in Settings → Faces.",
+            );
+        }
         return;
     }
     if !cfg.models_ready() {
-        show_message(
-            state,
-            "Face detection",
-            "The face models are not downloaded. Open Settings → Faces and \
-             download them first.",
-        );
+        if !quiet {
+            show_message(
+                state,
+                "Face detection",
+                "The face models are not downloaded. Open Settings → Faces and \
+                 download them first.",
+            );
+        }
         return;
     }
     if state.face_job.running() {
-        show_message(state, "Face detection", "A face scan is already running.");
+        if !quiet {
+            show_message(state, "Face detection", "A face scan is already running.");
+        }
         return;
     }
 
     let ids = match state.lib.photos_needing_face_scan(SCAN_BATCH) {
         Ok(v) => v,
         Err(e) => {
-            show_error(state, &e.to_string());
+            if !quiet {
+                show_error(state, &e.to_string());
+            }
             return;
         }
     };
     if ids.is_empty() {
-        show_message(state, "Face detection", "No photos need a face scan.");
+        if !quiet {
+            show_message(state, "Face detection", "No photos need a face scan.");
+        }
         return;
     }
 
@@ -188,8 +208,7 @@ pub fn scan_faces(state: &Rc<AppState>) {
 }
 
 /// Send the failure sequence to the UI thread.
-fn fail(tx: &glib::Sender<Msg>, msg: &str) {
-    let _ = tx.send(Msg::Scanning(false));
+fn fail(tx: &glib::Sender<Msg>, msg: &str) {    let _ = tx.send(Msg::Scanning(false));
     let _ = tx.send(Msg::Progress(-1.0));
     let _ = tx.send(Msg::Message("Face detection unavailable".into()));
     let _ = tx.send(Msg::Error(msg.to_string()));
@@ -269,4 +288,74 @@ fn recluster(lib: &Library, threshold: f32) -> Result<(), String> {
         let _ = lib.set_face_cluster(a.face_id, a.cluster_id);
     }
     Ok(())
+}
+
+/// Download the two selected face models (and the ONNX Runtime) in the
+/// background, writing their resolved paths and the embedding dimension into
+/// settings. Progress posts to the status bar. Calls `on_done` on the UI thread
+/// when finished so the settings pane can refresh.
+pub fn download_models(state: &Rc<AppState>, detector_id: String, embedding_id: String) {
+    let status = state.status();
+    status.set_scanning(true);
+    status.set_message("Downloading face models…");
+
+    let (tx, rx) = glib::MainContext::channel::<Msg>(glib::Priority::DEFAULT);
+    {
+        let state = state.clone();
+        rx.attach(None, move |msg| {
+            let status = state.status();
+            match msg {
+                Msg::Message(m) => status.set_message(&m),
+                Msg::Scanning(s) => status.set_scanning(s),
+                Msg::Error(e) => show_error(&state, &e),
+                Msg::Done => {
+                    // Reload the config from settings so the pane and workers
+                    // see the new model paths.
+                    let cfg = super::prefs::load_face_config(&state.lib);
+                    *state.face_config.borrow_mut() = cfg;
+                }
+                Msg::Progress(_) => {}
+            }
+            glib::ControlFlow::Continue
+        });
+    }
+
+    let lib = state.lib.clone();
+    std::thread::spawn(move || {
+        let _ = tx.send(Msg::Message("Downloading ONNX Runtime…".into()));
+        if let Err(e) = runtime::ensure_runtime() {
+            let _ = tx.send(Msg::Scanning(false));
+            let _ = tx.send(Msg::Error(format!("ONNX Runtime download failed: {e}")));
+            return;
+        }
+        let _ = tx.send(Msg::Message("Downloading detector model…".into()));
+        let det = match models::ensure_model(&detector_id) {
+            Ok(p) => p,
+            Err(e) => {
+                let _ = tx.send(Msg::Scanning(false));
+                let _ = tx.send(Msg::Error(format!("Detector download failed: {e}")));
+                return;
+            }
+        };
+        let _ = tx.send(Msg::Message("Downloading embedding model…".into()));
+        let emb = match models::ensure_model(&embedding_id) {
+            Ok(p) => p,
+            Err(e) => {
+                let _ = tx.send(Msg::Scanning(false));
+                let _ = tx.send(Msg::Error(format!("Embedding download failed: {e}")));
+                return;
+            }
+        };
+        let dim = models::entry(&embedding_id).map(|e| e.embedding_dim).unwrap_or(0);
+
+        let _ = lib.set_setting(super::prefs::KEY_FACE_DETECTOR_ID, &detector_id);
+        let _ = lib.set_setting(super::prefs::KEY_FACE_EMBEDDING_ID, &embedding_id);
+        let _ = lib.set_setting(super::prefs::KEY_FACE_DETECTOR_PATH, &det.to_string_lossy());
+        let _ = lib.set_setting(super::prefs::KEY_FACE_EMBEDDING_PATH, &emb.to_string_lossy());
+        let _ = lib.set_setting(super::prefs::KEY_FACE_EMBEDDING_DIM, &dim.to_string());
+
+        let _ = tx.send(Msg::Scanning(false));
+        let _ = tx.send(Msg::Message("Face models ready.".into()));
+        let _ = tx.send(Msg::Done);
+    });
 }

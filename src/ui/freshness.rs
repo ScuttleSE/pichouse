@@ -48,6 +48,16 @@ pub fn reconcile_now(state: &Rc<AppState>) {
                     super::enrich::enqueue(&state, report.added.clone());
                     super::immich::autoupload_added(&state, &report.added);
                 }
+                // Auto-scan faces when the user opted in. The scan reads
+                // photos_needing_face_scan, which only lists enriched photos, so
+                // this picks up newly added photos once enrichment finishes.
+                {
+                    let fc = state.face_config.borrow();
+                    if fc.enabled && fc.autoscan && fc.models_ready() && !state.face_job.running() {
+                        drop(fc);
+                        super::facescan::scan_faces_quiet(&state);
+                    }
+                }
                 let mut parts = Vec::new();
                 if !report.added.is_empty() {
                     parts.push(format!("{} added", report.added.len()));

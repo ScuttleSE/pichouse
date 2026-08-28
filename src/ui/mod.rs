@@ -20,6 +20,7 @@ mod prefs;
 mod properties;
 mod settings;
 mod settings_ai;
+mod settings_faces;
 mod settings_immich;
 mod shortcuts;
 mod sidebar;

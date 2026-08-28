@@ -44,6 +44,11 @@ pub fn show_settings(state: &Rc<AppState>) {
         Some("immich"),
         "Immich",
     );
+    stack.add_titled(
+        &super::settings_faces::faces_pane(state),
+        Some("faces"),
+        "Faces",
+    );
     stack.add_titled(&storage_pane(state, &window), Some("storage"), "Data Location");
     stack.add_titled(
         &shortcut_pane(state, &window),
