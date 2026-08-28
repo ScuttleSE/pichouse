@@ -496,6 +496,45 @@ impl ScanStatus {
     }
 }
 
+/// A named person for facial recognition. A person owns one or more faces.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Person {
+    pub id: i64,
+    pub name: String,
+    /// A representative face id for the person icon. `0` means none chosen.
+    pub cover_face_id: i64,
+}
+
+/// One detected face in one photo.
+///
+/// The bounding box and the landmarks are in per-mille (0..1000) of the photo
+/// after `Photo::orientation` rotation and before any non-destructive edit.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Face {
+    pub id: i64,
+    pub photo_id: i64,
+    /// The assigned person id. `0` means unassigned.
+    pub person_id: i64,
+    /// The automatic similarity cluster id. `0` means not yet clustered.
+    pub cluster_id: i64,
+    /// Bounding box in per-mille of the oriented image.
+    pub bbox_x: i32,
+    pub bbox_y: i32,
+    pub bbox_w: i32,
+    pub bbox_h: i32,
+    /// Five landmark points (x,y) in per-mille of the oriented image.
+    /// Order: right eye, left eye, nose, right mouth, left mouth.
+    pub landmarks: Vec<f32>,
+    /// The face embedding vector. Its length is `embedding.len()`.
+    pub embedding: Vec<f32>,
+    /// Detector confidence, 0.0..1.0.
+    pub det_score: f32,
+    /// `true` when the user approved the person assignment.
+    pub confirmed: bool,
+    /// `0` = detector, `1` = user.
+    pub source: i32,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

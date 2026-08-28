@@ -6,6 +6,7 @@
 mod albums;
 mod config;
 mod edits;
+mod faces;
 mod immich;
 mod immich_thumbs;
 mod library;

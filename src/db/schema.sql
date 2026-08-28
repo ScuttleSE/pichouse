@@ -224,3 +224,56 @@ CREATE TABLE IF NOT EXISTS immich_folder_links (
     immich_album_id TEXT NOT NULL,
     created_at      INTEGER NOT NULL DEFAULT 0
 );
+
+-- A named person for facial recognition. A cluster of similar faces becomes a
+-- person once the user names it. cover_face_id points at a representative face
+-- for the person's icon (nullable until a face is chosen).
+CREATE TABLE IF NOT EXISTS persons (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT NOT NULL,
+    cover_face_id INTEGER,
+    created_at    INTEGER NOT NULL DEFAULT 0
+);
+
+-- One detected face in one photo. The bounding box and the 5 landmark points
+-- are in the coordinate space of the photo AFTER photos.orientation rotation
+-- and BEFORE any non-destructive edit. The box is stored in per-mille of that
+-- oriented image (0..1000), the same convention as photo_edits crop_*.
+--   person_id  : the assigned person, or NULL when unassigned.
+--   cluster_id : the automatic similarity cluster, or NULL before clustering.
+--   landmarks  : 10 little-endian f32 values (x,y for 5 points), per-mille.
+--   embedding  : embedding_dim little-endian f32 values (the face vector).
+--   embedding_dim : the vector length, so a model change is detectable.
+--   det_score  : detector confidence, 0..1 scaled to 0..1000.
+--   confirmed  : 1 when the user approved the person assignment.
+--   source     : 0 = detector, 1 = user (a hand-added face box, future use).
+CREATE TABLE IF NOT EXISTS faces (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    photo_id      INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
+    person_id     INTEGER REFERENCES persons(id) ON DELETE SET NULL,
+    cluster_id    INTEGER,
+    bbox_x        INTEGER NOT NULL DEFAULT 0,
+    bbox_y        INTEGER NOT NULL DEFAULT 0,
+    bbox_w        INTEGER NOT NULL DEFAULT 0,
+    bbox_h        INTEGER NOT NULL DEFAULT 0,
+    landmarks     BLOB,
+    embedding     BLOB,
+    embedding_dim INTEGER NOT NULL DEFAULT 0,
+    det_score     INTEGER NOT NULL DEFAULT 0,
+    confirmed     INTEGER NOT NULL DEFAULT 0,
+    source        INTEGER NOT NULL DEFAULT 0,
+    created_at    INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_faces_photo ON faces(photo_id);
+CREATE INDEX IF NOT EXISTS idx_faces_person ON faces(person_id);
+CREATE INDEX IF NOT EXISTS idx_faces_cluster ON faces(cluster_id);
+
+-- Per-photo face-scan state, mirroring the two-phase scan_state idea. A photo
+-- with no row here has not had a detection pass. state: 0 = pending,
+-- 1 = scanning, 2 = done.
+CREATE TABLE IF NOT EXISTS face_scan (
+    photo_id   INTEGER PRIMARY KEY REFERENCES photos(id) ON DELETE CASCADE,
+    state      INTEGER NOT NULL DEFAULT 0,
+    scanned_at INTEGER NOT NULL DEFAULT 0
+);

@@ -90,6 +90,14 @@ fn migrate(conn: &Connection) -> Result<()> {
             "ALTER TABLE photos ADD COLUMN added_at INTEGER NOT NULL DEFAULT 0;",
         )?;
     }
+    // photos.face_status: per-photo face-scan state mirror. 0 = not scanned,
+    // 1 = queued, 2 = done, 3 = error. The face_scan table holds the detail;
+    // this column gives a cheap filter on the photos row.
+    if !have.contains("face_status") {
+        conn.execute_batch(
+            "ALTER TABLE photos ADD COLUMN face_status INTEGER NOT NULL DEFAULT 0;",
+        )?;
+    }
     // library_folders.first_scan_done_at (freshness "new files" boundary).
     {
         let mut lf: std::collections::HashSet<String> = std::collections::HashSet::new();
