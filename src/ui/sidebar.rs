@@ -1817,9 +1817,17 @@ impl Sidebar {
         }
         let pop = PopoverMenu::from_model_full(&menu, gtk4::PopoverMenuFlags::NESTED);
         pop.set_has_arrow(false);
-        pop.set_parent(expander);
+        // Parent the popover to the stable ListView, not the per-row expander.
+        // A reload during a scan tears down and rebuilds the row widgets. A
+        // popover parented to a destroyed expander causes a use-after-free and
+        // a crash. The ListView lives for the whole sidebar lifetime.
+        // Translate the pointer position from the expander to the ListView.
+        let (lx, ly) = expander
+            .translate_coordinates(&self.list_view, x, y)
+            .unwrap_or((x, y));
+        pop.set_parent(&self.list_view);
         pop.set_position(gtk4::PositionType::Right);
-        let rect = gdk::Rectangle::new(x as i32, y as i32, 1, 1);
+        let rect = gdk::Rectangle::new(lx as i32, ly as i32, 1, 1);
         pop.set_pointing_to(Some(&rect));
         pop.popup();
         *self.menu_pop.borrow_mut() = Some(pop);
