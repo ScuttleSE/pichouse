@@ -2,19 +2,170 @@
 
 This document is for an agent with no memory of the last session. It uses
 Simplified Technical English (ASD-STE100, Strict). Read AGENTS.md first. Read
-ROADMAP.md for planned features. Read section 000000 first — it describes the
-most recent work (stylised face recognition for art, and album Face type). Then
-read section 00000 — it describes the human facial detection and recognition
-system that the stylised system mirrors. Then read section 0000 — it describes
-four small features, console logging, and scan-time performance and freeze
-fixes. Then read section 000 — it describes non-destructive editing and color
-levels. Then read section 00 — it describes four earlier follow-up features.
-Then read section 0 — it describes the Immich integration. The later sections
-describe earlier features and are still correct.
+ROADMAP.md for planned features. Read section 0000000 first — it describes the
+most recent work (the duplicate image finder). Then read section 000000 — it
+describes stylised face recognition for art, and the album Face type. Then read
+section 00000 — it describes the human facial detection and recognition system
+that the stylised system mirrors. Then read section 0000 — it describes four
+small features, console logging, and scan-time performance and freeze fixes.
+Then read section 000 — it describes non-destructive editing and color levels.
+Then read section 00 — it describes four earlier follow-up features. Then read
+section 0 — it describes the Immich integration. The later sections describe
+earlier features and are still correct.
 
-## 000000. Stylised face recognition and album Face type (most recent work — read this first)
+## 0000000. Duplicate image finder (most recent work — read this first)
 
 This section describes the last session. The work is complete. The application
+builds clean. `cargo test` passes 66 tests plus 2 ignored tests. The work is on
+`main`. The work is pushed. Every CI build in the session was green. The version
+was 0.0.76 at the end of the session. CI increases the version on each push. Do
+not change the version by hand.
+
+The session added a duplicate image finder. The user starts it from the toolbar
+"Tools" menu. A dialog sets the scope and the similarity level. A background scan
+groups the duplicate photos. The result view shows one group per row. The user
+marks the copy to delete, then deletes the marked files.
+
+### 0000000.1 What the finder does
+
+The finder finds two kinds of duplicate:
+
+1. Exact duplicates. Two files with the same SHA-256 content hash. The hash is
+   already stored in `photos.hash`.
+2. Near duplicates. Two files that look the same but differ in size,
+   compression, or a small edit. The finder compares a 64-bit perceptual hash
+   (a dHash). It matches two photos when the Hamming distance of their dHashes is
+   at most a threshold.
+
+### 0000000.2 The perceptual hash (dHash)
+
+`src/phash.rs` holds the dHash. `dhash_rgb` reduces an RGB image to a 9x8
+grayscale grid and sets one bit per adjacent-column brightness compare. This
+gives 64 bits. `dhash_file` decodes a file first with `thumb::decode_oriented_rgb`.
+`hamming` counts the differing bits.
+
+The dHash is stored in a new column `photos.phash`. The type is INTEGER. SQLite
+has no unsigned type, so the code bit-casts the u64 to i64 on write and back on
+read (`phash as i64`, `get::<_, i64>() as u64`). A value of 0 means "not yet
+computed".
+
+The scanner computes the dHash during Phase 2 enrichment. `enrich_file_with_image`
+in `src/scan.rs` decodes the file one time, then builds the dHash from the same
+pixels. The `Enrichment` struct carries the `phash`. `Library::enrich_photo`
+writes it. Existing photos have `phash = 0`. The finder backfills them on the
+first scan (it decodes each such file one time and stores the result).
+
+### 0000000.3 The grouping engine
+
+`src/dedup.rs` holds the engine. `find_duplicates(photos, threshold, cancel)`
+returns a list of `DupGroup`. A `DupGroup` holds the group photos and the id of
+the photo to keep (`keep_id`). The engine does two passes over a union-find:
+
+1. Exact pass. It unions photos that share a non-empty `hash`.
+2. Near pass. It unions photos whose dHashes are within `threshold`. This pass is
+   O(n^2). The scope is one album or one folder set, not the whole library, so
+   this is acceptable. A threshold of 0 skips the near pass. Photos with
+   `phash == 0` never match in the near pass.
+
+The engine keeps only groups with more than one member. `choose_keep` picks the
+best copy: larger pixel area first, then more lossless format
+(`format_rank`: png/tiff/bmp > webp > jpg), then larger file size, then older
+`added_at`, then lower id. The comparison is total, so ties break the same way
+every run. Unit tests cover the exact pass, the near pass, and the ranking.
+
+### 0000000.4 The database layer
+
+`src/db/duplicates.rs` holds three methods on `Library`:
+
+- `photos_in_folders(folder_ids)` reads the non-missing photos in a folder set.
+- `set_photo_phash(id, phash)` writes a backfilled dHash.
+- `delete_photo_hard(id, path)` deletes the row, then removes the file. It
+  deletes the row first, so a failed file delete still leaves the library
+  consistent. A `NotFound` file error is ignored, because a gone file is the
+  goal. The row delete cascades to tags, edits, faces, and album membership
+  through the `ON DELETE CASCADE` foreign keys.
+
+Schema note. `photos.phash` is in `src/db/schema.sql`. The `migrate` function in
+`src/db/library.rs` adds the column with `ALTER TABLE ... ADD COLUMN` for old
+databases. A new index `idx_photos_hash` speeds the exact bucketing. The
+`PHOTO_COLS` constant (three copies: `virtual_albums.rs`, `faces.rs`,
+`style_faces.rs`) and the two inline SELECTs in `library.rs` gained `phash` at
+the end. `map_photo` reads `phash` at column index 16.
+
+### 0000000.5 The user flow and the UI
+
+The toolbar "Tools" button opens a menu with "Find Duplicates…"
+(`src/ui/toolbar.rs`). The item calls `actions::find_duplicates`
+(`src/ui/actions.rs`). That function shows a dialog. The dialog has a similarity
+slider (0 to 16, the maximum Hamming distance) and a scope choice: the current
+folder, selected albums (recursive, through `folders_under_album`), or the whole
+library. On "Find Duplicates" it resolves the folder ids and calls
+`dedup_scan::find_duplicates`.
+
+`src/ui/dedup_scan.rs` runs the scan off the GTK main thread. It copies the
+`aitag.rs` pattern: a `Msg` enum, a `glib::MainContext::channel`, a worker
+thread, and progress on the status bar. A new `Controller` field `dedup_job` on
+`AppState` gives cancel support (the status-bar Stop button calls
+`dedup_job.stop()`). The thread backfills missing dHashes, then runs the engine,
+then sends the groups to the main thread. `present_results` builds the group
+entries and calls `grid.show_duplicates`.
+
+### 0000000.6 The result view (important design detail)
+
+The result view is NOT the normal `GridView`. The user asked for a single box
+around each whole group. A flowing `GridView` cannot draw one box around a set of
+cells that wrap across rows. So the grid holds a second view for duplicate mode:
+
+- `Grid` gained fields `scroller`, `dup_container`, `dup_state`, and the
+  duplicate action bar (`dup_bar`, `dup_label`, `dup_delete_btn`).
+- `show_duplicates` builds a vertical stack of `gtk4::Frame` boxes, one per
+  group. Each frame holds a `FlowBox` of thumbnail overlays. The frame has the
+  CSS class `dup-group-frame` (a bordered, tinted box). Then it swaps the
+  scroller child from the `GridView` to `dup_container`.
+- Each thumbnail is an `Overlay` of an `Image` and a red X `Label`
+  (CSS class `dup-x`). A per-thumbnail `PhotoObject` drives the async thumbnail
+  load through the shared worker pool (`enqueue_thumb`).
+- Each thumbnail has its own `GestureClick`. This is the fix for a real bug: the
+  first version marked cells through `connect_selection_changed`, which does not
+  fire when the user clicks an already-selected cell. The per-thumbnail gesture
+  fires on every click. `toggle_dup_mark(group, photo_id)` marks the clicked
+  photo, moves the mark from another photo, or clears the mark when the marked
+  photo is clicked.
+- `dup_state` holds the live mark state (`Cell<bool>` per thumbnail) and the X
+  widget, so a click updates the view with no rebuild.
+- The action bar has a "Delete marked" button. It calls the `on_dup_delete`
+  callback with the marked photos. `dedup_scan` shows one confirm dialog, then
+  calls `delete_photo_hard` for each marked photo, then leaves duplicate mode.
+
+`exit_dup_mode` restores the normal `GridView` child. `set_photos` (used by every
+normal view loader) calls `exit_dup_mode` first, so opening any folder or album
+leaves duplicate mode.
+
+The CSS is in `install_css` in `src/ui/app.rs`. It is loaded one time for the
+default display. It holds `dup-x` (the red badge) and `dup-group-frame` (the
+group border).
+
+### 0000000.7 What is deferred
+
+- RAW+JPEG pairing is not done. The scanner does not scan RAW files
+  (`IMAGE_EXTS` in `src/scan.rs` has no RAW extensions). So a RAW/JPEG pair
+  cannot appear as a duplicate yet. Add RAW support first.
+- A richer per-group review (side-by-side) is not done. The framed grid with the
+  red-X marking is the review.
+- The near pass is O(n^2). For a whole-library scan on a very large library, add
+  a dHash prefilter bucket (for example, bucket by the high bits) before the
+  pairwise compare.
+
+### 0000000.8 Disk note (RULE FOUR)
+
+The build cache filled the disk in this session. `target/debug/incremental`
+grew to 13 GB. The session added RULE FOUR to AGENTS.md. Delete
+`target/debug/incremental` after each test cycle. CI builds with `--release`, so
+CI is not the cause. Check free space with `df -h /`.
+
+## 000000. Stylised face recognition and album Face type
+
+This section describes an earlier session. The work is complete. The application
 builds clean. `cargo test` passes 60 tests plus 2 ignored tests. The work is on
 `main`. The work is pushed. Every CI build in the session was green. The version
 was 0.0.73 at the end of the session. CI increases the version on each push. Do
