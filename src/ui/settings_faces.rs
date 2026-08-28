@@ -112,8 +112,10 @@ pub fn faces_pane(state: &Rc<AppState>) -> GtkBox {
     let btn_row = GtkBox::new(Orientation::Horizontal, 6);
     let download = Button::with_label("Download models");
     let scan = Button::with_label("Scan for faces now");
+    let review = Button::with_label("Review people…");
     btn_row.append(&download);
     btn_row.append(&scan);
+    btn_row.append(&review);
     root.append(&btn_row);
 
     {
@@ -137,6 +139,13 @@ pub fn faces_pane(state: &Rc<AppState>) -> GtkBox {
         let state = state.clone();
         scan.connect_clicked(move |_| {
             super::facescan::scan_faces(&state);
+        });
+    }
+
+    {
+        let state = state.clone();
+        review.connect_clicked(move |_| {
+            super::people::open_people_review(&state);
         });
     }
 

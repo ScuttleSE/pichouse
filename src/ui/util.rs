@@ -1,5 +1,27 @@
 //! Small UI helpers.
 
+use gtk4::gdk;
+use gtk4::gdk_pixbuf::PixbufLoader;
+use gtk4::prelude::*;
+
+/// Decode an image blob into a `gdk::Texture`. Tries the pixbuf loader first,
+/// then the `image` crate. Returns `None` on failure.
+pub fn texture_from_bytes(blob: &[u8]) -> Option<gdk::Texture> {
+    let loader = PixbufLoader::new();
+    if loader.write(blob).is_ok() && loader.close().is_ok() {
+        if let Some(pixbuf) = loader.pixbuf() {
+            return Some(gdk::Texture::for_pixbuf(&pixbuf));
+        }
+    }
+    let img = image::load_from_memory(blob).ok()?;
+    let rgba = img.to_rgba8();
+    let (w, h) = (rgba.width() as i32, rgba.height() as i32);
+    let bytes = gtk4::glib::Bytes::from_owned(rgba.into_raw());
+    let texture =
+        gdk::MemoryTexture::new(w, h, gdk::MemoryFormat::R8g8b8a8, &bytes, (w * 4) as usize);
+    Some(texture.upcast())
+}
+
 /// Escape text for safe inclusion in Pango markup.
 pub fn escape_markup(s: &str) -> String {
     let mut out = String::with_capacity(s.len());

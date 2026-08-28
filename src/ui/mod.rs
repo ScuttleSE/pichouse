@@ -15,6 +15,7 @@ mod freshness;
 mod grid;
 mod immich;
 mod newfiles;
+mod people;
 mod photo_object;
 mod prefs;
 mod properties;
