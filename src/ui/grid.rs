@@ -105,6 +105,18 @@ pub struct Grid {
     /// Called with (x, y) in grid coordinates on a right-click, so the app can
     /// show a context menu over the current selection.
     on_context_menu: RefCell<Option<Box<dyn Fn(f64, f64)>>>,
+    /// `true` while the grid shows duplicate groups. In this mode a click
+    /// marks the clicked cell as the "delete" copy of its group instead of the
+    /// normal selection behaviour.
+    dup_mode: std::cell::Cell<bool>,
+    /// The duplicate-results action bar (label + delete button), shown only in
+    /// duplicate mode.
+    dup_bar: gtk4::Box,
+    dup_label: Label,
+    dup_delete_btn: Button,
+    /// Called when the user clicks "Delete marked" with the list of marked
+    /// photos to hard delete.
+    on_dup_delete: RefCell<Option<Box<dyn Fn(Vec<Photo>)>>>,
 }
 
 /// Where the grid's current photos came from.
@@ -157,6 +169,23 @@ impl Grid {
         let header_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
         header_box.append(&back_btn);
         header_box.append(&header);
+
+        // The duplicate-results action bar. Hidden unless a duplicate view is
+        // shown. It holds a hint label and a "Delete marked" button.
+        let dup_label = Label::new(None);
+        dup_label.set_xalign(0.0);
+        dup_label.set_hexpand(true);
+        let dup_delete_btn = Button::with_label("Delete marked");
+        dup_delete_btn.add_css_class("destructive-action");
+        let dup_bar = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+        dup_bar.add_css_class("toolbar");
+        dup_bar.set_margin_start(6);
+        dup_bar.set_margin_end(6);
+        dup_bar.set_margin_top(4);
+        dup_bar.set_margin_bottom(4);
+        dup_bar.append(&dup_label);
+        dup_bar.append(&dup_delete_btn);
+        dup_bar.set_visible(false);
 
         let store = gio::ListStore::new::<PhotoObject>();
         let selection = MultiSelection::new(Some(store.clone()));
@@ -283,6 +312,7 @@ impl Grid {
 
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         root.append(&header_box);
+        root.append(&dup_bar);
         root.append(&scroller);
 
         // Apply finished thumbnails on the UI thread by setting the texture on
@@ -336,6 +366,11 @@ impl Grid {
             on_activate: RefCell::new(None),
             on_select: RefCell::new(None),
             on_context_menu: RefCell::new(None),
+            dup_mode: std::cell::Cell::new(false),
+            dup_bar,
+            dup_label,
+            dup_delete_btn,
+            on_dup_delete: RefCell::new(None),
         }
         .into_rc()
     }
@@ -364,11 +399,34 @@ impl Grid {
                     return;
                 }
                 let pos = bitset.nth(0);
+                // In duplicate mode a click marks the clicked cell as the group's
+                // delete copy (or clears it if it was already marked). Act only
+                // on a plain single-cell click so ctrl/shift ranges are ignored.
+                if rc2.dup_mode.get() {
+                    if bitset.size() == 1 {
+                        rc2.handle_dup_click(pos);
+                    }
+                    return;
+                }
                 let photos = rc2.filtered_photos();
                 if let Some(p) = photos.get(pos as usize) {
                     if let Some(cb) = rc2.on_select.borrow().as_ref() {
                         cb(p.clone());
                     }
+                }
+            });
+        }
+        // Duplicate mode: the "Delete marked" button hands the marked photos to
+        // the app for a hard delete.
+        {
+            let rc2 = rc.clone();
+            rc.dup_delete_btn.connect_clicked(move |_| {
+                let marked = rc2.marked_photos();
+                if marked.is_empty() {
+                    return;
+                }
+                if let Some(cb) = rc2.on_dup_delete.borrow().as_ref() {
+                    cb(marked);
                 }
             });
         }
@@ -425,6 +483,111 @@ impl Grid {
     pub fn set_on_context_menu<F: Fn(f64, f64) + 'static>(&self, f: F) {
         *self.on_context_menu.borrow_mut() = Some(Box::new(f));
     }
+
+    /// Register the "Delete marked" callback for duplicate mode.
+    pub fn set_on_dup_delete<F: Fn(Vec<Photo>) + 'static>(&self, f: F) {
+        *self.on_dup_delete.borrow_mut() = Some(Box::new(f));
+    }
+
+    /// Show the duplicate groups. Each photo carries its group id; the marked
+    /// (worst) photo per group starts with the red X. Groups are laid out one
+    /// after another with a tint that alternates per group. The action bar with
+    /// "Delete marked" appears above the grid.
+    pub fn show_duplicates(&self, title: &str, photos: &[(Photo, i64, bool)]) {
+        *self.source.borrow_mut() = Source::None;
+        self.dup_mode.set(true);
+        self.dup_bar.set_visible(true);
+        self.hide_back();
+        // Build the objects with dup metadata, then load them directly.
+        let plain: Vec<Photo> = photos.iter().map(|(p, _, _)| p.clone()).collect();
+        self.set_photos(title, plain);
+        // Apply the group id and initial mark to each freshly built object.
+        for (i, (_, group, mark)) in photos.iter().enumerate() {
+            if let Some(obj) = self.store.item(i as u32).and_downcast::<PhotoObject>() {
+                obj.set_dup_group(*group);
+                obj.set_dup_mark(*mark);
+            }
+        }
+        self.update_dup_label();
+    }
+
+    /// Leave duplicate mode (hide the action bar).
+    pub fn exit_dup_mode(&self) {
+        self.dup_mode.set(false);
+        self.dup_bar.set_visible(false);
+    }
+
+    /// Handle a click on cell `pos` in duplicate mode: move (or clear) the red X
+    /// within the clicked cell's group.
+    fn handle_dup_click(&self, pos: u32) {
+        let Some(clicked) = self.store.item(pos).and_downcast::<PhotoObject>() else {
+            return;
+        };
+        let group = clicked.dup_group();
+        if group == 0 {
+            return;
+        }
+        let was_marked = clicked.dup_mark();
+        // Clear the mark on every cell in the group.
+        let n = self.store.n_items();
+        for i in 0..n {
+            if let Some(obj) = self.store.item(i).and_downcast::<PhotoObject>() {
+                if obj.dup_group() == group {
+                    obj.set_dup_mark(false);
+                }
+            }
+        }
+        // Clicking the marked cell clears it (untag). Clicking any other cell
+        // moves the mark to it.
+        if !was_marked {
+            clicked.set_dup_mark(true);
+        }
+        self.update_dup_label();
+    }
+
+    /// The photos currently marked for deletion in duplicate mode.
+    fn marked_photos(&self) -> Vec<Photo> {
+        let all = self.all_photos.borrow();
+        let mut out = Vec::new();
+        let n = self.store.n_items();
+        for i in 0..n {
+            if let Some(obj) = self.store.item(i).and_downcast::<PhotoObject>() {
+                if obj.dup_mark() {
+                    let id = obj.id();
+                    if let Some(p) = all.iter().find(|p| p.id == id) {
+                        out.push(p.clone());
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Update the duplicate action-bar label with the current marked count.
+    fn update_dup_label(&self) {
+        let mut marked = 0i64;
+        let mut reclaim = 0i64;
+        let all = self.all_photos.borrow();
+        let n = self.store.n_items();
+        for i in 0..n {
+            if let Some(obj) = self.store.item(i).and_downcast::<PhotoObject>() {
+                if obj.dup_mark() {
+                    marked += 1;
+                    let id = obj.id();
+                    if let Some(p) = all.iter().find(|p| p.id == id) {
+                        reclaim += p.size;
+                    }
+                }
+            }
+        }
+        self.dup_label.set_text(&format!(
+            "Click a photo to mark it for deletion (red X). Click the X to unmark. \
+             {marked} marked, {} to free.",
+            human_size(reclaim)
+        ));
+        self.dup_delete_btn.set_sensitive(marked > 0);
+    }
+
 
     /// The `GridView` widget, used as a menu anchor.
     pub fn grid_view(&self) -> &GridView {
@@ -675,6 +838,7 @@ impl Grid {
         // Default to no back button. The person and cluster views re-enable it
         // right after, via `set_back`.
         self.hide_back();
+        self.exit_dup_mode();
         *self.all_photos.borrow_mut() = photos;
         *self.title.borrow_mut() = title.to_string();
         self.rebuild();
@@ -930,6 +1094,15 @@ fn build_factory(thumb_size: i32) -> SignalListItemFactory {
         image.set_pixel_size(thumb_size);
         overlay.add_overlay(&image);
 
+        // Red X overlay for the duplicate finder. Hidden unless the bound cell
+        // is the marked delete copy of its group.
+        let x = Label::new(Some("\u{2715}"));
+        x.set_halign(Align::Center);
+        x.set_valign(Align::Center);
+        x.add_css_class("dup-x");
+        x.set_visible(false);
+        overlay.add_overlay(&x);
+
         item.set_child(Some(&overlay));
     });
     factory.connect_bind(|_, item| {
@@ -955,6 +1128,12 @@ fn build_factory(thumb_size: i32) -> SignalListItemFactory {
         // Show the current texture (if already decoded) and update the label.
         apply_texture(&image, &label, photo.texture());
 
+        // Duplicate-finder styling: tint by group parity and show the red X on
+        // the marked delete copy. `dup_group == 0` means the cell is not part of
+        // a duplicate view, so all duplicate styling is cleared.
+        let x_widget = overlay_x(&overlay);
+        apply_dup_style(&overlay, x_widget.as_ref(), photo.dup_group(), photo.dup_mark());
+
         // Observe future texture changes for this bound object.
         let image_weak = image.downgrade();
         let label_weak = label.downgrade();
@@ -968,6 +1147,19 @@ fn build_factory(thumb_size: i32) -> SignalListItemFactory {
         unsafe {
             item.set_data("texture-handler", handler);
         }
+
+        // Observe the mark so a click re-styles the cell live.
+        let overlay_weak = overlay.downgrade();
+        let mark_handler =
+            photo.connect_notify_local(Some("dup-mark"), move |obj: &PhotoObject, _pspec| {
+                if let Some(overlay) = overlay_weak.upgrade() {
+                    let x_widget = overlay_x(&overlay);
+                    apply_dup_style(&overlay, x_widget.as_ref(), obj.dup_group(), obj.dup_mark());
+                }
+            });
+        unsafe {
+            item.set_data("dup-mark-handler", mark_handler);
+        }
     });
     factory.connect_unbind(|_, item| {
         let item = item.downcast_ref::<ListItem>().unwrap();
@@ -976,10 +1168,49 @@ fn build_factory(thumb_size: i32) -> SignalListItemFactory {
                 if let Some(handler) = item.steal_data::<glib::SignalHandlerId>("texture-handler") {
                     photo.disconnect(handler);
                 }
+                if let Some(handler) =
+                    item.steal_data::<glib::SignalHandlerId>("dup-mark-handler")
+                {
+                    photo.disconnect(handler);
+                }
             }
         }
     });
     factory
+}
+
+/// Apply duplicate-finder cell styling: a per-group tint and the red X on the
+/// marked copy. Clears all duplicate styling when `group == 0`.
+fn apply_dup_style(overlay: &Overlay, x: Option<&Label>, group: i64, mark: bool) {
+    overlay.remove_css_class("dup-group-a");
+    overlay.remove_css_class("dup-group-b");
+    if group != 0 {
+        if group % 2 == 0 {
+            overlay.add_css_class("dup-group-a");
+        } else {
+            overlay.add_css_class("dup-group-b");
+        }
+    }
+    if let Some(x) = x {
+        x.set_visible(group != 0 && mark);
+    }
+}
+
+/// Format a byte count as a short human string.
+fn human_size(bytes: i64) -> String {
+    let b = bytes as f64;
+    const KB: f64 = 1024.0;
+    const MB: f64 = KB * 1024.0;
+    const GB: f64 = MB * 1024.0;
+    if b >= GB {
+        format!("{:.1} GB", b / GB)
+    } else if b >= MB {
+        format!("{:.1} MB", b / MB)
+    } else if b >= KB {
+        format!("{:.1} KB", b / KB)
+    } else {
+        format!("{bytes} B")
+    }
 }
 
 /// Set the image from a texture (or clear it and show the label if `None`).
@@ -1005,6 +1236,15 @@ fn overlay_parts(overlay: &Overlay) -> (Image, Label) {
         .and_downcast::<Image>()
         .unwrap();
     (image, label)
+}
+
+/// The red-X overlay label of a cell (the third overlay child), if present.
+fn overlay_x(overlay: &Overlay) -> Option<Label> {
+    overlay
+        .first_child()
+        .and_then(|c| c.next_sibling())
+        .and_then(|c| c.next_sibling())
+        .and_downcast::<Label>()
 }
 
 /// Decode an image blob into a `gdk::Texture`.

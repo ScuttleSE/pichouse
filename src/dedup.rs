@@ -21,13 +21,6 @@ pub struct DupGroup {
     pub keep_id: i64,
 }
 
-impl DupGroup {
-    /// The delete candidates: every photo except the keep photo.
-    pub fn candidates(&self) -> impl Iterator<Item = &Photo> {
-        self.photos.iter().filter(move |p| p.id != self.keep_id)
-    }
-}
-
 /// Format-quality rank. A higher number is a more preferred (more lossless)
 /// format. Unknown extensions get the lowest rank.
 fn format_rank(filename: &str) -> u8 {

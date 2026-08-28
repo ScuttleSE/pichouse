@@ -94,8 +94,9 @@ Open the toolbar **Tools** menu and pick **Find Duplicates…**. Choose a scope
   64-bit perceptual hash (dHash). The slider sets the maximum Hamming distance.
 - Each group auto-selects the "worse" copy for deletion and keeps the best one
   (larger pixel area, then more lossless format, then larger file, then older).
-- Results show in the grid. A confirm dialog reports the count and the reclaimed
-  space before a permanent delete (the file and its database row).
+- Results show in the grid. Each group has a coloured outline. The marked
+  "worse" copy shows a red **X**. Click any photo to move the X to it. Click the
+  X to unmark. The **Delete marked** button then removes the marked files.
 
 ## Facial recognition (local, optional)
 

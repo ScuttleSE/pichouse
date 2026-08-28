@@ -20,7 +20,6 @@ use super::state::{show_error, show_message, AppState};
 enum Msg {
     Message(String),
     Progress(f64),
-    Error(String),
     Done(Vec<DupGroup>),
 }
 
@@ -69,12 +68,6 @@ pub fn find_duplicates(state: &Rc<AppState>, scope: Scope, threshold: u32) {
             match msg {
                 Msg::Message(m) => status.set_message(&m),
                 Msg::Progress(p) => status.set_progress(p),
-                Msg::Error(e) => {
-                    status.set_scanning(false);
-                    status.set_progress(-1.0);
-                    show_error(&state, &e);
-                    state.dedup_job.finish();
-                }
                 Msg::Done(groups) => {
                     status.set_scanning(false);
                     status.set_progress(-1.0);
@@ -121,7 +114,7 @@ pub fn find_duplicates(state: &Rc<AppState>, scope: Scope, threshold: u32) {
     });
 }
 
-/// Show the duplicate groups in the grid and offer to delete the candidates.
+/// Show the duplicate groups in the grid with the review UI.
 fn present_results(state: &Rc<AppState>, label: &str, groups: Vec<DupGroup>) {
     if groups.is_empty() {
         show_message(state, "Find Duplicates", "No duplicates found.");
@@ -129,54 +122,57 @@ fn present_results(state: &Rc<AppState>, label: &str, groups: Vec<DupGroup>) {
         return;
     }
 
-    // Build a flat, review-friendly list: within each group the keep photo
-    // first, then the delete candidates. Groups follow one another.
-    let mut flat: Vec<Photo> = Vec::new();
-    let mut candidates: Vec<Photo> = Vec::new();
-    let mut reclaim: i64 = 0;
+    // Build the grid input: within each group the keep copy first, then the
+    // candidates. Each entry carries its group id and whether it starts marked
+    // (the auto-selected "worse" copies start with the red X).
+    let mut entries: Vec<(Photo, i64, bool)> = Vec::new();
+    let mut group_id: i64 = 0;
+    let mut candidate_count = 0usize;
     for g in &groups {
-        flat.extend(g.photos.iter().cloned());
-        for c in g.candidates() {
-            reclaim += c.size;
-            candidates.push(c.clone());
+        group_id += 1;
+        for p in &g.photos {
+            let mark = p.id != g.keep_id;
+            if mark {
+                candidate_count += 1;
+            }
+            entries.push((p.clone(), group_id, mark));
         }
     }
 
     let title = format!(
-        "Duplicates in {label} — {} groups, {} to remove",
+        "Duplicates in {label} — {} groups, {} marked",
         groups.len(),
-        candidates.len()
+        candidate_count
     );
-    state.grid().show_photos(&title, &flat);
+    let grid = state.grid();
+    grid.show_duplicates(&title, &entries);
+
+    // Wire the "Delete marked" button to a confirm-then-delete flow.
+    {
+        let state = state.clone();
+        grid.set_on_dup_delete(move |marked| {
+            let reclaim: i64 = marked.iter().map(|p| p.size).sum();
+            let detail = format!(
+                "Permanently delete {} marked photos from disk?\n\nThis frees about {}.",
+                marked.len(),
+                human_size(reclaim)
+            );
+            let state2 = state.clone();
+            confirm(&state, None, "Delete marked duplicates?", &detail, move || {
+                delete_marked(&state2, &marked)
+            });
+        });
+    }
+
     state.show_grid();
     state.status().set_message(&title);
-
-    let detail = format!(
-        "Found {} duplicate groups in {label}.\n\n\
-         {} copies are marked for deletion, keeping the best copy of each group.\n\
-         This frees about {}.\n\n\
-         Delete these {} files now? This permanently removes them from disk.",
-        groups.len(),
-        candidates.len(),
-        human_size(reclaim),
-        candidates.len()
-    );
-
-    let state2 = state.clone();
-    confirm(
-        state,
-        None,
-        "Delete duplicate copies?",
-        &detail,
-        move || delete_candidates(&state2, &candidates),
-    );
 }
 
-/// Hard delete the given candidate photos and refresh the grid to the kept set.
-fn delete_candidates(state: &Rc<AppState>, candidates: &[Photo]) {
+/// Hard delete the given photos and refresh the grid to the library view.
+fn delete_marked(state: &Rc<AppState>, marked: &[Photo]) {
     let mut deleted = 0;
     let mut failed = 0;
-    for c in candidates {
+    for c in marked {
         match state.lib.delete_photo_hard(c.id, &c.path) {
             Ok(()) => deleted += 1,
             Err(e) => {
@@ -191,8 +187,7 @@ fn delete_candidates(state: &Rc<AppState>, candidates: &[Photo]) {
         format!("Deleted {deleted} duplicates")
     };
     state.status().set_message(&msg);
-    // The grid held an ad-hoc list including the deleted rows; reload the
-    // current library view so the deleted photos disappear.
+    state.grid().exit_dup_mode();
     state.grid().reload_from_source();
 }
 

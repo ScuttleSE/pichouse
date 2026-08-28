@@ -218,6 +218,9 @@ fn build_ui(app: &Application) {
         .build();
     *state.window.borrow_mut() = Some(window.clone());
 
+    // Install application CSS (duplicate-finder styling, and future themes).
+    install_css();
+
     // Window-level key handling (capture phase): route keys to the viewer when
     // it is the visible center child.
     let key_ctrl = gtk4::EventControllerKey::new();
@@ -238,6 +241,39 @@ fn build_ui(app: &Application) {
     populate(&state);
 
     window.present();
+}
+
+/// Load the application CSS once for the default display. Provides the
+/// duplicate-finder cell styling (group tint and the red X overlay).
+fn install_css() {
+    let provider = gtk4::CssProvider::new();
+    provider.load_from_data(
+        "\
+        .dup-x { \
+            color: #ffffff; \
+            background-color: rgba(200, 30, 30, 0.85); \
+            border-radius: 999px; \
+            font-size: 20px; \
+            font-weight: bold; \
+            padding: 2px 8px; \
+        } \
+        .dup-group-a { \
+            outline: 3px solid rgba(60, 130, 220, 0.9); \
+            outline-offset: -3px; \
+        } \
+        .dup-group-b { \
+            outline: 3px solid rgba(220, 160, 40, 0.9); \
+            outline-offset: -3px; \
+        } \
+        ",
+    );
+    if let Some(display) = gtk4::gdk::Display::default() {
+        gtk4::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    }
 }
 
 /// Apply the theme preference. When `force_adwaita` is set, override the system

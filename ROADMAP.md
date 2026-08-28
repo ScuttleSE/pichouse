@@ -475,16 +475,18 @@ The first version is in place. Open it from the toolbar "Tools" menu →
   `photos.phash`. Existing photos are backfilled on the first scan.
 - Groups auto-select the "worse" copy for deletion. "Better" means, in order:
   larger pixel area, more lossless format, larger file size, older added date.
-- Results show in the grid (best copy first per group). A confirm dialog lists
-  the count and the reclaimed size before a hard delete (file + row, cascading
-  to tags/edits/faces/album membership).
+- Results show in the grid. Each group has a coloured outline (alternating), and
+  the auto-selected "worse" copy shows a red X. Click any photo in a group to
+  move the X to it. Click the X to unmark the group. A "Delete marked" button in
+  the results bar runs a single confirm, then hard deletes the marked files (and
+  their rows, cascading to tags/edits/faces/album membership).
 
 ### Deferred / not yet done
 
 - RAW+JPEG pairing: the app does not scan RAW files yet, so this concern does
   not apply. Add RAW support first.
-- A richer per-group review UI (side-by-side, per-photo keep/delete toggles).
-  The v1 review is the confirm dialog plus the grouped grid.
+- A richer per-group review UI (side-by-side view). The current review is the
+  grouped grid with the red-X marking and the "Delete marked" bar.
 
 ### Original design notes
 
