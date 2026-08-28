@@ -229,3 +229,109 @@ fn refresh_after_change(state: &Rc<AppState>, list: &GtkBox, win: &Window) {
         sb.reload_deferred();
     }
 }
+
+/// Open a small dialog to assign one face to a person. It lists existing people
+/// and offers a New person option. `on_done` runs after a change.
+pub fn assign_face_dialog<F: Fn() + 'static>(state: &Rc<AppState>, face_id: i64, on_done: F) {
+    let win = Window::builder()
+        .title("Assign Face")
+        .modal(true)
+        .default_width(320)
+        .build();
+    if let Some(w) = state.window() {
+        win.set_transient_for(Some(&w));
+    }
+    let root = GtkBox::new(Orientation::Vertical, 8);
+    root.set_margin_top(12);
+    root.set_margin_bottom(12);
+    root.set_margin_start(12);
+    root.set_margin_end(12);
+
+    let people: Vec<crate::model::Person> = state
+        .lib
+        .persons()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(p, _)| p)
+        .collect();
+
+    let on_done = Rc::new(on_done);
+
+    if !people.is_empty() {
+        root.append(&Label::new(Some("Assign to an existing person:")));
+        let labels: Vec<String> = people.iter().map(|p| p.name.clone()).collect();
+        let label_refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
+        let sl = StringList::new(&label_refs);
+        let drop = DropDown::new(Some(sl), gtk4::Expression::NONE);
+        root.append(&drop);
+        let assign = Button::with_label("Assign");
+        assign.add_css_class("suggested-action");
+        root.append(&assign);
+        let state2 = state.clone();
+        let people2 = people.clone();
+        let win2 = win.clone();
+        let on_done2 = on_done.clone();
+        assign.connect_clicked(move |_| {
+            let idx = drop.selected() as usize;
+            if let Some(p) = people2.get(idx) {
+                if let Err(e) = state2.lib.set_face_person(face_id, p.id) {
+                    show_error(&state2, &e.to_string());
+                    return;
+                }
+                if let Some(sb) = state2.sidebar.borrow().as_ref() {
+                    sb.reload_deferred();
+                }
+                on_done2();
+            }
+            win2.close();
+        });
+        root.append(&Separator::new(Orientation::Horizontal));
+    }
+
+    let new_btn = Button::with_label("New person…");
+    root.append(&new_btn);
+    {
+        let state = state.clone();
+        let win = win.clone();
+        let on_done = on_done.clone();
+        new_btn.connect_clicked(move |_| {
+            let state2 = state.clone();
+            let win2 = win.clone();
+            let on_done2 = on_done.clone();
+            prompt_text(
+                &state,
+                Some(&win),
+                "New Person",
+                "Person name:",
+                "",
+                move |name| {
+                    if name.trim().is_empty() {
+                        return;
+                    }
+                    match state2.lib.create_person(&name) {
+                        Ok(pid) => {
+                            let _ = state2.lib.set_face_person(face_id, pid);
+                            let _ = state2.lib.set_person_cover(pid, face_id);
+                            if let Some(sb) = state2.sidebar.borrow().as_ref() {
+                                sb.reload_deferred();
+                            }
+                            on_done2();
+                        }
+                        Err(e) => show_error(&state2, &e.to_string()),
+                    }
+                    win2.close();
+                },
+            );
+        });
+    }
+
+    let cancel = Button::with_label("Cancel");
+    {
+        let win = win.clone();
+        cancel.connect_clicked(move |_| win.close());
+    }
+    root.append(&cancel);
+
+    win.set_child(Some(&root));
+    win.present();
+}

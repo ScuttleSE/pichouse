@@ -34,6 +34,16 @@ pub struct Viewer {
     next_btn: Button,
     rotate_btn: Button,
     edit_btn: Button,
+    /// Toggles the face-box overlay.
+    faces_btn: Button,
+    /// Transparent surface stacked on the picture for the face-box overlay.
+    face_area: DrawingArea,
+    /// True while the face overlay is shown.
+    faces_mode: std::cell::Cell<bool>,
+    /// The faces of the current photo, in per-mille of the oriented image.
+    faces: RefCell<Vec<crate::model::Face>>,
+    /// Person id -> name, for labelling boxes.
+    person_names: RefCell<std::collections::HashMap<i64, String>>,
 
     photos: RefCell<Vec<Photo>>,
     index: RefCell<usize>,
@@ -76,6 +86,7 @@ impl Viewer {
         let next_btn = Button::from_icon_name("media-skip-forward-symbolic");
         let rotate_btn = Button::from_icon_name("object-rotate-right-symbolic");
         let edit_btn = Button::from_icon_name("document-edit-symbolic");
+        let faces_btn = Button::from_icon_name("avatar-default-symbolic");
 
         let header = Label::new(None);
         header.set_xalign(0.0);
@@ -92,6 +103,7 @@ impl Viewer {
         bar.append(&next_btn);
         bar.append(&rotate_btn);
         bar.append(&edit_btn);
+        bar.append(&faces_btn);
         bar.append(&header);
 
         let picture = Picture::new();
@@ -106,9 +118,15 @@ impl Viewer {
         let crop_area = DrawingArea::new();
         crop_area.set_visible(false);
         crop_area.set_can_target(true);
+        // A second transparent surface draws the face boxes. It stays hidden and
+        // targetable only while the face overlay is on.
+        let face_area = DrawingArea::new();
+        face_area.set_visible(false);
+        face_area.set_can_target(true);
         let overlay = Overlay::new();
         overlay.set_child(Some(&picture));
         overlay.add_overlay(&crop_area);
+        overlay.add_overlay(&face_area);
 
         let root = GtkBox::new(Orientation::Vertical, 0);
         root.append(&bar);
@@ -126,6 +144,11 @@ impl Viewer {
             next_btn,
             rotate_btn,
             edit_btn,
+            faces_btn,
+            face_area,
+            faces_mode: std::cell::Cell::new(false),
+            faces: RefCell::new(Vec::new()),
+            person_names: RefCell::new(std::collections::HashMap::new()),
             photos: RefCell::new(Vec::new()),
             index: RefCell::new(0),
             state: RefCell::new(None),
@@ -143,6 +166,7 @@ impl Viewer {
             slideshow_paused: std::cell::Cell::new(false),
         });
         viewer.setup_crop_overlay();
+        viewer.setup_face_overlay();
         viewer
     }
 
@@ -164,6 +188,9 @@ impl Viewer {
         self.rotate_btn.connect_clicked(move |_| this.rotate());
         let this = self.clone();
         self.edit_btn.connect_clicked(move |_| this.open_editor());
+
+        let this = self.clone();
+        self.faces_btn.connect_clicked(move |_| this.toggle_faces());
 
         self.refresh_tooltips();
     }
@@ -188,6 +215,8 @@ impl Viewer {
             .set_tooltip_text(Some(&format!("Next ({})", lbl(Action::Next))));
         self.rotate_btn
             .set_tooltip_text(Some(&format!("Rotate 90° ({})", lbl(Action::Rotate))));
+        self.faces_btn
+            .set_tooltip_text(Some("Show faces"));
     }
 
     /// Handle a key press while the viewer is active. Returns true if consumed.
@@ -364,6 +393,118 @@ impl Viewer {
             }
         });
         self.crop_area.add_controller(drag);
+    }
+
+    /// Set up the face overlay's draw function and click gesture. Called once.
+    fn setup_face_overlay(self: &Rc<Self>) {
+        let this = self.clone();
+        self.face_area.set_draw_func(move |_, cr, w, h| {
+            if !this.faces_mode.get() {
+                return;
+            }
+            let Some((ix, iy, iw, ih)) = this.image_rect(w, h) else {
+                return;
+            };
+            let faces = this.faces.borrow();
+            let names = this.person_names.borrow();
+            for f in faces.iter() {
+                let rx = ix + iw * f.bbox_x as f64 / 1000.0;
+                let ry = iy + ih * f.bbox_y as f64 / 1000.0;
+                let rw = iw * f.bbox_w as f64 / 1000.0;
+                let rh = ih * f.bbox_h as f64 / 1000.0;
+                // A named face draws green, an unnamed face draws yellow.
+                if f.person_id != 0 {
+                    cr.set_source_rgba(0.3, 0.9, 0.4, 0.95);
+                } else {
+                    cr.set_source_rgba(1.0, 0.85, 0.2, 0.95);
+                }
+                cr.set_line_width(2.0);
+                let _ = cr.rectangle(rx, ry, rw, rh);
+                let _ = cr.stroke();
+                // Draw the person name under the box, when known.
+                if let Some(name) = names.get(&f.person_id) {
+                    cr.move_to(rx, ry + rh + 14.0);
+                    cr.set_font_size(13.0);
+                    // A dark shadow, then the label.
+                    cr.set_source_rgba(0.0, 0.0, 0.0, 0.8);
+                    let _ = cr.show_text(name);
+                    cr.move_to(rx - 1.0, ry + rh + 13.0);
+                    cr.set_source_rgba(1.0, 1.0, 1.0, 0.95);
+                    let _ = cr.show_text(name);
+                }
+            }
+        });
+
+        // Click a box to assign or change the person.
+        let click = gtk4::GestureClick::new();
+        let this = self.clone();
+        click.connect_released(move |_, _, x, y| {
+            if !this.faces_mode.get() {
+                return;
+            }
+            this.face_clicked(x, y);
+        });
+        self.face_area.add_controller(click);
+    }
+
+    /// Toggle the face overlay on the current photo.
+    fn toggle_faces(self: &Rc<Self>) {
+        let on = !self.faces_mode.get();
+        self.faces_mode.set(on);
+        self.face_area.set_visible(on);
+        if on {
+            self.load_faces();
+        }
+        self.face_area.queue_draw();
+    }
+
+    /// Load the current photo's faces and the person-name map.
+    fn load_faces(self: &Rc<Self>) {
+        let Some(state) = self.state.borrow().clone() else {
+            return;
+        };
+        let Some(photo) = self.current_photo() else {
+            return;
+        };
+        let faces = state.lib.faces_for_photo(photo.id).unwrap_or_default();
+        let mut names = std::collections::HashMap::new();
+        for (p, _) in state.lib.persons().unwrap_or_default() {
+            names.insert(p.id, p.name);
+        }
+        *self.faces.borrow_mut() = faces;
+        *self.person_names.borrow_mut() = names;
+    }
+
+    /// Handle a click at widget `(x,y)`: find the face box under it and offer to
+    /// assign it to a person.
+    fn face_clicked(self: &Rc<Self>, x: f64, y: f64) {
+        let w = self.face_area.width();
+        let h = self.face_area.height();
+        let Some((ix, iy, iw, ih)) = self.image_rect(w, h) else {
+            return;
+        };
+        let hit = {
+            let faces = self.faces.borrow();
+            faces.iter().find(|f| {
+                let rx = ix + iw * f.bbox_x as f64 / 1000.0;
+                let ry = iy + ih * f.bbox_y as f64 / 1000.0;
+                let rw = iw * f.bbox_w as f64 / 1000.0;
+                let rh = ih * f.bbox_h as f64 / 1000.0;
+                x >= rx && x <= rx + rw && y >= ry && y <= ry + rh
+            })
+            .cloned()
+        };
+        let Some(face) = hit else { return };
+        let Some(state) = self.state.borrow().clone() else {
+            return;
+        };
+        super::people::assign_face_dialog(&state, face.id, {
+            let this = self.clone();
+            move || {
+                this.load_faces();
+                this.face_area.queue_draw();
+            }
+        });
     }
 
     /// The displayed image rectangle inside the crop_area, honouring
@@ -640,9 +781,9 @@ impl Viewer {
                 .and_then(|s| s.lib.photo_edit(photo.id).ok())
                 .unwrap_or_default()
         };
-        // While the crop overlay is active, show the image uncropped so the
-        // user drags the rectangle over the whole frame.
-        if self.crop_mode.get() {
+        // While the crop or face overlay is active, show the image uncropped so
+        // the overlay rectangles map to the whole oriented frame.
+        if self.crop_mode.get() || self.faces_mode.get() {
             edit.crop_x = 0;
             edit.crop_y = 0;
             edit.crop_w = 0;
@@ -658,6 +799,10 @@ impl Viewer {
                 None => picture.set_paintable(gtk4::gdk::Paintable::NONE),
             }
             this.crop_area.queue_draw();
+            if this.faces_mode.get() {
+                this.load_faces();
+                this.face_area.queue_draw();
+            }
             glib::ControlFlow::Break
         });
     }
