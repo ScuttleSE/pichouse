@@ -54,6 +54,12 @@ env_logger = { version = "0.11", default-features = false }
 ort = { version = "=2.0.0-rc.10", default-features = false, features = ["load-dynamic", "ndarray"] }
 ndarray = "0.16"
 
+# Extract the ONNX Runtime release archive (gzip tar) in process. Both crates
+# are pure Rust, so they add no native build dependency. Used only by the face
+# runtime downloader (src/face/runtime.rs).
+flate2 = "1"
+tar = "0.4"
+
 # Filesystem change notifications (inotify on Linux) for the library-freshness
 # fast path. Reconciliation remains the reliable core; this is only a
 # low-latency optimization for local folders and is never required for

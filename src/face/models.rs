@@ -116,6 +116,8 @@ pub fn ensure_model(id: &str) -> Result<PathBuf, String> {
 
     log::info!("downloading face model {}", e.id);
     let client = reqwest::blocking::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(20))
+        .timeout(std::time::Duration::from_secs(600))
         .build()
         .map_err(|err| format!("http client: {err}"))?;
     let resp = client

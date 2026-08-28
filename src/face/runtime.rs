@@ -73,6 +73,8 @@ pub fn ensure_runtime() -> Result<PathBuf, String> {
 
     log::info!("downloading ONNX Runtime {ORT_VERSION}");
     let client = reqwest::blocking::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(20))
+        .timeout(std::time::Duration::from_secs(600))
         .build()
         .map_err(|e| format!("http client: {e}"))?;
     let resp = client
@@ -109,40 +111,42 @@ pub fn ensure_runtime() -> Result<PathBuf, String> {
     Ok(dest)
 }
 
-/// Extract `libonnxruntime.so.<version>` from the release tgz using the system
-/// tar. Returns the library bytes.
+/// Extract `libonnxruntime.so.<version>` from the release tgz in process.
+/// Returns the library bytes. This decodes the gzip stream, then walks the tar
+/// entries and returns the one member. It uses no external process, so it
+/// cannot deadlock on a pipe.
 fn extract_so_from_tgz(tgz: &[u8]) -> Result<Vec<u8>, String> {
-    use std::process::{Command, Stdio};
+    use std::io::Read;
 
     let member = format!(
         "onnxruntime-linux-x64-{ver}/lib/{name}",
         ver = ORT_VERSION,
         name = ORT_SO_NAME
     );
-    let mut child = Command::new("tar")
-        .args(["xzO", "-f", "-", &member])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("spawn tar: {e}"))?;
-    {
-        let mut stdin = child.stdin.take().ok_or("tar stdin")?;
-        stdin.write_all(tgz).map_err(|e| format!("feed tar: {e}"))?;
+    let gz = flate2::read::GzDecoder::new(tgz);
+    let mut ar = tar::Archive::new(gz);
+    let entries = ar
+        .entries()
+        .map_err(|e| format!("read archive: {e}"))?;
+    for entry in entries {
+        let mut entry = entry.map_err(|e| format!("read entry: {e}"))?;
+        let path = entry
+            .path()
+            .map_err(|e| format!("entry path: {e}"))?
+            .to_string_lossy()
+            .to_string();
+        if path == member {
+            let mut buf = Vec::new();
+            entry
+                .read_to_end(&mut buf)
+                .map_err(|e| format!("extract member: {e}"))?;
+            if buf.is_empty() {
+                return Err("archive member is empty".into());
+            }
+            return Ok(buf);
+        }
     }
-    let out = child
-        .wait_with_output()
-        .map_err(|e| format!("tar wait: {e}"))?;
-    if !out.status.success() {
-        return Err(format!(
-            "tar failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        ));
-    }
-    if out.stdout.is_empty() {
-        return Err("tar produced no data".into());
-    }
-    Ok(out.stdout)
+    Err(format!("archive does not contain {member}"))
 }
 
 /// Initialize ONNX Runtime once, pointing it at the data-folder library.
@@ -175,5 +179,36 @@ pub fn init_runtime() -> Result<(), String> {
         Ok(())
     } else {
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Download the real release archive and extract the library in process.
+    /// This is the exact path the app runs on a fresh machine. It needs
+    /// network, so it is ignored by default.
+    ///
+    ///   cargo test face::runtime::tests::download_and_extract -- --ignored --nocapture
+    #[test]
+    #[ignore = "needs network; verifies the in-process tgz extraction"]
+    fn download_and_extract() {
+        let client = reqwest::blocking::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(20))
+            .timeout(std::time::Duration::from_secs(600))
+            .build()
+            .unwrap();
+        let bytes = client.get(ORT_URL).send().unwrap().bytes().unwrap();
+        println!("downloaded {} bytes", bytes.len());
+        let so = extract_so_from_tgz(&bytes).unwrap();
+        println!("extracted {} bytes", so.len());
+        // The library is about 21 MB, far larger than a pipe buffer. This is
+        // the size that made the old external-tar path deadlock.
+        assert!(so.len() > 10_000_000, "extracted library too small");
+        let mut h = Sha256::new();
+        h.update(&so);
+        let got: String = h.finalize().iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(got, ORT_SO_SHA256, "extracted library hash mismatch");
     }
 }
