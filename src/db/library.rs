@@ -98,6 +98,13 @@ fn migrate(conn: &Connection) -> Result<()> {
             "ALTER TABLE photos ADD COLUMN face_status INTEGER NOT NULL DEFAULT 0;",
         )?;
     }
+    // photos.style_face_status: per-photo stylised-face-scan state mirror. Same
+    // meaning as face_status but for the anime/cartoon/furry face system.
+    if !have.contains("style_face_status") {
+        conn.execute_batch(
+            "ALTER TABLE photos ADD COLUMN style_face_status INTEGER NOT NULL DEFAULT 0;",
+        )?;
+    }
     // library_folders.first_scan_done_at (freshness "new files" boundary).
     {
         let mut lf: std::collections::HashSet<String> = std::collections::HashSet::new();

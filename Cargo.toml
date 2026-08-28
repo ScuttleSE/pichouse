@@ -60,6 +60,10 @@ ndarray = "0.16"
 flate2 = "1"
 tar = "0.4"
 
+# HDBSCAN clustering for stylised faces (anime/cartoon/furry). Pure Rust, small
+# dependency set. Used by src/styleface/cluster.rs. MIT OR Apache-2.0.
+hdbscan = "0.12"
+
 # Filesystem change notifications (inotify on Linux) for the library-freshness
 # fast path. Reconciliation remains the reliable core; this is only a
 # low-latency optimization for local folders and is never required for

@@ -539,6 +539,40 @@ pub struct Face {
     pub source: i32,
 }
 
+/// A named stylised character (anime, cartoon, or furry).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Character {
+    pub id: i64,
+    pub name: String,
+    /// A representative face id for the character icon. `0` means none chosen.
+    pub cover_face_id: i64,
+}
+
+/// One detected stylised face in one photo. The box is in per-mille (0..1000)
+/// of the photo after `Photo::orientation` rotation. There are no landmarks.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct StyleFace {
+    pub id: i64,
+    pub photo_id: i64,
+    /// The assigned character id. `0` means unassigned.
+    pub character_id: i64,
+    /// The automatic cluster id. `0` means not yet clustered. `-1` is noise.
+    pub cluster_id: i64,
+    /// Bounding box in per-mille of the oriented image.
+    pub bbox_x: i32,
+    pub bbox_y: i32,
+    pub bbox_w: i32,
+    pub bbox_h: i32,
+    /// The face embedding vector. Its length is `embedding.len()`.
+    pub embedding: Vec<f32>,
+    /// Detector confidence, 0.0..1.0.
+    pub det_score: f32,
+    /// `true` when the user approved the character assignment.
+    pub confirmed: bool,
+    /// `0` = detector, `1` = user.
+    pub source: i32,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

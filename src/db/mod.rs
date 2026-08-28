@@ -12,6 +12,8 @@ mod immich;
 mod immich_thumbs;
 mod library;
 mod presets;
+mod style_face_thumbs;
+mod style_faces;
 mod tags;
 mod thumbs;
 mod virtual_albums;
@@ -22,6 +24,7 @@ pub use immich_thumbs::{
     remove_all_immich_thumb_databases, remove_immich_thumbs_for_server, ImmichThumbs,
 };
 pub use library::Library;
+pub use style_face_thumbs::{open_style_face_thumbs, remove_style_face_thumbs_database};
 pub use thumbs::{remove_all_thumb_databases, Thumbs};
 
 /// A database error: either a SQLite error or an I/O error resolving paths.

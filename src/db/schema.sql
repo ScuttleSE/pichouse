@@ -288,3 +288,66 @@ CREATE TABLE IF NOT EXISTS face_rejections (
 );
 
 CREATE INDEX IF NOT EXISTS idx_face_rejections_face ON face_rejections(face_id);
+
+-- ---------------------------------------------------------------------------
+-- Stylised faces (anime, cartoon, furry). A parallel system to the human face
+-- tables above. It uses different models and a separate clustering pass. A
+-- named group is a "character". The tables mirror persons/faces/face_scan/
+-- face_rejections but hold no landmarks (the stylised embedder uses the box).
+-- ---------------------------------------------------------------------------
+
+-- A named stylised character. cover_face_id points at a representative face.
+CREATE TABLE IF NOT EXISTS characters (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT NOT NULL,
+    cover_face_id INTEGER,
+    created_at    INTEGER NOT NULL DEFAULT 0
+);
+
+-- One detected stylised face in one photo. The bounding box is in per-mille of
+-- the oriented image (0..1000), the same convention as faces.
+--   character_id  : the assigned character, or NULL when unassigned.
+--   cluster_id    : the automatic cluster, or NULL before clustering. -1 means
+--                   HDBSCAN noise (an unclear or unmatched face).
+--   embedding     : embedding_dim little-endian f32 values (384 for DINOv2).
+--   embedding_dim : the vector length, so a model change is detectable.
+--   det_score     : detector confidence, 0..1 scaled to 0..1000.
+--   confirmed     : 1 when the user approved the character assignment.
+--   source        : 0 = detector, 1 = user.
+CREATE TABLE IF NOT EXISTS style_faces (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    photo_id      INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
+    character_id  INTEGER REFERENCES characters(id) ON DELETE SET NULL,
+    cluster_id    INTEGER,
+    bbox_x        INTEGER NOT NULL DEFAULT 0,
+    bbox_y        INTEGER NOT NULL DEFAULT 0,
+    bbox_w        INTEGER NOT NULL DEFAULT 0,
+    bbox_h        INTEGER NOT NULL DEFAULT 0,
+    embedding     BLOB,
+    embedding_dim INTEGER NOT NULL DEFAULT 0,
+    det_score     INTEGER NOT NULL DEFAULT 0,
+    confirmed     INTEGER NOT NULL DEFAULT 0,
+    source        INTEGER NOT NULL DEFAULT 0,
+    created_at    INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_style_faces_photo ON style_faces(photo_id);
+CREATE INDEX IF NOT EXISTS idx_style_faces_character ON style_faces(character_id);
+CREATE INDEX IF NOT EXISTS idx_style_faces_cluster ON style_faces(cluster_id);
+
+-- Per-photo stylised-face-scan state. state: 0 = pending, 1 = scanning,
+-- 2 = done, 3 = error.
+CREATE TABLE IF NOT EXISTS style_face_scan (
+    photo_id   INTEGER PRIMARY KEY REFERENCES photos(id) ON DELETE CASCADE,
+    state      INTEGER NOT NULL DEFAULT 0,
+    scanned_at INTEGER NOT NULL DEFAULT 0
+);
+
+-- A rejection: the user said this stylised face is NOT this character.
+CREATE TABLE IF NOT EXISTS style_face_rejections (
+    face_id      INTEGER NOT NULL REFERENCES style_faces(id) ON DELETE CASCADE,
+    character_id INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    PRIMARY KEY (face_id, character_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_style_face_rejections_face ON style_face_rejections(face_id);

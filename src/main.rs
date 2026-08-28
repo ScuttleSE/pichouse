@@ -8,6 +8,7 @@ mod immich;
 mod model;
 mod reconcile;
 mod scan;
+mod styleface;
 mod thumb;
 mod ui;
 mod version;
