@@ -28,6 +28,10 @@ const FOLDER_PREFIX: &str = "folder:";
 const VALBUM_PREFIX: &str = "valbum:";
 /// Header row that groups all virtual albums, shown above normal albums.
 const VIRTUAL_HEADER_ID: &str = "virtualheader";
+/// Header row that groups named people from facial recognition.
+const PEOPLE_HEADER_ID: &str = "peopleheader";
+/// A single person node: `person:<person_id>`.
+const PERSON_PREFIX: &str = "person:";
 /// Header row that groups all Immich servers, shown below normal albums.
 const IMMICH_HEADER_ID: &str = "immichheader";
 /// A single Immich server node: `immichserver:<server_id>`.
@@ -55,6 +59,10 @@ struct TreeData {
     virtual_albums: HashMap<i64, VirtualAlbum>,
     valbum_children: HashMap<i64, Vec<i64>>,
     valbum_counts: HashMap<i64, i64>,
+    /// Named people from facial recognition, plus per-person photo counts and a
+    /// cover face id for the icon.
+    persons: Vec<crate::model::Person>,
+    person_counts: HashMap<i64, i64>,
     /// Immich servers, ordered as shown. Each is `(id, name)`.
     immich_servers: Vec<(i64, String)>,
     /// Cached albums per Immich server id, as `(album_uuid, name, count)`.
@@ -224,6 +232,11 @@ impl Sidebar {
                 .flatten()
                 .map(|vid| format!("{VALBUM_PREFIX}{vid}"))
                 .collect()
+        } else if id == PEOPLE_HEADER_ID {
+            data.persons
+                .iter()
+                .map(|p| format!("{PERSON_PREFIX}{}", p.id))
+                .collect()
         } else if id == IMMICH_HEADER_ID {
             data.immich_servers
                 .iter()
@@ -339,6 +352,20 @@ impl Sidebar {
             )
         } else if id == VIRTUAL_HEADER_ID {
             ("Virtual Albums".to_string(), "starred-symbolic")
+        } else if id == PEOPLE_HEADER_ID {
+            (
+                format!("People ({})", data.persons.len()),
+                "avatar-default-symbolic",
+            )
+        } else if let Some(pid) = person_id_of(id) {
+            let name = data
+                .persons
+                .iter()
+                .find(|p| p.id == pid)
+                .map(|p| p.name.clone())
+                .unwrap_or_default();
+            let count = data.person_counts.get(&pid).copied().unwrap_or(0);
+            (format!("{name} ({count})"), "avatar-default-symbolic")
         } else if id == IMMICH_HEADER_ID {
             ("Immich".to_string(), "network-server-symbolic")
         } else if immich_timeline_id_of(id).is_some() {
@@ -432,6 +459,20 @@ impl Sidebar {
             if let Some(sid) = immich_timeline_id_of(&id) {
                 if let Some(state) = self.state() {
                     super::immich::show_timeline(&state, sid, "Timeline");
+                    return;
+                }
+            }
+            if let Some(pid) = person_id_of(&id) {
+                let name = self
+                    .data
+                    .borrow()
+                    .persons
+                    .iter()
+                    .find(|p| p.id == pid)
+                    .map(|p| p.name.clone())
+                    .unwrap_or_default();
+                if let Some(state) = self.state() {
+                    state.show_person(pid, &name);
                     return;
                 }
             }
@@ -558,6 +599,11 @@ impl Sidebar {
             data.virtual_albums.insert(va.id, va.clone());
         }
         let va_ms = t_va.elapsed();
+        // Named people from facial recognition.
+        for (person, count) in state.lib.persons().unwrap_or_default() {
+            data.person_counts.insert(person.id, count);
+            data.persons.push(person);
+        }
         for f in &folders {
             data.folders.insert(f.id, f.clone());
             if let Some(&aid) = folder_album.get(&f.id) {
@@ -605,6 +651,10 @@ impl Sidebar {
             // Virtual albums section, shown above normal folder-albums. Always
             // present so the user has a place to create the first one.
             roots.push(VIRTUAL_HEADER_ID.to_string());
+            // People section, shown only when at least one named person exists.
+            if !data.persons.is_empty() {
+                roots.push(PEOPLE_HEADER_ID.to_string());
+            }
             for &aid in data.album_children.get(&0).into_iter().flatten() {
                 roots.push(format!("{ALBUM_PREFIX}{aid}"));
             }
@@ -891,6 +941,61 @@ impl Sidebar {
             &format!("Delete virtual album \"{name}\"? Sub-albums are also deleted. Photos on disk are not affected."),
             move || {
                 if let Err(e) = state2.lib.delete_virtual_album(id) {
+                    show_error(&state2, &e.to_string());
+                    return;
+                }
+                this.reload_deferred();
+            },
+        );
+    }
+
+    fn prompt_rename_person(self: &Rc<Self>, id: i64) {
+        let Some(state) = self.state() else { return };
+        let current = self
+            .data
+            .borrow()
+            .persons
+            .iter()
+            .find(|p| p.id == id)
+            .map(|p| p.name.clone())
+            .unwrap_or_default();
+        let this = self.clone();
+        let state2 = state.clone();
+        prompt_text(
+            &state,
+            None,
+            "Rename Person",
+            "Person name:",
+            &current,
+            move |name| {
+                if let Err(e) = state2.lib.rename_person(id, &name) {
+                    show_error(&state2, &e.to_string());
+                    return;
+                }
+                this.reload_deferred();
+            },
+        );
+    }
+
+    fn delete_person(self: &Rc<Self>, id: i64) {
+        let Some(state) = self.state() else { return };
+        let name = self
+            .data
+            .borrow()
+            .persons
+            .iter()
+            .find(|p| p.id == id)
+            .map(|p| p.name.clone())
+            .unwrap_or_default();
+        let this = self.clone();
+        let state2 = state.clone();
+        confirm(
+            &state,
+            None,
+            "Delete Person",
+            &format!("Delete person \"{name}\"? The faces stay but lose the name. Photos on disk are not affected."),
+            move || {
+                if let Err(e) = state2.lib.delete_person(id) {
                     show_error(&state2, &e.to_string());
                     return;
                 }
@@ -1233,6 +1338,22 @@ impl Sidebar {
                 Rc::new(move |t| this.edit_virtual_album_rules(valbum_id_of(t).unwrap_or(0))),
             );
         }
+        {
+            let this = self.clone();
+            add(
+                "rename-person",
+                &group,
+                Rc::new(move |t| this.prompt_rename_person(person_id_of(t).unwrap_or(0))),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "delete-person",
+                &group,
+                Rc::new(move |t| this.delete_person(person_id_of(t).unwrap_or(0))),
+            );
+        }
 
         self.list_view.insert_action_group("sidebar", Some(&group));
     }
@@ -1343,6 +1464,7 @@ impl Sidebar {
             let toggles = album_id_of(&id).is_some()
                 || valbum_id_of(&id).is_some()
                 || id == VIRTUAL_HEADER_ID
+                || id == PEOPLE_HEADER_ID
                 || id == IMMICH_HEADER_ID
                 || immich_server_id_of(&id).is_some();
             if !toggles {
@@ -1394,6 +1516,9 @@ impl Sidebar {
                 Some(&detailed("edit-valbum-rules", id)),
             );
             menu.append(Some("Delete Album"), Some(&detailed("delete-valbum", id)));
+        } else if person_id_of(id).is_some() {
+            menu.append(Some("Rename Person…"), Some(&detailed("rename-person", id)));
+            menu.append(Some("Delete Person"), Some(&detailed("delete-person", id)));
         } else if album_id_of(id).is_some() {
             menu.append(Some("New Sub-Album…"), Some(&detailed("new-subalbum", id)));
             menu.append(Some("Rename Album…"), Some(&detailed("rename-album", id)));
@@ -1535,6 +1660,10 @@ fn folder_id_of(id: &str) -> Option<i64> {
 
 fn valbum_id_of(id: &str) -> Option<i64> {
     id.strip_prefix(VALBUM_PREFIX).and_then(|n| n.parse().ok())
+}
+
+fn person_id_of(id: &str) -> Option<i64> {
+    id.strip_prefix(PERSON_PREFIX).and_then(|n| n.parse().ok())
 }
 
 fn immich_server_id_of(id: &str) -> Option<i64> {

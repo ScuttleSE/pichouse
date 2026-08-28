@@ -226,6 +226,16 @@ impl AppState {
             .set_message(&format!("{name} — {count} photos"));
     }
 
+    /// Show every photo that contains a given person.
+    pub fn show_person(self: &Rc<Self>, person_id: i64, name: &str) {
+        *self.current_folder.borrow_mut() = 0;
+        self.grid().show_person(person_id, name);
+        let count = self.lib.person_face_count(person_id).unwrap_or(0);
+        self.show_grid();
+        self.status()
+            .set_message(&format!("{name} — {count} faces"));
+    }
+
     /// Clear the grid if the folder it is showing no longer exists (e.g. after
     /// the owning library folder was removed). Resets the current folder and
     /// empties the grid so stale, now-deleted thumbnails cannot be opened.

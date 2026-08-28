@@ -116,6 +116,8 @@ enum Source {
     RawDir(String),
     /// A virtual album (id, display name).
     VirtualAlbum(i64, String),
+    /// A person from facial recognition (id, display name).
+    Person(i64, String),
     /// An Immich album (server id, album uuid, display name). Not re-queryable
     /// from the local database; a reload refetches over HTTP through the caller.
     #[allow(dead_code)] // Fields document the album payload.
@@ -473,8 +475,15 @@ impl Grid {
         self.set_photos(name, photos);
     }
 
-    /// Show an Immich album's assets. The caller passes the already-fetched
-    /// photos (each with an `immich://<server_id>/<asset_id>` path). The grid
+    /// Show every photo that contains a given person, remembering the person as
+    /// the source so the grid can re-query after a new scan.
+    pub fn show_person(&self, person_id: i64, name: &str) {
+        *self.source.borrow_mut() = Source::Person(person_id, name.to_string());
+        let photos = self.lib.photos_of_person(person_id).unwrap_or_default();
+        self.set_photos(name, photos);
+    }
+
+    /// Show an Immich album's assets. The caller passes the already-fetched    /// photos (each with an `immich://<server_id>/<asset_id>` path). The grid
     /// downloads each thumbnail over HTTP through the Immich worker pool.
     pub fn show_immich_album(&self, server_id: i64, album_id: &str, name: &str, photos: Vec<Photo>) {
         *self.source.borrow_mut() =
@@ -525,6 +534,10 @@ impl Grid {
             }
             Source::VirtualAlbum(id, name) => {
                 let photos = self.lib.photos_in_virtual_album(id).unwrap_or_default();
+                self.set_photos_preserving(&name, photos);
+            }
+            Source::Person(id, name) => {
+                let photos = self.lib.photos_of_person(id).unwrap_or_default();
                 self.set_photos_preserving(&name, photos);
             }
             Source::None => {}
