@@ -315,6 +315,22 @@ fn populate(state: &Rc<AppState>) {
         state
             .status()
             .set_message(&format!("{} folders", folders.len()));
+    }
+
+    // Defer all heavy startup work until after the window is presented, so the
+    // GUI appears at once. After an interrupted large scan the first-folder
+    // load and the whole-library enrichment seed can take a while. Running them
+    // on an idle tick lets the window paint first.
+    let state = state.clone();
+    glib::idle_add_local_once(move || {
+        populate_deferred(&state);
+    });
+}
+
+/// The heavy part of startup. Runs after `window.present()` on an idle tick.
+fn populate_deferred(state: &Rc<AppState>) {
+    let folders = state.lib.folders().unwrap_or_default();
+    if !folders.is_empty() {
         if let Some(sidebar) = state.sidebar.borrow().clone() {
             if let Some(folder) = sidebar.select_first_folder() {
                 load_folder_into_grid(state, &folder);
@@ -335,6 +351,7 @@ fn populate(state: &Rc<AppState>) {
     // reliable path and covers network drives where inotify is silent).
     super::watcher::start(state);
 }
+
 
 /// Load a scanned folder's photos into the grid (called by the sidebar).
 pub fn load_folder_into_grid(state: &Rc<AppState>, folder: &crate::model::Folder) {

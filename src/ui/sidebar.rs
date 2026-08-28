@@ -181,6 +181,22 @@ impl Sidebar {
                 }
             });
 
+            // Keyboard tree navigation: Right opens a node, Left collapses it or
+            // moves to the parent node.
+            let key = gtk4::EventControllerKey::new();
+            let weak_key = weak.clone();
+            key.connect_key_pressed(move |_, keyval, _, _| {
+                let Some(sidebar) = weak_key.upgrade() else {
+                    return glib::Propagation::Proceed;
+                };
+                match keyval {
+                    gdk::Key::Right => sidebar.on_expand_key(),
+                    gdk::Key::Left => sidebar.on_collapse_key(),
+                    _ => glib::Propagation::Proceed,
+                }
+            });
+            list_view.add_controller(key);
+
             let new_album = Button::with_label("New Album");
             new_album.set_halign(gtk4::Align::Start);
             new_album.set_margin_top(4);
@@ -587,6 +603,50 @@ impl Sidebar {
             }
         }
         out
+    }
+
+    /// The current tree row for keyboard navigation: the first selected row.
+    fn current_row(&self) -> Option<(gtk4::MultiSelection, u32, TreeListRow)> {
+        let sel = self
+            .list_view
+            .model()
+            .and_downcast::<gtk4::MultiSelection>()?;
+        let bitset = sel.selection();
+        if bitset.size() == 0 {
+            return None;
+        }
+        let pos = bitset.nth(0);
+        let row = sel.item(pos).and_downcast::<TreeListRow>()?;
+        Some((sel, pos, row))
+    }
+
+    /// Right arrow: open the current node if it can expand.
+    fn on_expand_key(&self) -> glib::Propagation {
+        let Some((_, _, row)) = self.current_row() else {
+            return glib::Propagation::Proceed;
+        };
+        if row.is_expandable() && !row.is_expanded() {
+            row.set_expanded(true);
+            return glib::Propagation::Stop;
+        }
+        glib::Propagation::Proceed
+    }
+
+    /// Left arrow: collapse the current node, or move to the parent node.
+    fn on_collapse_key(&self) -> glib::Propagation {
+        let Some((sel, _, row)) = self.current_row() else {
+            return glib::Propagation::Proceed;
+        };
+        if row.is_expandable() && row.is_expanded() {
+            row.set_expanded(false);
+            return glib::Propagation::Stop;
+        }
+        if let Some(parent) = row.parent() {
+            let ppos = parent.position();
+            sel.select_item(ppos, true);
+            return glib::Propagation::Stop;
+        }
+        glib::Propagation::Proceed
     }
 
     fn selected_folder_ids(&self) -> Vec<i64> {

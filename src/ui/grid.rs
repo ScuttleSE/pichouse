@@ -227,6 +227,7 @@ impl Grid {
             let job_rx = job_rx.clone();
             let done_tx = done_tx.clone();
             let gen = gen.clone();
+            let cur_gen = generation.clone();
             std::thread::spawn(move || loop {
                 let job = {
                     let rx = job_rx.lock().unwrap();
@@ -235,6 +236,12 @@ impl Grid {
                         Err(_) => return, // senders dropped; exit
                     }
                 };
+                // Drop a stale job without decoding it. Fast folder switches
+                // leave old jobs in the FIFO channel. Skip them so the current
+                // folder's thumbnails render without a decode backlog first.
+                if job.generation != cur_gen.load(Ordering::Relaxed) {
+                    continue;
+                }
                 match gen.get_edited(
                     &job.hash,
                     std::path::Path::new(&job.path),
