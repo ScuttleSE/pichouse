@@ -6,7 +6,7 @@
 //! main thread through a channel.
 
 use std::rc::Rc;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use gtk4::glib;
@@ -171,6 +171,8 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::face::FaceConfi
 
         let workers = cfg.concurrency.max(1);
         let cfg_threshold = cfg.cluster_threshold;
+        // Guard against two workers running a full recluster at the same time.
+        let reclustering = Arc::new(AtomicBool::new(false));
         let mut handles = Vec::new();
         for _ in 0..workers {
             let jobs = jobs.clone();
@@ -179,6 +181,7 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::face::FaceConfi
             let cancel = cancel.clone();
             let done = done.clone();
             let tx = tx.clone();
+            let reclustering = reclustering.clone();
             handles.push(std::thread::spawn(move || loop {
                 if cancel.load(Ordering::Relaxed) {
                     return;
@@ -205,10 +208,15 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::face::FaceConfi
                 // Progressive grouping: every REFRESH_EVERY photos, re-cluster
                 // and ask the UI to refresh so new people appear during the
                 // scan. The boundary check makes exactly one worker do it.
-                if d % REFRESH_EVERY == 0 {
+                if d % REFRESH_EVERY == 0
+                    && reclustering
+                        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                        .is_ok()
+                {
                     if let Err(e) = recluster(&lib, cfg_threshold) {
                         log::warn!("progressive clustering: {e}");
                     }
+                    reclustering.store(false, Ordering::Release);
                     let _ = tx.send(Msg::Refresh);
                 }
             }));
@@ -342,9 +350,12 @@ fn recluster(lib: &Library, threshold: f32) -> Result<(), String> {
     // Unnamed cluster ids start above any existing unnamed id to avoid reuse.
     let next = 1i64;
     let assignments = cluster::cluster(&items, threshold, next);
-    for a in assignments {
-        let _ = lib.set_face_cluster(a.face_id, a.cluster_id);
-    }
+    let pairs: Vec<(i64, i64)> = assignments
+        .into_iter()
+        .map(|a| (a.face_id, a.cluster_id))
+        .collect();
+    lib.set_face_clusters(&pairs)
+        .map_err(|e| format!("write clusters: {e}"))?;
     Ok(())
 }
 

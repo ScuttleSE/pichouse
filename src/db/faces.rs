@@ -201,13 +201,20 @@ impl Library {
     }
 
     /// Set the cluster id of a face (0 clears it).
-    pub fn set_face_cluster(&self, face_id: i64, cluster_id: i64) -> Result<()> {
-        let conn = self.lock();
-        let cluster = if cluster_id == 0 { None } else { Some(cluster_id) };
-        conn.execute(
-            "UPDATE faces SET cluster_id = ?2 WHERE id = ?1",
-            params![face_id, cluster],
-        )?;
+    /// Set the cluster id of many faces in one transaction. This holds the DB
+    /// lock once, not once per face. A per-face write blocks the UI thread for a
+    /// long time during a large scan.
+    pub fn set_face_clusters(&self, pairs: &[(i64, i64)]) -> Result<()> {
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        {
+            let mut stmt = tx.prepare("UPDATE faces SET cluster_id = ?2 WHERE id = ?1")?;
+            for &(face_id, cluster_id) in pairs {
+                let cluster = if cluster_id == 0 { None } else { Some(cluster_id) };
+                stmt.execute(params![face_id, cluster])?;
+            }
+        }
+        tx.commit()?;
         Ok(())
     }
 
