@@ -2,8 +2,10 @@
 
 This document is for an agent with no memory of the last session. It uses
 Simplified Technical English (ASD-STE100, Strict). Read AGENTS.md first. Read
-ROADMAP.md for planned features. Read section 0000000 first — it describes the
-most recent work (the duplicate image finder). Then read section 000000 — it
+ROADMAP.md for planned features. Read section 00000000 first — it describes the
+most recent work (the CCIP embedder swap and six face and character features).
+Then read section 0000000 — it describes the duplicate image finder. Then read
+section 000000 — it
 describes stylised face recognition for art, and the album Face type. Then read
 section 00000 — it describes the human facial detection and recognition system
 that the stylised system mirrors. Then read section 0000 — it describes four
@@ -13,13 +15,225 @@ Then read section 00 — it describes four earlier follow-up features. Then read
 section 0 — it describes the Immich integration. The later sections describe
 earlier features and are still correct.
 
-## 0000000. Duplicate image finder (most recent work — read this first)
+## 00000000. CCIP embedder and face features (most recent work — read this first)
 
 This section describes the last session. The work is complete. The application
 builds clean. `cargo test` passes 66 tests plus 2 ignored tests. The work is on
-`main`. The work is pushed. Every CI build in the session was green. The version
-was 0.0.76 at the end of the session. CI increases the version on each push. Do
-not change the version by hand.
+`main`. The work is pushed. The version was 0.0.79 at the end of the session. CI
+increases the version on each push. Do not change the version by hand.
+
+The session did seven things:
+
+1. It replaced the stylised character embedder. DINOv2 changed to CCIP.
+2. It added a progress bar for model downloads.
+3. It made the viewer draw stylised character boxes.
+4. It added a dialog to un-match and ban one stylised face.
+5. It added "Delete and Ban" for a whole person or character.
+6. It added a "Missing Files" sidebar section with a clear action.
+7. It fixed the grid right-click menu. The menu was clipped and scrolled.
+
+### 00000000.1 The CCIP embedder swap (the reason for the session)
+
+The user reported a bug. A scan of two very different characters grouped them as
+one character. The cause was the embedder, not the clustering code.
+
+The old embedder used DINOv2 ViT-S/14. DINOv2 is a general image model. Its CLS
+token encodes the art style, not the character identity. Two characters in one
+art style give near-identical vectors. HDBSCAN then merges them, because the
+vectors are close. This is correct clustering of a bad signal.
+
+The human face system does not have this problem. It uses SFace. SFace is a
+face-identity model. Two crops of one person give a high similarity.
+
+The fix uses CCIP for stylised faces. CCIP is `deepghs/ccip_onnx`. CCIP is
+trained for anime character re-identification. It separates two characters in
+one art style. CCIP runs on the CPU in the existing background worker pool.
+
+The pinned model is the CaFormer-24 variant:
+- Repo `deepghs/ccip_onnx`, commit `eb2acdd29af1703388d3d0c04221add322bc9110`.
+- File `ccip-caformer-24-randaug-pruned/model_feat.onnx`, about 150 MB.
+- SHA-256 `4ea118d16496274f4f6e08d3afc768cc592389e8f7f32f8732ce2215c228ac5f`.
+- Input name `input`, NCHW `[N,3,384,384]`. Output name `output`, 768-D.
+
+The preprocess steps are in `src/styleface/embedder.rs`:
+- Resize the crop to 384x384 bilinear.
+- Scale to 0..1.
+- Normalize with mean `(0.48145466, 0.4578275, 0.40821073)`.
+- Normalize with std `(0.26862954, 0.26130258, 0.27577711)`.
+- Take the full 768-value output vector. Do not take a token slice.
+- L2-normalise the vector.
+
+The margin around the detector box changed from 0.25 to 0.10. CCIP wants the
+face, not the background.
+
+`src/styleface/models.rs` holds the catalog. The two DINOv2 entries are removed.
+The one CCIP entry is the default. `DEFAULT_EMBEDDING_ID` is `ccip_caformer_24`.
+
+`src/styleface/cluster.rs` keeps HDBSCAN with `epsilon = 0.0` and
+`min_cluster_size = 2`. Only `CHARACTER_JOIN_MAX_DIST` changed, from 0.35 to
+0.20. This value is a starting point. It may need a change after a real test.
+CCIP's own metric is a learned `model_metrics.onnx`, not plain cosine. The
+current code clusters on the L2-normalised feature with Euclidean or cosine
+distance. If accuracy is still low, a follow-up can add the learned metric.
+
+**Open task for a future agent:** the user must test the CCIP result. The user
+must download the new model and rescan a folder of two different characters. If
+the two characters still merge, or one character splits into many groups, tune
+`CHARACTER_JOIN_MAX_DIST` in `src/styleface/cluster.rs`. A smaller value is
+stricter. If tuning is not enough, add the CCIP learned-metric distance.
+
+### 00000000.2 The model-switch reset
+
+A change of the embedding model changes the vector dimension. The old 384-D
+DINOv2 vectors are not compatible with the new 768-D CCIP vectors. So a model
+switch must clear all stylised face data.
+
+`src/ui/stylefacescan.rs` `download_models` does this. It reads the old
+embedding model id before it writes the new id. If the id changed, it calls
+`lib.delete_all_style_face_data()`. This clears faces, characters, and scan
+state. The next scan recomputes everything.
+
+### 00000000.3 The download progress bar
+
+The old download read the whole HTTP body in one call. It showed no progress.
+
+The new code reads the body in a loop and reports a fraction. The shared helper
+is `read_with_progress` in `src/styleface/models.rs`. It reads 64 KB at a time.
+It uses `Content-Length` for the total. It reports a negative fraction when the
+total is unknown.
+
+Three functions got a progress variant:
+- `styleface::models::ensure_model_progress`.
+- `face::models::ensure_model_progress` (it reuses the styleface helper).
+- `face::runtime::ensure_runtime_progress`.
+
+The old functions (`ensure_model`, `ensure_runtime`) still exist. They delegate
+to the progress variant with a no-op callback.
+
+The download workers in `src/ui/facescan.rs` and `src/ui/stylefacescan.rs` send
+`Msg::Progress`. The status bar receiver calls `status.set_progress`. The worker
+sends `Msg::Progress(-1.0)` between stages to hide the bar. The runtime progress
+covers the compressed archive download only, not the extraction.
+
+### 00000000.4 The viewer draws stylised character boxes
+
+Before this session the viewer drew only human faces. A photo opened from the
+Characters view showed no boxes. The viewer queried only the `faces` table and
+`persons`. Character boxes live in the `style_faces` table.
+
+The viewer is now source-aware. `src/ui/grid.rs` has a new method
+`is_style_source`. It returns true when the grid source is `Character` or
+`StyleCluster`. `src/ui/viewer.rs` `load_faces` reads this flag.
+
+In stylised mode, `load_faces` reads `style_faces_for_photo` and maps each
+`StyleFace` into a `Face`. The `person_id` field carries the character id. The
+draw code stays the same. The name map reads `characters`, not `persons`. A new
+`style_mode` cell records the mode.
+
+A click on a box in stylised mode opens `characters::assign_style_face_dialog`.
+A click in human mode opens `people::assign_face_dialog`. A change re-clusters
+with `stylefacescan::recluster_now` or `facescan::recluster_now`.
+
+### 00000000.5 Un-match and ban one stylised face
+
+`src/ui/characters.rs` got a new function `assign_style_face_dialog`. It mirrors
+`people::assign_face_dialog`. It offers three actions:
+1. Remove the face from its character. This calls
+   `reject_style_face_from_character`. The rejection is stored. A re-scan never
+   re-attaches the face to that character.
+2. Assign the face to an existing character.
+3. Make a new character from the face.
+
+The human dialog `people::assign_face_dialog` already had the remove-and-ban
+action. So both systems now have single-face un-match and ban.
+
+### 00000000.6 Delete and ban a whole group
+
+Two new DB methods reject every member face, then delete the group:
+- `Library::delete_person_and_ban` in `src/db/faces.rs`.
+- `Library::delete_character_and_ban` in `src/db/style_faces.rs`.
+
+Each method reads the group's face ids. It inserts a rejection row for each
+face. It clears the person or character link and the cluster id. Then it deletes
+the person or character.
+
+The sidebar right-click menu has new entries. "Delete and Ban Person" and
+"Delete and Ban Character". The actions are `delete-person-ban` and
+`delete-character-ban` in `src/ui/sidebar.rs`.
+
+**Limit of the ban:** the ban uses the rejection tables. It stops the re-grouping
+of a face under that person or character. It does not stop the detector from
+finding the face again. There is no per-photo "do not detect" flag in the
+schema. The user asked to "ban those pictures from being scanned as faces
+again". The current ban is the strongest action the existing tables allow. If
+the user needs a true per-photo detect-ban, a future agent must add a new column
+or table and exclude those photos in `photos_needing_face_scan` and
+`photos_needing_style_face_scan`.
+
+### 00000000.7 The Missing Files sidebar section
+
+A photo gone from disk keeps its row with `missing = 1`. `src/reconcile.rs` sets
+this flag. Before this session there was no view of these photos.
+
+The sidebar now has a "Missing Files (N)" leaf row. It appears when the count is
+over zero. The pattern mirrors the "New Files" leaf. The changes in
+`src/ui/sidebar.rs` are:
+- A new id const `MISSING_FILES_ID`.
+- A new `TreeData` field `missing_files_count`.
+- A `reload` fetch with `missing_photo_count` and a push to the root list.
+- A `node_label` branch.
+- An `on_selection_changed` dispatch to `state.show_missing_files`.
+
+`AppState::show_missing_files` in `src/ui/state.rs` loads the photos with the new
+`Library::photos_missing` query and shows them in the grid with `show_photos`.
+
+A right-click on the row shows "Clear Missing Files…". The action
+`clear-missing` calls `clear_missing_files`. It confirms, then calls
+`delete_missing_photos`. This hard-deletes the rows. The files are already gone
+from disk. It does not touch disk.
+
+### 00000000.8 The grid context-menu fix
+
+The user reported that the image right-click menu did not fit. It scrolled.
+
+The cause was the popover parent. `src/ui/vmenu.rs` parented the popover to the
+`GridView`. The `GridView` sits inside a `ScrolledWindow`. GTK clipped the
+popover to the visible height. So a menu a little taller than the space
+scrolled.
+
+The fix parents the popover to the grid root box, not the `GridView`. The root
+box is not scrolled, so the popover gets its full height. The click point is
+translated from `GridView` space to root-box space with `translate_coordinates`.
+The menu also opens upward when the click is in the lower half. This sends a
+tall menu toward the free space.
+
+### 00000000.9 Files changed this session
+
+- `src/styleface/models.rs` — CCIP catalog entry, `read_with_progress`,
+  `ensure_model_progress`.
+- `src/styleface/embedder.rs` — CCIP preprocess and 768-D output.
+- `src/styleface/cluster.rs` — CCIP join distance and docs.
+- `src/styleface/mod.rs` — doc comment.
+- `src/face/models.rs` — `ensure_model_progress`.
+- `src/face/runtime.rs` — `ensure_runtime_progress`.
+- `src/db/faces.rs` — `delete_person_and_ban`.
+- `src/db/style_faces.rs` — `delete_character_and_ban`, doc comment.
+- `src/db/library.rs` — `photos_missing`.
+- `src/db/schema.sql` — comment (768 for CCIP).
+- `src/ui/facescan.rs` — download progress.
+- `src/ui/stylefacescan.rs` — download progress, model-switch reset.
+- `src/ui/viewer.rs` — source-aware face overlay.
+- `src/ui/characters.rs` — `assign_style_face_dialog`.
+- `src/ui/grid.rs` — `is_style_source`.
+- `src/ui/state.rs` — `show_missing_files`.
+- `src/ui/sidebar.rs` — Missing Files leaf, delete-and-ban, clear-missing.
+- `src/ui/vmenu.rs` — context-menu popover parent fix.
+- `AGENTS.md` — doc updates.
+
+## 0000000. Duplicate image finder
+
+This section describes an earlier session. The work is complete. The version was
+0.0.76 at the end of that session. Do not change the version by hand.
 
 The session added a duplicate image finder. The user starts it from the toolbar
 "Tools" menu. A dialog sets the scope and the similarity level. A background scan
