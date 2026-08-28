@@ -603,6 +603,20 @@ impl Sidebar {
             .collect()
     }
 
+    fn selected_album_ids(&self) -> Vec<i64> {
+        let Some(sel) = self
+            .list_view
+            .model()
+            .and_downcast::<gtk4::MultiSelection>()
+        else {
+            return Vec::new();
+        };
+        self.selected_ids(&sel)
+            .into_iter()
+            .filter_map(|id| album_id_of(&id))
+            .collect()
+    }
+
     /// Schedule a tree rebuild on the next idle tick. Use this from a
     /// context-menu action so the popover finishes closing and its row widget
     /// is not recycled/destroyed while the action is still being dispatched
@@ -968,14 +982,22 @@ impl Sidebar {
         self.reload_deferred();
     }
 
-    /// Re-parent `src_album` under `target_album` (drag an album onto an album).
-    fn reparent_album(self: &Rc<Self>, src_album: i64, target_album: i64) {
-        if src_album == target_album {
-            return;
-        }
+    /// Re-parent one or more albums under `target_album` (drag albums onto an
+    /// album). Reload once.
+    fn reparent_albums(self: &Rc<Self>, src_albums: &[i64], target_album: i64) {
         let Some(state) = self.state() else { return };
-        if let Err(e) = state.lib.set_album_parent(src_album, target_album) {
-            show_error(&state, &e.to_string());
+        let mut changed = false;
+        for &src_album in src_albums {
+            if src_album == target_album {
+                continue;
+            }
+            if let Err(e) = state.lib.set_album_parent(src_album, target_album) {
+                show_error(&state, &e.to_string());
+                return;
+            }
+            changed = true;
+        }
+        if !changed {
             return;
         }
         self.mark_expanded(&format!("{ALBUM_PREFIX}{target_album}"));
@@ -1737,7 +1759,11 @@ impl Sidebar {
                 return false;
             };
             if let Some(src_album) = album_id_of(&dragged) {
-                this.reparent_album(src_album, target_album);
+                let mut aids = this.selected_album_ids();
+                if !aids.contains(&src_album) {
+                    aids.push(src_album);
+                }
+                this.reparent_albums(&aids, target_album);
                 true
             } else if let Some(fid) = folder_id_of(&dragged) {
                 let mut fids = this.selected_folder_ids();
