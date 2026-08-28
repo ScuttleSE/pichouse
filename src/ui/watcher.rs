@@ -51,77 +51,8 @@ pub fn start(state: &Rc<AppState>) {
     // Batched directories: debounce thread -> UI thread.
     let (ui_tx, ui_rx) = glib::MainContext::channel::<Vec<PathBuf>>(glib::Priority::DEFAULT);
 
-    let mut watcher = match notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-        if let Ok(event) = res {
-            for path in event.paths {
-                // Reconcile the containing directory of any changed path.
-                let dir = if path.is_dir() {
-                    path
-                } else {
-                    path.parent().map(|p| p.to_path_buf()).unwrap_or(path)
-                };
-                let _ = raw_tx.send(dir);
-            }
-        }
-    }) {
-        Ok(w) => w,
-        Err(e) => {
-            log::warn!("file watcher unavailable ({e}); relying on periodic reconcile");
-            return;
-        }
-    };
-
-    let mut any = false;
-    for root in &roots {
-        match watcher.watch(std::path::Path::new(&root.path), RecursiveMode::Recursive) {
-            Ok(()) => any = true,
-            Err(e) => {
-                // e.g. watch-limit reached on a huge tree; periodic reconcile
-                // still covers this root.
-                log::warn!(
-                    "cannot watch {} ({e}); relying on periodic reconcile",
-                    root.path
-                );
-            }
-        }
-    }
-    if !any {
-        return;
-    }
-
-    // Debounce thread: collect affected dirs for DEBOUNCE, then forward a batch.
-    std::thread::spawn(move || loop {
-        // Block for the first event of a batch.
-        let first = match raw_rx.recv() {
-            Ok(p) => p,
-            Err(_) => return, // watcher dropped
-        };
-        let mut batch: HashSet<PathBuf> = HashSet::new();
-        batch.insert(first);
-        // Drain everything that arrives during the debounce window.
-        let deadline = std::time::Instant::now() + DEBOUNCE;
-        loop {
-            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-            if remaining.is_zero() {
-                break;
-            }
-            match raw_rx.recv_timeout(remaining) {
-                Ok(p) => {
-                    batch.insert(p);
-                }
-                Err(mpsc::RecvTimeoutError::Timeout) => break,
-                Err(mpsc::RecvTimeoutError::Disconnected) => return,
-            }
-        }
-        if ui_tx.send(batch.into_iter().collect()).is_err() {
-            return;
-        }
-    });
-
-    // Keep the watcher alive for the process lifetime.
-    Box::leak(Box::new(watcher));
-
-    // UI-thread handler: reconcile each affected directory and enrich new files.
+    // Attach the UI-thread handler first, before the background setup. The
+    // handler reconciles each affected directory and enriches new files.
     {
         let state = state.clone();
         ui_rx.attach(None, move |dirs: Vec<PathBuf>| {
@@ -146,4 +77,85 @@ pub fn start(state: &Rc<AppState>) {
             glib::ControlFlow::Continue
         });
     }
+
+    // Build the watcher and add the recursive watches on a BACKGROUND thread.
+    //
+    // The inotify backend of `notify` walks the whole tree to add one watch per
+    // subdirectory. On a large library that walk takes many seconds. It MUST
+    // NOT run on the main thread, or it freezes the GLib main loop and the
+    // window does not appear (see the strace: a multi-second main-thread futex
+    // wait). The periodic reconcile covers the window before the watcher is
+    // ready, so a delayed watcher is safe.
+    let root_paths: Vec<String> = roots.into_iter().map(|r| r.path).collect();
+    std::thread::spawn(move || {
+        let mut watcher =
+            match notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+                if let Ok(event) = res {
+                    for path in event.paths {
+                        // Reconcile the containing directory of any changed path.
+                        let dir = if path.is_dir() {
+                            path
+                        } else {
+                            path.parent().map(|p| p.to_path_buf()).unwrap_or(path)
+                        };
+                        let _ = raw_tx.send(dir);
+                    }
+                }
+            }) {
+                Ok(w) => w,
+                Err(e) => {
+                    log::warn!("file watcher unavailable ({e}); relying on periodic reconcile");
+                    return;
+                }
+            };
+
+        let mut any = false;
+        for path in &root_paths {
+            match watcher.watch(std::path::Path::new(path), RecursiveMode::Recursive) {
+                Ok(()) => any = true,
+                Err(e) => {
+                    // e.g. watch-limit reached on a huge tree; periodic reconcile
+                    // still covers this root.
+                    log::warn!("cannot watch {path} ({e}); relying on periodic reconcile");
+                }
+            }
+        }
+        if !any {
+            return;
+        }
+
+        // Debounce loop: collect affected dirs for DEBOUNCE, then forward a
+        // batch. This thread also OWNS the watcher, so the watcher lives for the
+        // process lifetime (it stops watching when dropped).
+        loop {
+            // Block for the first event of a batch.
+            let first = match raw_rx.recv() {
+                Ok(p) => p,
+                Err(_) => break, // watcher dropped
+            };
+            let mut batch: HashSet<PathBuf> = HashSet::new();
+            batch.insert(first);
+            // Drain everything that arrives during the debounce window.
+            let deadline = std::time::Instant::now() + DEBOUNCE;
+            loop {
+                let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+                if remaining.is_zero() {
+                    break;
+                }
+                match raw_rx.recv_timeout(remaining) {
+                    Ok(p) => {
+                        batch.insert(p);
+                    }
+                    Err(mpsc::RecvTimeoutError::Timeout) => break,
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                }
+            }
+            if ui_tx.send(batch.into_iter().collect()).is_err() {
+                break;
+            }
+        }
+        // Keep the watcher alive until the thread ends.
+        drop(watcher);
+    });
 }
+

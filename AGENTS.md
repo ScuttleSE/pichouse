@@ -30,6 +30,33 @@ Write all text in Simplified Technical English (ASD-STE100), Strict mode.
 
 ---
 
+## RULE ZERO-B — ANSWER FIRST, DO NOT VOMIT TEXT
+
+Give the short answer first. Stop. Do not write a wall of text.
+
+- When you ask the user to do a task, write only the task. Then wait.
+- Do not add a plan, a hypothesis, or a "what I am looking for" section to a
+  request for action. Wait for the result first.
+- Do not restate the plan after each step. The user reads the plan once.
+- Keep each reply short. Add detail only when the user asks for it.
+
+---
+
+## RULE ZERO-C — DIAGNOSE WITH DATA, NOT ASSUMPTIONS
+
+Find the true cause before you claim a cause.
+
+- Do not blame or clear a change without evidence. Get a measurement first.
+- Do not assume the user's environment. The user runs the binary on a
+  different machine. Local disk state, tools, and timing do not transfer.
+- Trust the trace over the theory. When strace or gdb data conflicts with your
+  code reading, the data wins.
+- A "window did not appear" symptom means the main thread blocks. Find the
+  main-thread stall (the futex or syscall gap), not a background worker.
+- Confirm the fix solves the measured problem. Do not stop at "it builds".
+
+---
+
 ## RULE ONE — ALWAYS COMMIT AND PUSH
 
 After completing any change, commit and push all changes. Do not leave work uncommitted. Pushing triggers CI.
