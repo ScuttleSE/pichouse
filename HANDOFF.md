@@ -2,14 +2,172 @@
 
 This document is for an agent with no memory of the last session. It uses
 Simplified Technical English (ASD-STE100, Strict). Read AGENTS.md first. Read
-ROADMAP.md for planned features. Read section 0000 first — it describes the most
-recent work (four small features, console logging, and a set of scan-time
-performance and freeze fixes). Then read section 000 — it describes
-non-destructive editing and color levels. Then read section 00 — it describes
-four earlier follow-up features. Then read section 0 — it describes the Immich
-integration. The later sections describe earlier features and are still correct.
+ROADMAP.md for planned features. Read section 00000 first — it describes the most
+recent work (facial detection and recognition). Then read section 0000 — it
+describes four small features, console logging, and scan-time performance and
+freeze fixes. Then read section 000 — it describes non-destructive editing and
+color levels. Then read section 00 — it describes four earlier follow-up
+features. Then read section 0 — it describes the Immich integration. The later
+sections describe earlier features and are still correct.
 
-## 0000. Timeline, copy, crop overlay, slideshows, logging, and freeze fixes (most recent work — read this first)
+## 00000. Facial detection and recognition (most recent work — read this first)
+
+This section describes the last session. The work is complete. The application
+builds. `cargo test` passes 55 tests plus 2 ignored tests. The work is on
+`main`. The work is pushed. Every CI build in the session was green. The version
+is 0.0.70. CI increases the version on each push. Do not change the version by
+hand.
+
+The feature detects faces, groups the same person across the library, lets the
+user name people, and shows each person's photos. All processing stays local.
+See ROADMAP.md section "Facial detection & recognition" for the feature summary.
+
+### 00000.1 Backend and the ONNX Runtime
+
+The face pipeline uses `ort` (ONNX Runtime bindings) with the `load-dynamic`
+feature. The crate is pinned to `=2.0.0-rc.10`. That release-candidate ABI needs
+ONNX Runtime 1.22.x. `ndarray` builds the input tensors. `flate2` and `tar`
+extract the runtime archive in process.
+
+The ONNX Runtime shared library is NOT built into the binary and NOT committed.
+The build and CI do not need it. Face detection is off by default. The first
+time the user turns it on, the app downloads ONNX Runtime 1.22.0 from the
+official Microsoft release into `~/.local/share/pichouse/runtime/`, with a
+verified SHA-256, and loads it with `dlopen`. See `src/face/runtime.rs`. The URL
+and the hash are constants there. `ort::init` runs once per process, guarded by
+a `Once`.
+
+Two `ort` release candidates were rejected before rc.10: rc.13 broke on the
+`ureq` TLS feature, and rc.10 with the binary downloader needed system OpenSSL,
+which the project avoids. `load-dynamic` plus a downloaded library avoids both.
+
+Do not upgrade `ort` without checking the ABI version and the build. Do not add
+the `download-binaries` feature — it drags in a build-time HTTP/TLS stack.
+
+### 00000.2 Models
+
+The models are YuNet (detector, MIT) and SFace (embedding, 128-D, Apache 2.0),
+both from the OpenCV Zoo. They run well on an older CPU. They download into
+`~/.local/share/pichouse/models/` on first use, pinned to opencv_zoo commit
+`47534e2` with verified SHA-256. See the catalog in `src/face/models.rs`. The
+catalog is extensible; higher-accuracy ArcFace (512-D, non-commercial) and a
+custom-path option are listed in ROADMAP as follow-ups, not built.
+
+### 00000.3 Inference
+
+`src/face/detector.rs` runs YuNet: it letterboxes the oriented RGB image into a
+static 640x640 BGR NCHW tensor, decodes the 12 raw heads (`cls/obj/bbox/kps` at
+strides 8/16/32), applies NMS, and returns per-mille boxes and 5 landmarks.
+`src/face/embedder.rs` runs SFace: it aligns the face to a 112x112 template with
+an Umeyama similarity transform, warps with bilinear sampling, runs the model,
+and L2-normalizes the 128-float vector. `src/face/mod.rs` has `FacePipeline`,
+which ties the two together (`detect_and_embed`). `src/face/inference_test.rs`
+is an ignored test that verifies both on real photos. Verified numbers:
+detection score 0.946, same-person cosine 0.67, different-person 0.06.
+
+Session extraction uses `DynValue::try_extract_tensor::<f32>()`. SFace input is
+BGR, `[0,255]` float, NCHW; the input name is read from the session, not
+hardcoded.
+
+### 00000.4 Coordinate rule (important)
+
+A face box and its landmarks are in per-mille (0..1000) of the photo AFTER
+`photos.orientation` rotation and BEFORE any non-destructive edit. Every stored
+box, face crop, and viewer overlay uses that same space. `Photo` has no EXIF
+orientation field, so this convention is fixed.
+
+### 00000.5 Storage
+
+`src/db/schema.sql` has `persons`, `faces`, `face_scan`, and `face_rejections`.
+`photos.face_status` is added by `migrate`. The schema runs on every open, so
+existing databases gain the new tables automatically. `src/db/faces.rs` holds
+all person and face access: CRUD, `photos_of_person`, `photos_in_cluster`,
+`faces_for_clustering`, `person_representative_face`, `total_face_count`,
+`unnamed_clusters`, `set_face_person`, `set_face_cluster`,
+`reject_face_from_person`, `face_rejection_map`, and `delete_all_face_data`.
+Embeddings pack as little-endian f32 blobs. Face-crop thumbnails live in
+`face-thumbs.db` (`src/db/face_thumbs.rs`), keyed by face id. `Face` and
+`Person` types are in `src/model.rs`.
+
+### 00000.6 Clustering
+
+`src/face/cluster.rs` groups embeddings by cosine similarity (default threshold
+0.363, the SFace value). A named person anchors a stable cluster
+(`PERSON_CLUSTER_BASE + person_id`), so new matching faces attach automatically
+across scans. A `ClusterItem` carries `rejected` person ids; the assignment step
+never puts a face into a person's cluster it was rejected from. This makes a
+correction durable.
+
+### 00000.7 Background scan
+
+`src/ui/facescan.rs` mirrors the AI-tagging pattern (`aitag.rs`): a channel, a
+coordinator thread, a worker pool, and a `Controller` cancel flag
+(`state.face_job`). Workers decode the oriented image (capped long side 1600 via
+`thumb::decode_oriented_rgb`), detect, embed, and write face rows. The scan is
+PROGRESSIVE: every 20 photos it re-clusters and posts `Msg::Refresh`, so groups
+appear during the scan, not only at the end. `download_models` fetches the
+runtime and both models in the background and writes their paths and dim into
+settings. `recluster_now` re-clusters after a manual correction and refreshes
+the UI. `scan_faces` has a `quiet` variant for the opt-in auto-scan after a
+reconcile (see `freshness.rs`, gated by `face.autoscan`, off by default).
+
+### 00000.8 UI
+
+- Settings pane `src/ui/settings_faces.rs`: enable toggle, opt-in auto-scan (off
+  by default), embedding-model dropdown with a license note and a re-scan
+  warning, Download models, Scan for faces now, and Delete all face data
+  (privacy reset). Registered with one `stack.add_titled` line in
+  `src/ui/settings.rs`. The `face.*` keys and `load_face_config` are in
+  `src/ui/prefs.rs`; `AppState` holds `face_config` and `face_job`.
+- Sidebar `src/ui/sidebar.rs`: a People header appears once any face exists
+  (id `peopleheader`, item prefix `person:`). Clicking the header opens the
+  Faces view. A person row shows that person's photos. A right-click menu
+  renames or deletes a person.
+- Faces view `src/ui/facesview.rs`: a center-stack view (`center_stack` child
+  name `faces`). It shows one tile per group — named people first, then the
+  largest unnamed clusters. A tile's IMAGE opens the group's photos. For an
+  unnamed group, the tile's LABEL opens the name dialog. Tile size follows the
+  thumbnail slider (`prefs.active_size()`, clamped 72..320). `AppState`
+  methods: `show_faces`, `refresh_faces_if_active`.
+- Grid `src/ui/grid.rs`: `Source::Person` and `Source::Cluster`, with
+  `show_person`/`show_cluster` and re-query arms in `reload_from_source`. The
+  grid header has a back button (`set_back`/`hide_back`) that the person and
+  cluster views set to return to the Faces view.
+- People dialogs `src/ui/people.rs`: `name_cluster_dialog` (name or merge a
+  cluster) and `assign_face_dialog` (assign one face to a person or a new
+  person, and, when the face is named, a "remove from this person" button that
+  calls `reject_face_from_person`).
+- Viewer overlay `src/ui/viewer.rs`: a Show faces button toggles a second
+  transparent `DrawingArea` over the picture. It draws each face box (green
+  when named, yellow when not) with the name. Clicking a box opens the assign
+  dialog. When on, the image renders uncropped so boxes map to the oriented
+  frame.
+- Face crops: `AppState::face_crop_jpeg` renders (via
+  `thumb::render_face_crop`) at 320 px and caches in `face-thumbs.db`.
+- Person rule: `RuleField::Person` in `src/model.rs` and
+  `src/db/virtual_albums.rs`, plus a "Contains person" entry in
+  `src/ui/vrules.rs`. A smart virtual album can hold "contains person X".
+
+### 00000.9 Rejection design decision
+
+The user chose "name-first only" for removing a face from a group. Removal is
+offered ONLY for a NAMED person (the assign dialog shows "Not <person> — remove
+from this person"). Removing records a durable rejection so a re-scan never
+re-attaches the face to that person. An UNNAMED group has no stable identity
+across scans, so it offers no removal. The workflow is: name the group, then
+remove outliers.
+
+### 00000.10 Open follow-ups (not built)
+
+- A cache-only clear for face crops, so a slider or model change refreshes crops
+  without a full "Delete all face data". Old 160 px crops from an earlier build
+  stay until regenerated.
+- Higher-accuracy optional models (ArcFace 512-D) and a custom `.onnx` path.
+- Immich has its own people feature; a mapping is out of scope for now.
+- A dedicated split control for a face inside an unnamed group (today the user
+  names the group first).
+
+## 0000. Timeline, copy, crop overlay, slideshows, logging, and freeze fixes
 
 This section describes the last session. The work is complete. The application
 builds. `cargo test` passes 43 tests. The work is on `main`. The work is pushed.
