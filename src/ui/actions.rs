@@ -32,7 +32,16 @@ pub fn add_library_folder(state: &Rc<AppState>, path: &str) {
         return;
     }
     super::app::reload_folders(state);
-    enqueue_scan(state, vec![path.to_string()]);
+    // Scan the new folder now only when the user chose auto-scan. Otherwise the
+    // folder waits in the DB until the user runs "Rescan All Folders".
+    let autoscan = state
+        .lib
+        .get_setting(super::prefs::KEY_AUTOSCAN_ON_ADD, "1")
+        .map(|v| v == "1")
+        .unwrap_or(true);
+    if autoscan {
+        enqueue_scan(state, vec![path.to_string()]);
+    }
 }
 
 /// Rescan all library folders.

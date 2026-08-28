@@ -17,6 +17,12 @@ pub const KEY_PROPS_VISIBLE: &str = "ui.props_visible";
 pub const KEY_THEME_OVERRIDE: &str = "ui.theme_override";
 /// How many days a photo stays in the New Files view after being added.
 pub const KEY_NEW_MAX_AGE_DAYS: &str = "ui.new_max_age_days";
+/// The last folder the "Add Folder…" dialog opened. Used as the initial folder
+/// on the next open.
+pub const KEY_LAST_LIB_DIR: &str = "ui.last_lib_dir";
+/// When "1", scan a folder into the library right after it is added. When "0",
+/// add the folder to the DB only. Default "1".
+pub const KEY_AUTOSCAN_ON_ADD: &str = "ui.autoscan_on_add";
 
 /// AI setting keys stored in `library.db`.
 pub const KEY_AI_ENABLED: &str = "ai.enabled";

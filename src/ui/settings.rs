@@ -33,6 +33,7 @@ pub fn show_settings(state: &Rc<AppState>) {
     stack.set_vexpand(true);
     stack.add_titled(&folder_pane(state, &window), Some("folders"), "Library Folders");
     stack.add_titled(&thumb_pane(state), Some("thumbs"), "Thumbnails");
+    stack.add_titled(&slideshow_pane(state), Some("slideshow"), "Slideshow");
     stack.add_titled(&appearance_pane(state), Some("appearance"), "Appearance");
     stack.add_titled(
         &super::settings_ai::ai_pane(state),
@@ -118,6 +119,12 @@ fn folder_pane(state: &Rc<AppState>, parent: &Window) -> GtkBox {
         let reload = reload.clone();
         add.connect_clicked(move |_| {
             let dialog = FileDialog::new();
+            // Open at the last folder the user picked, if any.
+            if let Ok(last) = state.lib.get_setting(prefs::KEY_LAST_LIB_DIR, "") {
+                if !last.is_empty() {
+                    dialog.set_initial_folder(Some(&gio::File::for_path(&last)));
+                }
+            }
             let state = state.clone();
             let reload = reload.clone();
             dialog.select_folder(
@@ -126,6 +133,13 @@ fn folder_pane(state: &Rc<AppState>, parent: &Window) -> GtkBox {
                 move |res| {
                     if let Ok(file) = res {
                         if let Some(path) = file.path() {
+                            // Remember the parent folder for the next open.
+                            if let Some(par) = path.parent() {
+                                let _ = state.lib.set_setting(
+                                    prefs::KEY_LAST_LIB_DIR,
+                                    &par.to_string_lossy(),
+                                );
+                            }
                             super::actions::add_library_folder(
                                 &state,
                                 &path.to_string_lossy(),
@@ -180,15 +194,108 @@ fn folder_pane(state: &Rc<AppState>, parent: &Window) -> GtkBox {
     buttons.append(&add);
     buttons.append(&remove);
 
+    let autoscan = CheckButton::with_label("Scan folders immediately after adding");
+    autoscan.set_active(
+        state
+            .lib
+            .get_setting(prefs::KEY_AUTOSCAN_ON_ADD, "1")
+            .map(|v| v == "1")
+            .unwrap_or(true),
+    );
+    {
+        let state = state.clone();
+        autoscan.connect_toggled(move |b| {
+            let _ = state.lib.set_setting(
+                prefs::KEY_AUTOSCAN_ON_ADD,
+                prefs::bool_to_str(b.is_active()),
+            );
+        });
+    }
+
     let root = pane_box();
     root.append(&help);
     root.append(&buttons);
+    root.append(&autoscan);
     root.append(&scroll);
     root
 }
 
-fn thumb_pane(state: &Rc<AppState>) -> GtkBox {
+fn slideshow_pane(state: &Rc<AppState>) -> GtkBox {
     let root = pane_box();
+    let intro = Label::new(Some("Slideshow playback options."));
+    intro.set_xalign(0.0);
+    root.append(&intro);
+
+    let secs = state
+        .lib
+        .get_setting(
+            prefs::KEY_SLIDESHOW_SECS,
+            &prefs::DEFAULT_SLIDESHOW_SECS.to_string(),
+        )
+        .ok()
+        .and_then(|s| s.parse::<i32>().ok())
+        .unwrap_or(prefs::DEFAULT_SLIDESHOW_SECS)
+        .clamp(1, 120);
+    let shuffle_on = state
+        .lib
+        .get_setting(prefs::KEY_SLIDESHOW_SHUFFLE, "0")
+        .map(|v| v == "1")
+        .unwrap_or(false);
+    let loop_on = state
+        .lib
+        .get_setting(prefs::KEY_SLIDESHOW_LOOP, "1")
+        .map(|v| v == "1")
+        .unwrap_or(true);
+
+    let secs_row = GtkBox::new(Orientation::Horizontal, 6);
+    let secs_label = Label::new(Some("Seconds per image"));
+    secs_label.set_xalign(0.0);
+    secs_label.set_size_request(140, -1);
+    let secs_spin = SpinButton::with_range(1.0, 120.0, 1.0);
+    secs_spin.set_value(secs as f64);
+    secs_row.append(&secs_label);
+    secs_row.append(&secs_spin);
+    root.append(&secs_row);
+    {
+        let state = state.clone();
+        secs_spin.connect_value_changed(move |s| {
+            let _ = state.lib.set_setting(
+                prefs::KEY_SLIDESHOW_SECS,
+                &(s.value().round() as i32).to_string(),
+            );
+        });
+    }
+
+    let shuffle = CheckButton::with_label("Shuffle");
+    shuffle.set_active(shuffle_on);
+    {
+        let state = state.clone();
+        shuffle.connect_toggled(move |b| {
+            let _ = state.lib.set_setting(
+                prefs::KEY_SLIDESHOW_SHUFFLE,
+                prefs::bool_to_str(b.is_active()),
+            );
+        });
+    }
+    root.append(&shuffle);
+
+    let loop_chk = CheckButton::with_label("Loop");
+    loop_chk.set_active(loop_on);
+    {
+        let state = state.clone();
+        loop_chk.connect_toggled(move |b| {
+            let _ = state.lib.set_setting(
+                prefs::KEY_SLIDESHOW_LOOP,
+                prefs::bool_to_str(b.is_active()),
+            );
+        });
+    }
+    root.append(&loop_chk);
+
+    root
+}
+
+fn thumb_pane(state: &Rc<AppState>) -> GtkBox {    let root = pane_box();
     let intro = Label::new(Some("Thumbnail slider preset sizes (pixels)."));
     intro.set_xalign(0.0);
     root.append(&intro);
