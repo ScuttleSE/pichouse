@@ -15,7 +15,7 @@ use super::{library::map_photo, library::now, Library, Result};
 
 /// The `photos` columns in `map_photo` order, for character photo queries.
 const PHOTO_COLS: &str = "id, folder_id, path, filename, size, mod_time, taken_at, \
-     width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing, added_at, phash";
+     width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing, added_at, phash, skip_face_scan";
 
 /// The `style_faces` columns in a fixed order.
 const FACE_COLS: &str = "id, photo_id, character_id, cluster_id, \
@@ -225,14 +225,15 @@ impl Library {
         Ok(v)
     }
 
-    /// The unnamed style clusters with their face counts, largest first. The
-    /// noise cluster (-1) is included so the user can review it.
+    /// The unnamed style clusters with their face counts. The order is stable:
+    /// by cluster id, with the noise cluster (-1) last. A stable order stops the
+    /// Characters grid from re-ordering while a scan adds faces.
     pub fn unnamed_style_clusters(&self) -> Result<Vec<(i64, i64)>> {
         let conn = self.lock();
         let mut stmt = conn.prepare(
             "SELECT cluster_id, COUNT(*) AS n FROM style_faces \
              WHERE character_id IS NULL AND cluster_id IS NOT NULL \
-             GROUP BY cluster_id ORDER BY n DESC",
+             GROUP BY cluster_id ORDER BY (cluster_id = -1), cluster_id",
         )?;
         let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?;
         let mut v = Vec::new();
@@ -426,7 +427,7 @@ impl Library {
         let mut stmt = conn.prepare(
             "SELECT p.id FROM photos p \
              LEFT JOIN style_face_scan fs ON fs.photo_id = p.id \
-             WHERE p.missing = 0 AND p.scan_state = 2 \
+             WHERE p.missing = 0 AND p.scan_state = 2 AND p.skip_face_scan = 0 \
                AND (fs.state IS NULL OR fs.state <> 2) \
              ORDER BY p.added_at DESC LIMIT ?1",
         )?;
@@ -453,7 +454,7 @@ impl Library {
         let sql = format!(
             "SELECT p.id FROM photos p \
              LEFT JOIN style_face_scan fs ON fs.photo_id = p.id \
-             WHERE p.missing = 0 AND p.scan_state = 2 \
+             WHERE p.missing = 0 AND p.scan_state = 2 AND p.skip_face_scan = 0 \
                AND (fs.state IS NULL OR fs.state <> 2) \
                AND p.folder_id IN ({placeholders}) \
              ORDER BY p.added_at DESC LIMIT ?"
@@ -539,5 +540,125 @@ impl Library {
              UPDATE photos SET style_face_status = 0;",
         )?;
         Ok(())
+    }
+
+    // --- Group and photo management ---
+
+    /// Remove one photo from a character. Every face of that photo loses the
+    /// character link and keeps its cluster id. A later re-cluster may group it
+    /// again. Use `ban_photo_from_character` to make the removal permanent.
+    pub fn remove_photo_from_character(&self, photo_id: i64, character_id: i64) -> Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "UPDATE style_faces SET character_id = NULL, confirmed = 0 \
+             WHERE photo_id = ?1 AND character_id = ?2",
+            params![photo_id, character_id],
+        )?;
+        Ok(())
+    }
+
+    /// Ban one photo from a character. Every face of that photo loses the
+    /// character link, loses its cluster id, and records a rejection. A
+    /// re-cluster never groups these faces under this character again.
+    pub fn ban_photo_from_character(&self, photo_id: i64, character_id: i64) -> Result<()> {
+        let conn = self.lock();
+        let face_ids: Vec<i64> = {
+            let mut stmt = conn
+                .prepare("SELECT id FROM style_faces WHERE photo_id = ?1 AND character_id = ?2")?;
+            let rows = stmt.query_map(params![photo_id, character_id], |r| r.get::<_, i64>(0))?;
+            let mut v = Vec::new();
+            for row in rows {
+                v.push(row?);
+            }
+            v
+        };
+        for fid in &face_ids {
+            conn.execute(
+                "INSERT OR IGNORE INTO style_face_rejections(face_id, character_id) VALUES(?1, ?2)",
+                params![fid, character_id],
+            )?;
+            conn.execute(
+                "UPDATE style_faces SET character_id = NULL, confirmed = 0, cluster_id = NULL WHERE id = ?1",
+                params![fid],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Remove one photo from an unnamed style cluster. Every face of that photo
+    /// in the cluster loses its cluster id, so the group no longer shows it.
+    pub fn remove_photo_from_style_cluster(&self, photo_id: i64, cluster_id: i64) -> Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "UPDATE style_faces SET cluster_id = NULL \
+             WHERE photo_id = ?1 AND cluster_id = ?2",
+            params![photo_id, cluster_id],
+        )?;
+        Ok(())
+    }
+
+    /// Clear the name from a character. Every face keeps its cluster id and
+    /// loses the character link. The character row is deleted. The old cluster
+    /// reappears as an unnamed group. No re-scan is needed.
+    pub fn unname_character(&self, id: i64) -> Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "UPDATE style_faces SET character_id = NULL, confirmed = 0 WHERE character_id = ?1",
+            params![id],
+        )?;
+        conn.execute("DELETE FROM characters WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Mark photos as unimportant. A skipped photo is excluded from every future
+    /// face scan (human and stylised). Setting skip on also deletes the photos'
+    /// human and stylised face rows, so the photos leave every face group at
+    /// once.
+    pub fn set_photos_skip_face_scan(&self, photo_ids: &[i64], skip: bool) -> Result<()> {
+        if photo_ids.is_empty() {
+            return Ok(());
+        }
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        {
+            let mut set = tx.prepare("UPDATE photos SET skip_face_scan = ?2 WHERE id = ?1")?;
+            let mut del_style = tx.prepare("DELETE FROM style_faces WHERE photo_id = ?1")?;
+            let mut del_face = tx.prepare("DELETE FROM faces WHERE photo_id = ?1")?;
+            for &pid in photo_ids {
+                set.execute(params![pid, skip as i64])?;
+                if skip {
+                    del_style.execute(params![pid])?;
+                    del_face.execute(params![pid])?;
+                }
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Photo ids that have a face of the given character.
+    pub fn photo_ids_of_character(&self, character_id: i64) -> Result<Vec<i64>> {
+        let conn = self.lock();
+        let mut stmt = conn
+            .prepare("SELECT DISTINCT photo_id FROM style_faces WHERE character_id = ?1")?;
+        let rows = stmt.query_map(params![character_id], |r| r.get::<_, i64>(0))?;
+        let mut v = Vec::new();
+        for row in rows {
+            v.push(row?);
+        }
+        Ok(v)
+    }
+
+    /// Photo ids that have a face in the given style cluster.
+    pub fn photo_ids_in_style_cluster(&self, cluster_id: i64) -> Result<Vec<i64>> {
+        let conn = self.lock();
+        let mut stmt =
+            conn.prepare("SELECT DISTINCT photo_id FROM style_faces WHERE cluster_id = ?1")?;
+        let rows = stmt.query_map(params![cluster_id], |r| r.get::<_, i64>(0))?;
+        let mut v = Vec::new();
+        for row in rows {
+            v.push(row?);
+        }
+        Ok(v)
     }
 }

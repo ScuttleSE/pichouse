@@ -127,6 +127,30 @@ processing stays on your machine.
 Faces, people, and per-photo scan state live in `library.db`; face-crop
 thumbnails live in `face-thumbs.db`.
 
+### Managing face and character groups
+
+The People view and the Characters view show one tile per group. Both views add
+faces during a scan. The Characters grid keeps a stable order. A new group
+appends at the end. A tile does not move after it appears.
+
+You manage a group in two places:
+
+- **Group tile (right-click).** A named tile offers *Rename*, *Clear name*,
+  *Delete character*, and *Do not scan this group*. *Clear name* makes the group
+  unnamed again and keeps its members. An unnamed tile offers *Name this group*
+  and *Do not scan this group*.
+- **Photo grid (right-click).** Open a group, then right-click one or more
+  photos. In a character group you can *Remove from this character* or
+  *Not this character (ban)*. A ban records a rejection, so a re-scan never adds
+  the photo to that character again. In an unnamed group you can
+  *Remove from this group*.
+
+*Do not scan these (mark unimportant)* marks the selected photos unimportant.
+pichouse then excludes these photos from every future face scan, both human and
+stylised. It also removes them from every face group at once. The mark is stored
+in `photos.skip_face_scan`.
+
+
 ### Controlling CPU/GPU load
 
 Even when Ollama runs the model on the GPU, vision models do image

@@ -105,6 +105,14 @@ fn migrate(conn: &Connection) -> Result<()> {
             "ALTER TABLE photos ADD COLUMN style_face_status INTEGER NOT NULL DEFAULT 0;",
         )?;
     }
+    // photos.skip_face_scan: 1 when the user marks the photo unimportant. A
+    // skipped photo is excluded from every future face scan (human and
+    // stylised).
+    if !have.contains("skip_face_scan") {
+        conn.execute_batch(
+            "ALTER TABLE photos ADD COLUMN skip_face_scan INTEGER NOT NULL DEFAULT 0;",
+        )?;
+    }
     // photos.phash: 64-bit perceptual hash (dHash) for the duplicate finder,
     // stored as a signed INTEGER bit-cast from u64. 0 means not yet computed.
     // Existing rows are backfilled lazily on the first duplicate scan.
@@ -302,7 +310,7 @@ impl Library {
     pub fn photos_missing(&self) -> Result<Vec<Photo>> {
         let conn = self.lock();
         let mut stmt = conn.prepare(
-            "SELECT id, folder_id, path, filename, size, mod_time, taken_at, width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing, added_at, phash
+            "SELECT id, folder_id, path, filename, size, mod_time, taken_at, width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing, added_at, phash, skip_face_scan
              FROM photos WHERE missing = 1 ORDER BY folder_id ASC, filename ASC",
         )?;
         let rows = stmt.query_map([], map_photo)?;
@@ -641,7 +649,7 @@ impl Library {
         let mut stmt = conn.prepare(
             "SELECT p.id, p.folder_id, p.path, p.filename, p.size, p.mod_time, p.taken_at,
                     p.width, p.height, p.hash, p.thumb_ready, p.orientation, p.ai_status,
-                    p.scan_state, p.missing, p.added_at,
+                    p.scan_state, p.missing, p.added_at, p.phash, p.skip_face_scan,
                     f.id, f.path, f.name, f.mtime, f.year
              FROM photos p JOIN folders f ON f.id = p.folder_id
              WHERE p.missing = 0 AND p.added_at >= ?1
@@ -650,11 +658,11 @@ impl Library {
         let rows = stmt.query_map(params![age_threshold], |r| {
             let photo = map_photo(r)?;
             let folder = Folder {
-                id: r.get(16)?,
-                path: r.get(17)?,
-                name: r.get(18)?,
-                mtime: r.get(19)?,
-                year: r.get(20)?,
+                id: r.get(18)?,
+                path: r.get(19)?,
+                name: r.get(20)?,
+                mtime: r.get(21)?,
+                year: r.get(22)?,
             };
             Ok((photo, folder))
         })?;
@@ -718,7 +726,7 @@ impl Library {
     pub fn photos_in_folder(&self, folder_id: i64) -> Result<Vec<Photo>> {
         let conn = self.lock();
         let mut stmt = conn.prepare(
-            "SELECT id, folder_id, path, filename, size, mod_time, taken_at, width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing, added_at, phash
+            "SELECT id, folder_id, path, filename, size, mod_time, taken_at, width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing, added_at, phash, skip_face_scan
              FROM photos WHERE folder_id = ?1 ORDER BY taken_at ASC, filename ASC",
         )?;
         let rows = stmt.query_map(params![folder_id], map_photo)?;
@@ -730,7 +738,7 @@ impl Library {
         let conn = self.lock();
         let p = conn
             .query_row(
-                "SELECT id, folder_id, path, filename, size, mod_time, taken_at, width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing, added_at, phash
+                "SELECT id, folder_id, path, filename, size, mod_time, taken_at, width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing, added_at, phash, skip_face_scan
                  FROM photos WHERE id = ?1",
                 params![id],
                 map_photo,
@@ -874,6 +882,7 @@ pub(super) fn map_photo(r: &rusqlite::Row) -> rusqlite::Result<Photo> {
         missing: r.get::<_, i64>(14)? != 0,
         added_at: r.get(15)?,
         phash: r.get::<_, i64>(16)? as u64,
+        skip_face_scan: r.get::<_, i64>(17)? != 0,
     })
 }
 

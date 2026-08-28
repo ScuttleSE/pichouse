@@ -169,8 +169,9 @@ are constants in that file.
                          (per-server Immich thumbnail cache), faces.rs (persons,
                          faces, face-scan state, clustering helpers),
                           face_thumbs.rs (face-crop cache), style_faces.rs
-                          (characters, stylised faces, style-face-scan state,
-                          HDBSCAN clustering helpers), style_face_thumbs.rs
+                           (characters, stylised faces, style-face-scan state,
+                           HDBSCAN clustering helpers, group/photo management,
+                           and the photos.skip_face_scan flag), style_face_thumbs.rs
                           (stylised face-crop cache), edits.rs
                           (non-destructive per-photo edits), presets.rs
                           (levels presets) and duplicates.rs (duplicate-finder

@@ -45,7 +45,11 @@ CREATE TABLE IF NOT EXISTS photos (
     -- Unix time when this photo row was first recorded in the library. Set on
     -- the Phase 1 structure insert. Used with the owning root's
     -- first_scan_done_at to decide whether the photo is "new".
-    added_at    INTEGER NOT NULL DEFAULT 0
+    added_at    INTEGER NOT NULL DEFAULT 0,
+    -- 1 when the user marks this photo unimportant. A skipped photo is excluded
+    -- from every future face scan (human faces and stylised faces). Setting this
+    -- also removes the photo from all face groups.
+    skip_face_scan INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_photos_folder ON photos(folder_id);

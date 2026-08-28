@@ -939,6 +939,22 @@ impl Grid {
         }
     }
 
+    /// The character id the grid is currently showing, if any.
+    pub fn current_character(&self) -> Option<i64> {
+        match &*self.source.borrow() {
+            Source::Character(id, _) => Some(*id),
+            _ => None,
+        }
+    }
+
+    /// The stylised cluster id the grid is currently showing, if any.
+    pub fn current_style_cluster(&self) -> Option<i64> {
+        match &*self.source.borrow() {
+            Source::StyleCluster(id, _) => Some(*id),
+            _ => None,
+        }
+    }
+
     /// The photos currently selected in the grid (multi-selection), in view
     /// order. Empty when nothing is selected.
     pub fn selected_photos(&self) -> Vec<Photo> {        let photos = self.filtered_photos();

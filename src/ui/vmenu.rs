@@ -121,6 +121,97 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
         group.add_action(&act);
     }
 
+    // Remove selected photos from the character group currently being viewed.
+    // A plain remove clears the character link but keeps the cluster, so a
+    // later re-cluster may group the photo again.
+    {
+        let act = gio::SimpleAction::new("remove-from-character", None);
+        let state = state.clone();
+        let grid = grid.clone();
+        let pop = pop.clone();
+        act.connect_activate(move |_, _| {
+            dismiss(&pop);
+            let Some(character_id) = grid.current_character() else {
+                return;
+            };
+            for id in local_photo_ids(&grid) {
+                if let Err(e) = state.lib.remove_photo_from_character(id, character_id) {
+                    show_error(&state, &e.to_string());
+                    return;
+                }
+            }
+            grid.reload_from_source();
+        });
+        group.add_action(&act);
+    }
+
+    // Ban selected photos from the character group. A ban records a rejection,
+    // so a re-cluster never groups these photos under this character again.
+    {
+        let act = gio::SimpleAction::new("ban-from-character", None);
+        let state = state.clone();
+        let grid = grid.clone();
+        let pop = pop.clone();
+        act.connect_activate(move |_, _| {
+            dismiss(&pop);
+            let Some(character_id) = grid.current_character() else {
+                return;
+            };
+            for id in local_photo_ids(&grid) {
+                if let Err(e) = state.lib.ban_photo_from_character(id, character_id) {
+                    show_error(&state, &e.to_string());
+                    return;
+                }
+            }
+            grid.reload_from_source();
+        });
+        group.add_action(&act);
+    }
+
+    // Remove selected photos from the unnamed style cluster being viewed.
+    {
+        let act = gio::SimpleAction::new("remove-from-style-cluster", None);
+        let state = state.clone();
+        let grid = grid.clone();
+        let pop = pop.clone();
+        act.connect_activate(move |_, _| {
+            dismiss(&pop);
+            let Some(cluster_id) = grid.current_style_cluster() else {
+                return;
+            };
+            for id in local_photo_ids(&grid) {
+                if let Err(e) = state.lib.remove_photo_from_style_cluster(id, cluster_id) {
+                    show_error(&state, &e.to_string());
+                    return;
+                }
+            }
+            grid.reload_from_source();
+        });
+        group.add_action(&act);
+    }
+
+    // Mark selected photos unimportant. A skipped photo is excluded from every
+    // future face scan and leaves every face group at once.
+    {
+        let act = gio::SimpleAction::new("skip-face-scan", None);
+        let state = state.clone();
+        let grid = grid.clone();
+        let pop = pop.clone();
+        act.connect_activate(move |_, _| {
+            dismiss(&pop);
+            let ids = local_photo_ids(&grid);
+            if ids.is_empty() {
+                return;
+            }
+            if let Err(e) = state.lib.set_photos_skip_face_scan(&ids, true) {
+                show_error(&state, &e.to_string());
+                return;
+            }
+            grid.reload_from_source();
+        });
+        group.add_action(&act);
+    }
+
     // Edit the selected photo: open it in the viewer and reveal the Edit tab.
     {
         let act = gio::SimpleAction::new("edit", None);
@@ -248,6 +339,35 @@ fn build_menu(state: &Rc<AppState>, grid: &Rc<Grid>) -> gio::Menu {
         tools.append(Some("Export edited copy…"), Some("grid.export"));
     }
     menu.append_section(None, &tools);
+
+    // Group actions apply to local photos in a face-group view. "Do not scan"
+    // applies in any view.
+    let group_tools = gio::Menu::new();
+    if selected_local >= 1 {
+        if grid.current_character().is_some() {
+            group_tools.append(
+                Some("Remove from this character"),
+                Some("grid.remove-from-character"),
+            );
+            group_tools.append(
+                Some("Not this character (ban)"),
+                Some("grid.ban-from-character"),
+            );
+        }
+        if grid.current_style_cluster().is_some() {
+            group_tools.append(
+                Some("Remove from this group"),
+                Some("grid.remove-from-style-cluster"),
+            );
+        }
+        group_tools.append(
+            Some("Do not scan these (mark unimportant)"),
+            Some("grid.skip-face-scan"),
+        );
+    }
+    if group_tools.n_items() > 0 {
+        menu.append_section(None, &group_tools);
+    }
 
     // The remaining sections are virtual-album operations, which apply only to
     // local photos. Skip them for an Immich-only selection.

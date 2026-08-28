@@ -12,7 +12,7 @@ use super::{library::map_photo, library::now, Library, Result};
 
 /// The `photos` columns in `map_photo` order, for person photo queries.
 const PHOTO_COLS: &str = "id, folder_id, path, filename, size, mod_time, taken_at, \
-     width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing, added_at, phash";
+     width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing, added_at, phash, skip_face_scan";
 
 /// The `faces` columns in a fixed order, shared by the reader below.
 const FACE_COLS: &str = "id, photo_id, person_id, cluster_id, \
@@ -439,7 +439,7 @@ impl Library {
         let mut stmt = conn.prepare(
             "SELECT p.id FROM photos p \
              LEFT JOIN face_scan fs ON fs.photo_id = p.id \
-             WHERE p.missing = 0 AND p.scan_state = 2 \
+             WHERE p.missing = 0 AND p.scan_state = 2 AND p.skip_face_scan = 0 \
                AND (fs.state IS NULL OR fs.state <> 2) \
              ORDER BY p.added_at DESC LIMIT ?1",
         )?;
@@ -463,7 +463,7 @@ impl Library {
         let sql = format!(
             "SELECT p.id FROM photos p \
              LEFT JOIN face_scan fs ON fs.photo_id = p.id \
-             WHERE p.missing = 0 AND p.scan_state = 2 \
+             WHERE p.missing = 0 AND p.scan_state = 2 AND p.skip_face_scan = 0 \
                AND (fs.state IS NULL OR fs.state <> 2) \
                AND p.folder_id IN ({placeholders}) \
              ORDER BY p.added_at DESC LIMIT ?"

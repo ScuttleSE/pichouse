@@ -11,9 +11,10 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use gtk4::{
-    Align, Box as GtkBox, Button, FlowBox, Image, Label, Orientation, PolicyType, ScrolledWindow,
-    SelectionMode,
+    Align, Box as GtkBox, Button, FlowBox, GestureClick, Image, Label, Orientation, PolicyType,
+    PopoverMenu, ScrolledWindow, SelectionMode,
 };
+use gtk4::gio;
 
 use super::state::AppState;
 use super::util::texture_from_bytes;
@@ -21,12 +22,29 @@ use super::util::texture_from_bytes;
 /// The noise cluster id from HDBSCAN. Shown to the user, not hidden.
 const NOISE_CLUSTER_ID: i64 = -1;
 
+/// A stable key for one tile. The grid keeps a tile in a fixed position while
+/// its key stays the same, so a scan never moves a tile under the pointer.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TileKey {
+    Named(i64),
+    Cluster(i64),
+}
+
+/// One rendered tile and the data needed to update it in place.
+struct TileEntry {
+    key: TileKey,
+    root: GtkBox,
+    count_label: Label,
+    name: String,
+}
+
 /// The Characters view widget and its rebuild logic.
 pub struct CharactersView {
     root: GtkBox,
     flow: FlowBox,
     empty: Label,
     state: RefCell<Option<Rc<AppState>>>,
+    tiles: RefCell<Vec<TileEntry>>,
 }
 
 impl CharactersView {
@@ -82,6 +100,7 @@ impl CharactersView {
             flow,
             empty,
             state: RefCell::new(None),
+            tiles: RefCell::new(Vec::new()),
         })
     }
 
@@ -94,21 +113,35 @@ impl CharactersView {
         &self.root
     }
 
-    /// Rebuild the group tiles from the database.
+    /// Rebuild every tile from scratch. Used on open and after a structural
+    /// change (rename, remove, skip). It clears the tile cache first.
     pub fn reload(self: &Rc<Self>) {
-        let Some(state) = self.state.borrow().clone() else {
-            return;
-        };
         while let Some(child) = self.flow.first_child() {
             self.flow.remove(&child);
         }
+        self.tiles.borrow_mut().clear();
+        self.refresh();
+    }
 
-        let tile = state.prefs.borrow().active_size().clamp(72, 320);
+    /// Update the tiles in place. A new group appends at the end. An existing
+    /// group updates its count label. A group that is gone gets removed. The
+    /// order of the surviving tiles does not change, so a scan never moves a
+    /// tile under the pointer. Safe to call repeatedly during a scan.
+    pub fn refresh(self: &Rc<Self>) {
+        let Some(state) = self.state.borrow().clone() else {
+            return;
+        };
+
+        let tile_px = state.prefs.borrow().active_size().clamp(72, 320);
 
         let characters = state.lib.characters().unwrap_or_default();
         let clusters = state.lib.unnamed_style_clusters().unwrap_or_default();
 
         if characters.is_empty() && clusters.is_empty() {
+            while let Some(child) = self.flow.first_child() {
+                self.flow.remove(&child);
+            }
+            self.tiles.borrow_mut().clear();
             self.empty.set_visible(true);
             self.flow.set_visible(false);
             return;
@@ -116,43 +149,96 @@ impl CharactersView {
         self.empty.set_visible(false);
         self.flow.set_visible(true);
 
-        // Named characters first.
-        for (character, count) in characters {
-            let face_id = state
-                .lib
-                .character_representative_face(character.id)
-                .unwrap_or(0);
-            let t = self.build_tile(
-                &state,
-                face_id,
-                &character.name,
-                count,
-                true,
-                character.id,
-                0,
-                tile,
-            );
-            self.flow.append(&t);
+        // The wanted set, in stable display order: named characters first, then
+        // unnamed clusters by id.
+        let mut wanted: Vec<(TileKey, String, i64)> = Vec::new();
+        for (character, count) in &characters {
+            wanted.push((TileKey::Named(character.id), character.name.clone(), *count));
         }
-
-        // Unnamed clusters, largest first. The noise cluster shows as "Unclear".
-        for (cluster_id, count) in clusters {
-            let face_id = state
-                .lib
-                .unassigned_style_faces_in_cluster(cluster_id)
-                .ok()
-                .and_then(|v| v.first().map(|f| f.id))
-                .unwrap_or(0);
-            let name = if cluster_id == NOISE_CLUSTER_ID {
+        for (cluster_id, count) in &clusters {
+            let name = if *cluster_id == NOISE_CLUSTER_ID {
                 "Unclear"
             } else {
                 "Unnamed"
             };
-            let t = self.build_tile(&state, face_id, name, count, false, 0, cluster_id, tile);
-            self.flow.append(&t);
+            wanted.push((TileKey::Cluster(*cluster_id), name.to_string(), *count));
+        }
+
+        // Remove tiles no longer wanted.
+        {
+            let mut tiles = self.tiles.borrow_mut();
+            let mut i = 0;
+            while i < tiles.len() {
+                let still = wanted.iter().any(|(k, _, _)| *k == tiles[i].key);
+                if still {
+                    i += 1;
+                } else {
+                    self.flow.remove(&tiles[i].root);
+                    tiles.remove(i);
+                }
+            }
+        }
+
+        // Add new tiles and update existing ones. New tiles append at the end,
+        // so an existing tile never changes position.
+        for (key, name, count) in wanted {
+            let existing = self
+                .tiles
+                .borrow()
+                .iter()
+                .position(|t| t.key == key);
+            if let Some(idx) = existing {
+                let mut tiles = self.tiles.borrow_mut();
+                let entry = &mut tiles[idx];
+                if entry.name != name {
+                    entry.name = name.clone();
+                }
+                entry
+                    .count_label
+                    .set_text(&format!("{name} ({count})"));
+            } else {
+                let (face_id, named, character_id, cluster_id) = match key {
+                    TileKey::Named(cid) => (
+                        state.lib.character_representative_face(cid).unwrap_or(0),
+                        true,
+                        cid,
+                        0,
+                    ),
+                    TileKey::Cluster(clid) => (
+                        state
+                            .lib
+                            .unassigned_style_faces_in_cluster(clid)
+                            .ok()
+                            .and_then(|v| v.first().map(|f| f.id))
+                            .unwrap_or(0),
+                        false,
+                        0,
+                        clid,
+                    ),
+                };
+                let (tile_root, count_label) = self.build_tile(
+                    &state,
+                    face_id,
+                    &name,
+                    count,
+                    named,
+                    character_id,
+                    cluster_id,
+                    tile_px,
+                );
+                self.flow.append(&tile_root);
+                self.tiles.borrow_mut().push(TileEntry {
+                    key,
+                    root: tile_root,
+                    count_label,
+                    name,
+                });
+            }
         }
     }
 
+    /// Build one tile. Returns the tile root and its count label. The count
+    /// label is updated in place by `refresh`.
     #[allow(clippy::too_many_arguments)]
     fn build_tile(
         self: &Rc<Self>,
@@ -164,7 +250,7 @@ impl CharactersView {
         character_id: i64,
         cluster_id: i64,
         tile_px: i32,
-    ) -> GtkBox {
+    ) -> (GtkBox, Label) {
         let tile = GtkBox::new(Orientation::Vertical, 4);
         tile.set_width_request(tile_px + 12);
 
@@ -200,14 +286,16 @@ impl CharactersView {
         let label_text = format!("{name} ({count})");
         let lbl_btn = Button::with_label(&label_text);
         lbl_btn.add_css_class("flat");
-        if let Some(child) = lbl_btn.child() {
-            if let Ok(l) = child.downcast::<Label>() {
-                l.set_wrap(true);
-                l.set_max_width_chars(16);
-                l.set_justify(gtk4::Justification::Center);
-                if !named {
-                    l.add_css_class("dim-label");
-                }
+        let count_label = lbl_btn
+            .child()
+            .and_then(|c| c.downcast::<Label>().ok())
+            .unwrap_or_else(|| Label::new(Some(&label_text)));
+        {
+            count_label.set_wrap(true);
+            count_label.set_max_width_chars(16);
+            count_label.set_justify(gtk4::Justification::Center);
+            if !named {
+                count_label.add_css_class("dim-label");
             }
         }
         {
@@ -230,8 +318,174 @@ impl CharactersView {
             });
         }
 
+        // A right-click menu on the whole tile. It offers group-level actions.
+        let gesture = GestureClick::new();
+        gesture.set_button(gtk4::gdk::BUTTON_SECONDARY);
+        {
+            let this = self.clone();
+            let state = state.clone();
+            let name = name.to_string();
+            let tile_ref = tile.clone();
+            gesture.connect_pressed(move |g, _, x, y| {
+                g.set_state(gtk4::EventSequenceState::Claimed);
+                this.show_tile_menu(&state, &tile_ref, named, character_id, cluster_id, &name, x, y);
+            });
+        }
+        tile.add_controller(gesture);
+
         tile.append(&img_btn);
         tile.append(&lbl_btn);
-        tile
+        (tile, count_label)
+    }
+
+    /// Show the right-click menu for one tile. Named tiles offer rename, clear
+    /// name, delete, and "do not scan this group". Unnamed tiles offer name and
+    /// "do not scan this group".
+    #[allow(clippy::too_many_arguments)]
+    fn show_tile_menu(
+        self: &Rc<Self>,
+        state: &Rc<AppState>,
+        tile: &GtkBox,
+        named: bool,
+        character_id: i64,
+        cluster_id: i64,
+        name: &str,
+        x: f64,
+        y: f64,
+    ) {
+        let group = gio::SimpleActionGroup::new();
+        let menu = gio::Menu::new();
+
+        if named {
+            menu.append(Some("Rename…"), Some("char.rename"));
+            menu.append(Some("Clear name (make unnamed)"), Some("char.unname"));
+            menu.append(Some("Delete character"), Some("char.delete"));
+        } else {
+            menu.append(Some("Name this group…"), Some("char.name"));
+        }
+        menu.append(Some("Do not scan this group"), Some("char.skip"));
+
+        let add = |act_name: &str, cb: Box<dyn Fn()>| {
+            let a = gio::SimpleAction::new(act_name, None);
+            a.connect_activate(move |_, _| cb());
+            group.add_action(&a);
+        };
+
+        if named {
+            {
+                let this = self.clone();
+                let state = state.clone();
+                add(
+                    "rename",
+                    Box::new(move || {
+                        let this2 = this.clone();
+                        let state2 = state.clone();
+                        super::dialogs::prompt_text(
+                            &state,
+                            None,
+                            "Rename Character",
+                            "Character name:",
+                            "",
+                            move |new_name| {
+                                if new_name.trim().is_empty() {
+                                    return;
+                                }
+                                if let Err(e) = state2.lib.rename_character(character_id, &new_name) {
+                                    super::state::show_error(&state2, &e.to_string());
+                                    return;
+                                }
+                                this2.reload();
+                                if let Some(sb) = state2.sidebar.borrow().as_ref() {
+                                    sb.reload_deferred();
+                                }
+                            },
+                        );
+                    }),
+                );
+            }
+            {
+                let this = self.clone();
+                let state = state.clone();
+                add(
+                    "unname",
+                    Box::new(move || {
+                        if let Err(e) = state.lib.unname_character(character_id) {
+                            super::state::show_error(&state, &e.to_string());
+                            return;
+                        }
+                        this.reload();
+                        if let Some(sb) = state.sidebar.borrow().as_ref() {
+                            sb.reload_deferred();
+                        }
+                    }),
+                );
+            }
+            {
+                let this = self.clone();
+                let state = state.clone();
+                add(
+                    "delete",
+                    Box::new(move || {
+                        if let Err(e) = state.lib.delete_character(character_id) {
+                            super::state::show_error(&state, &e.to_string());
+                            return;
+                        }
+                        this.reload();
+                        if let Some(sb) = state.sidebar.borrow().as_ref() {
+                            sb.reload_deferred();
+                        }
+                    }),
+                );
+            }
+        } else {
+            let this = self.clone();
+            let state = state.clone();
+            add(
+                "name",
+                Box::new(move || {
+                    let this2 = this.clone();
+                    let state2 = state.clone();
+                    super::characters::name_style_cluster_dialog(&state, cluster_id, move || {
+                        this2.reload();
+                        if let Some(sb) = state2.sidebar.borrow().as_ref() {
+                            sb.reload_deferred();
+                        }
+                    });
+                }),
+            );
+        }
+
+        {
+            let this = self.clone();
+            let state = state.clone();
+            add(
+                "skip",
+                Box::new(move || {
+                    let ids = if named {
+                        state.lib.photo_ids_of_character(character_id)
+                    } else {
+                        state.lib.photo_ids_in_style_cluster(cluster_id)
+                    }
+                    .unwrap_or_default();
+                    if let Err(e) = state.lib.set_photos_skip_face_scan(&ids, true) {
+                        super::state::show_error(&state, &e.to_string());
+                        return;
+                    }
+                    this.reload();
+                    if let Some(sb) = state.sidebar.borrow().as_ref() {
+                        sb.reload_deferred();
+                    }
+                }),
+            );
+        }
+        let _ = name;
+
+        let popover = PopoverMenu::from_model(Some(&menu));
+        popover.set_has_arrow(false);
+        popover.set_parent(tile);
+        popover.insert_action_group("char", Some(&group));
+        let rect = gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1);
+        popover.set_pointing_to(Some(&rect));
+        popover.popup();
     }
 }

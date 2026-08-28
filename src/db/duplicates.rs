@@ -14,7 +14,7 @@ use crate::db::Library;
 use crate::model::Photo;
 
 const PHOTO_COLS: &str = "id, folder_id, path, filename, size, mod_time, taken_at, \
-     width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing, added_at, phash";
+     width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing, added_at, phash, skip_face_scan";
 
 impl Library {
     /// Load the non-missing photos in a set of folders, ready for the duplicate

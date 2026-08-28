@@ -367,7 +367,7 @@ impl AppState {
             .map(|n| n == "characters")
             .unwrap_or(false);
         if active {
-            self.characters_view().reload();
+            self.characters_view().refresh();
         }
     }
 

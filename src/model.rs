@@ -62,6 +62,9 @@ pub struct Photo {
     /// Unix timestamp (seconds) when this photo row was first recorded. Used
     /// with the owning root's `first_scan_done_at` to decide "new".
     pub added_at: i64,
+    /// `true` when the user marks this photo unimportant. A skipped photo is
+    /// excluded from every future face scan (human and stylised).
+    pub skip_face_scan: bool,
 }
 
 /// Per-channel color-levels adjustment. Each channel has an input black point,
