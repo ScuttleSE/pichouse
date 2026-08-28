@@ -11,3 +11,7 @@
 # Editor/OS cruft
 *.swp
 .DS_Store
+
+# Vendored ONNX Runtime (fetched by scripts/fetch-onnxruntime.sh, not committed).
+# The face feature loads this at run time. It is not built into the binary.
+/vendor/onnxruntime/

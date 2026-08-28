@@ -100,6 +100,20 @@ The version format is major.minor.build. The series starts at 0.0.0.
 
 GTK4 (>= 4.10) must be present at runtime; Debian 13 ships GTK 4.18.
 
+### ONNX Runtime (facial recognition)
+
+The face feature uses `ort` with the `load-dynamic` feature. It loads
+`libonnxruntime.so` at run time. The library is not built into the binary. The
+library is not committed to the repo. Fetch the pinned version once before the
+first build or run:
+
+    ./scripts/fetch-onnxruntime.sh
+
+The script downloads ONNX Runtime 1.22.0 from the official Microsoft release
+into `vendor/onnxruntime/`, with a verified SHA-256. The build script bakes that
+path in. A release ships `libonnxruntime.so.*` beside the binary. The build does
+not need the library. The run needs it.
+
 ## Build / run / test
 
     cargo build

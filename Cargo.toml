@@ -44,6 +44,16 @@ dirs = "5"
 log = "0.4"
 env_logger = { version = "0.11", default-features = false }
 
+# Facial detection and recognition (in-process ONNX inference).
+# ort wraps ONNX Runtime. The load-dynamic feature links no runtime at build
+# time. It loads a vendored ONNX Runtime shared library at run time. The build
+# needs no system libonnxruntime and no build-time download. Point ort at the
+# vendored library with the ORT_DYLIB_PATH environment variable, or place the
+# library beside the binary. See vendor/onnxruntime/.
+# ndarray builds the input tensors for the models.
+ort = { version = "=2.0.0-rc.10", default-features = false, features = ["load-dynamic", "ndarray"] }
+ndarray = "0.16"
+
 # Filesystem change notifications (inotify on Linux) for the library-freshness
 # fast path. Reconciliation remains the reliable core; this is only a
 # low-latency optimization for local folders and is never required for
