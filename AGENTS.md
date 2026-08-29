@@ -88,12 +88,24 @@ The version format is major.minor.build. The series starts at 0.0.0.
   version bump, the build, and the release for such a push.
 - CI commits the new version back with `[skip ci]` in the message.
 - Do not increase the build number by hand.
-- The user asks for a release. A release increases the major, the minor, or the build.
-- Ask the user which part to increase if the user does not say.
-- For a major release, increase major by 1. Set minor to 0. Set build to 0.
-- For a minor release, increase minor by 1. Set build to 0.
-- For a build release, increase build by 1.
 - CI keeps one rolling pre-release from the latest `main` build.
+
+### Named release
+
+A named release is a permanent release on the release page. It also mirrors the
+code and the release to GitHub (`ScuttleSE/pichouse`).
+
+- The user asks for a named release and gives the exact version `X.Y.Z`.
+- Create the tag and push it. Run `git tag vX.Y.Z`. Run `git push origin vX.Y.Z`.
+- The tag push starts `.gitea/workflows/release.yaml`.
+- The workflow writes `X.Y.Z` into `Cargo.toml` on `main`. It commits the change
+  back with `[skip ci]`.
+- The workflow builds, tests, and publishes a Gitea release with the binary.
+- The workflow pushes the commit and the tag to GitHub. It publishes a GitHub
+  release with the binary.
+- The GitHub push needs a `GH_TOKEN` secret in the Gitea repo settings. The
+  token is a GitHub PAT with `contents: write` on `ScuttleSE/pichouse`.
+- Do not push a tag without the user's request.
 
 ---
 
