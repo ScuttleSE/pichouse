@@ -262,6 +262,15 @@ fn install_css() {
             border-radius: 6px; \
             background-color: rgba(60, 130, 220, 0.06); \
         } \
+        .character-tile { \
+            border: 2px solid transparent; \
+            border-radius: 6px; \
+            padding: 2px; \
+        } \
+        .character-tile.selected { \
+            border-color: rgba(60, 130, 220, 0.95); \
+            background-color: rgba(60, 130, 220, 0.18); \
+        } \
         ",
     );
     if let Some(display) = gtk4::gdk::Display::default() {

@@ -135,10 +135,14 @@ appends at the end. A tile does not move after it appears.
 
 You manage a group in two places:
 
-- **Group tile (right-click).** A named tile offers *Rename*, *Clear name*,
-  *Delete character*, and *Do not scan this group*. *Clear name* makes the group
-  unnamed again and keeps its members. An unnamed tile offers *Name this group*
-  and *Do not scan this group*.
+- **Group tile (double-click, single-click, right-click).** A double-click opens
+  the group's photos. A single click selects the group. Select more groups with
+  more single clicks. A selection bar then shows *Do not scan selected* and
+  *Clear selection*. *Do not scan selected* marks every photo in the selected
+  groups unimportant. A right-click on a tile opens a menu. A named tile offers
+  *Rename*, *Clear name*, *Delete character*, and *Do not scan this group*.
+  *Clear name* makes the group unnamed again and keeps its members. An unnamed
+  tile offers *Name this group* and *Do not scan this group*.
 - **Photo grid (right-click).** Open a group, then right-click one or more
   photos. In a character group you can *Remove from this character* or
   *Not this character (ban)*. A ban records a rejection, so a re-scan never adds

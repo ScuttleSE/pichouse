@@ -45,6 +45,12 @@ pub struct CharactersView {
     empty: Label,
     state: RefCell<Option<Rc<AppState>>>,
     tiles: RefCell<Vec<TileEntry>>,
+    /// The currently selected groups. Empty when nothing is selected.
+    selected: RefCell<Vec<TileKey>>,
+    /// The selection action bar. Visible only when the selection is not empty.
+    sel_bar: GtkBox,
+    /// The selection count label in the action bar.
+    sel_label: Label,
 }
 
 impl CharactersView {
@@ -63,6 +69,23 @@ impl CharactersView {
         title.add_css_class("title-4");
         bar.append(&title);
         root.append(&bar);
+
+        // The selection action bar. Hidden until the user selects a group.
+        let sel_bar = GtkBox::new(Orientation::Horizontal, 6);
+        sel_bar.set_margin_bottom(4);
+        sel_bar.set_margin_start(8);
+        sel_bar.set_margin_end(8);
+        let sel_label = Label::new(None);
+        sel_label.set_xalign(0.0);
+        sel_label.set_hexpand(true);
+        sel_bar.append(&sel_label);
+        let skip_btn = Button::with_label("Do not scan selected");
+        skip_btn.add_css_class("destructive-action");
+        sel_bar.append(&skip_btn);
+        let clear_btn = Button::with_label("Clear selection");
+        sel_bar.append(&clear_btn);
+        sel_bar.set_visible(false);
+        root.append(&sel_bar);
 
         let flow = FlowBox::new();
         flow.set_selection_mode(SelectionMode::None);
@@ -95,13 +118,27 @@ impl CharactersView {
         scroll.set_child(Some(&inner));
         root.append(&scroll);
 
-        Rc::new(CharactersView {
+        let view = Rc::new(CharactersView {
             root,
             flow,
             empty,
             state: RefCell::new(None),
             tiles: RefCell::new(Vec::new()),
-        })
+            selected: RefCell::new(Vec::new()),
+            sel_bar,
+            sel_label,
+        });
+
+        {
+            let this = view.clone();
+            skip_btn.connect_clicked(move |_| this.skip_selected());
+        }
+        {
+            let this = view.clone();
+            clear_btn.connect_clicked(move |_| this.clear_selection());
+        }
+
+        view
     }
 
     pub fn bind_state(self: &Rc<Self>, state: Rc<AppState>) {
@@ -235,6 +272,14 @@ impl CharactersView {
                 });
             }
         }
+
+        // Drop selection entries whose group is gone, then refresh the
+        // highlight and the action bar.
+        {
+            let mut sel = self.selected.borrow_mut();
+            sel.retain(|k| self.tiles.borrow().iter().any(|t| t.key == *k));
+        }
+        self.update_selection_ui();
     }
 
     /// Build one tile. Returns the tile root and its count label. The count
@@ -253,6 +298,16 @@ impl CharactersView {
     ) -> (GtkBox, Label) {
         let tile = GtkBox::new(Orientation::Vertical, 4);
         tile.set_width_request(tile_px + 12);
+        tile.add_css_class("character-tile");
+
+        let key = if named {
+            TileKey::Named(character_id)
+        } else {
+            TileKey::Cluster(cluster_id)
+        };
+        if self.selected.borrow().iter().any(|k| *k == key) {
+            tile.add_css_class("selected");
+        }
 
         let image = Image::new();
         image.set_pixel_size(tile_px);
@@ -268,55 +323,40 @@ impl CharactersView {
             image.set_icon_name(Some("avatar-default-symbolic"));
         }
 
-        let img_btn = Button::new();
-        img_btn.set_child(Some(&image));
-        img_btn.add_css_class("flat");
-        {
-            let state = state.clone();
-            let name = name.to_string();
-            img_btn.connect_clicked(move |_| {
-                if named {
-                    state.show_character(character_id, &name);
-                } else {
-                    state.show_style_cluster(cluster_id, "Unnamed character");
-                }
-            });
+        let label_text = format!("{name} ({count})");
+        let count_label = Label::new(Some(&label_text));
+        count_label.set_wrap(true);
+        count_label.set_max_width_chars(16);
+        count_label.set_justify(gtk4::Justification::Center);
+        if !named {
+            count_label.add_css_class("dim-label");
         }
 
-        let label_text = format!("{name} ({count})");
-        let lbl_btn = Button::with_label(&label_text);
-        lbl_btn.add_css_class("flat");
-        let count_label = lbl_btn
-            .child()
-            .and_then(|c| c.downcast::<Label>().ok())
-            .unwrap_or_else(|| Label::new(Some(&label_text)));
+        // Primary-button clicks. One click toggles the group selection. Two
+        // clicks open the group.
+        let primary = GestureClick::new();
+        primary.set_button(gtk4::gdk::BUTTON_PRIMARY);
         {
-            count_label.set_wrap(true);
-            count_label.set_max_width_chars(16);
-            count_label.set_justify(gtk4::Justification::Center);
-            if !named {
-                count_label.add_css_class("dim-label");
-            }
-        }
-        {
-            let state = state.clone();
             let this = self.clone();
+            let state = state.clone();
             let name = name.to_string();
-            lbl_btn.connect_clicked(move |_| {
-                if named {
-                    state.show_character(character_id, &name);
+            primary.connect_pressed(move |g, n_press, _, _| {
+                g.set_state(gtk4::EventSequenceState::Claimed);
+                if n_press >= 2 {
+                    // Open the group. A double-click clears the selection first,
+                    // so the open is not mistaken for a selection.
+                    this.clear_selection();
+                    if named {
+                        state.show_character(character_id, &name);
+                    } else {
+                        state.show_style_cluster(cluster_id, "Unnamed character");
+                    }
                 } else {
-                    let this2 = this.clone();
-                    let state2 = state.clone();
-                    super::characters::name_style_cluster_dialog(&state, cluster_id, move || {
-                        this2.reload();
-                        if let Some(sb) = state2.sidebar.borrow().as_ref() {
-                            sb.reload_deferred();
-                        }
-                    });
+                    this.toggle_selection(key);
                 }
             });
         }
+        tile.add_controller(primary);
 
         // A right-click menu on the whole tile. It offers group-level actions.
         let gesture = GestureClick::new();
@@ -333,9 +373,83 @@ impl CharactersView {
         }
         tile.add_controller(gesture);
 
-        tile.append(&img_btn);
-        tile.append(&lbl_btn);
+        tile.append(&image);
+        tile.append(&count_label);
         (tile, count_label)
+    }
+
+    /// Toggle whether a group is in the selection. Updates the highlight and
+    /// the action bar.
+    fn toggle_selection(self: &Rc<Self>, key: TileKey) {
+        {
+            let mut sel = self.selected.borrow_mut();
+            if let Some(pos) = sel.iter().position(|k| *k == key) {
+                sel.remove(pos);
+            } else {
+                sel.push(key);
+            }
+        }
+        self.update_selection_ui();
+    }
+
+    /// Clear the whole selection.
+    fn clear_selection(self: &Rc<Self>) {
+        self.selected.borrow_mut().clear();
+        self.update_selection_ui();
+    }
+
+    /// Apply the highlight class to each tile and update the action bar text and
+    /// visibility from the current selection.
+    fn update_selection_ui(self: &Rc<Self>) {
+        let sel = self.selected.borrow();
+        for entry in self.tiles.borrow().iter() {
+            if sel.iter().any(|k| *k == entry.key) {
+                entry.root.add_css_class("selected");
+            } else {
+                entry.root.remove_css_class("selected");
+            }
+        }
+        let n = sel.len();
+        if n == 0 {
+            self.sel_bar.set_visible(false);
+        } else {
+            self.sel_bar.set_visible(true);
+            let word = if n == 1 { "group" } else { "groups" };
+            self.sel_label.set_text(&format!("{n} {word} selected"));
+        }
+    }
+
+    /// Mark every photo in every selected group as "do not scan". This excludes
+    /// the photos from every future face scan and removes them from every group.
+    fn skip_selected(self: &Rc<Self>) {
+        let Some(state) = self.state.borrow().clone() else {
+            return;
+        };
+        let keys: Vec<TileKey> = self.selected.borrow().clone();
+        if keys.is_empty() {
+            return;
+        }
+        let mut ids: Vec<i64> = Vec::new();
+        for key in &keys {
+            let group_ids = match key {
+                TileKey::Named(cid) => state.lib.photo_ids_of_character(*cid),
+                TileKey::Cluster(clid) => state.lib.photo_ids_in_style_cluster(*clid),
+            }
+            .unwrap_or_default();
+            ids.extend(group_ids);
+        }
+        ids.sort_unstable();
+        ids.dedup();
+        if let Err(e) = state.lib.set_photos_skip_face_scan(&ids, true) {
+            super::state::show_error(&state, &e.to_string());
+            return;
+        }
+        self.selected.borrow_mut().clear();
+        self.reload();
+        let sb = state.sidebar.borrow().as_ref().cloned();
+        if let Some(sb) = sb {
+            sb.reload_deferred();
+        }
     }
 
     /// Show the right-click menu for one tile. Named tiles offer rename, clear
