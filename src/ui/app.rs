@@ -97,6 +97,7 @@ fn build_ui(app: &Application) {
         center_stack: RefCell::new(None),
         current_folder: RefCell::new(0),
         immich_albums: RefCell::new(std::collections::HashMap::new()),
+        last_merged_character: RefCell::new(None),
     });
     state.apply_thumb_prefs();
 

@@ -429,6 +429,29 @@ impl Library {
         Ok(v)
     }
 
+    /// Remove one photo from a person. Every face of that photo loses the
+    /// person link and keeps its cluster id. A later re-cluster may group it
+    /// again.
+    pub fn remove_photo_from_person(&self, photo_id: i64, person_id: i64) -> Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "UPDATE faces SET person_id = NULL WHERE photo_id = ?1 AND person_id = ?2",
+            params![photo_id, person_id],
+        )?;
+        Ok(())
+    }
+
+    /// Remove one photo from an unnamed cluster. Every face of that photo in
+    /// the cluster loses its cluster id. A later re-cluster may group it again.
+    pub fn remove_photo_from_cluster(&self, photo_id: i64, cluster_id: i64) -> Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "UPDATE faces SET cluster_id = NULL WHERE photo_id = ?1 AND cluster_id = ?2",
+            params![photo_id, cluster_id],
+        )?;
+        Ok(())
+    }
+
     // --- Face scan state ---
 
     /// Photo ids that still need a face-detection pass, capped by `limit`.

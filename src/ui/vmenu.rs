@@ -168,6 +168,52 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
         group.add_action(&act);
     }
 
+    // Remove selected photos from the person currently being viewed. A remove
+    // clears the person link but keeps the cluster, so a later re-cluster may
+    // group the photo again.
+    {
+        let act = gio::SimpleAction::new("remove-from-person", None);
+        let state = state.clone();
+        let grid = grid.clone();
+        let pop = pop.clone();
+        act.connect_activate(move |_, _| {
+            dismiss(&pop);
+            let Some(person_id) = grid.current_person() else {
+                return;
+            };
+            for id in local_photo_ids(&grid) {
+                if let Err(e) = state.lib.remove_photo_from_person(id, person_id) {
+                    show_error(&state, &e.to_string());
+                    return;
+                }
+            }
+            grid.reload_from_source();
+        });
+        group.add_action(&act);
+    }
+
+    // Remove selected photos from the unnamed face cluster being viewed.
+    {
+        let act = gio::SimpleAction::new("remove-from-cluster", None);
+        let state = state.clone();
+        let grid = grid.clone();
+        let pop = pop.clone();
+        act.connect_activate(move |_, _| {
+            dismiss(&pop);
+            let Some(cluster_id) = grid.current_cluster() else {
+                return;
+            };
+            for id in local_photo_ids(&grid) {
+                if let Err(e) = state.lib.remove_photo_from_cluster(id, cluster_id) {
+                    show_error(&state, &e.to_string());
+                    return;
+                }
+            }
+            grid.reload_from_source();
+        });
+        group.add_action(&act);
+    }
+
     // Remove selected photos from the unnamed style cluster being viewed.
     {
         let act = gio::SimpleAction::new("remove-from-style-cluster", None);
@@ -297,7 +343,11 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
         group.add_action(&act);
     }
 
-    grid.grid_view().insert_action_group("grid", Some(&group));
+    // Install the action group on the grid's root box. The context-menu popover
+    // parents to this same root box (see below), and GTK resolves menu actions
+    // by walking up from the popover's parent. The action group must live on
+    // that parent, not on the descendant GridView, or every item greys out.
+    grid.widget().insert_action_group("grid", Some(&group));
 
     // On right-click, build the menu from the current virtual albums and pop it
     // up at the pointer over the grid view.
@@ -370,6 +420,18 @@ fn build_menu(state: &Rc<AppState>, grid: &Rc<Grid>) -> gio::Menu {
     // applies in any view.
     let group_tools = gio::Menu::new();
     if selected_local >= 1 {
+        if grid.current_person().is_some() {
+            group_tools.append(
+                Some("Remove from this person"),
+                Some("grid.remove-from-person"),
+            );
+        }
+        if grid.current_cluster().is_some() {
+            group_tools.append(
+                Some("Remove from this group"),
+                Some("grid.remove-from-cluster"),
+            );
+        }
         if grid.current_character().is_some() {
             group_tools.append(
                 Some("Remove from this character"),

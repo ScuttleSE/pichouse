@@ -291,6 +291,12 @@ pub fn name_style_clusters_dialog<F: Fn() + 'static>(
         let label_refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
         let sl = StringList::new(&label_refs);
         let drop = DropDown::new(Some(sl), gtk4::Expression::NONE);
+        // Pre-select the character from the last merge, if it still exists.
+        if let Some(last) = *state.last_merged_character.borrow() {
+            if let Some(pos) = characters.iter().position(|c| c.id == last) {
+                drop.set_selected(pos as u32);
+            }
+        }
         let merge = Button::with_label("Merge");
         root.append(&drop);
         root.append(&merge);
@@ -306,6 +312,7 @@ pub fn name_style_clusters_dialog<F: Fn() + 'static>(
                     show_error(&state, &e);
                     return;
                 }
+                *state.last_merged_character.borrow_mut() = Some(c.id);
                 on_done2();
             }
             win2.close();

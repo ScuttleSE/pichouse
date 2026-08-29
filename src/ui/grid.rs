@@ -947,6 +947,22 @@ impl Grid {
         }
     }
 
+    /// The person id the grid is currently showing, if any.
+    pub fn current_person(&self) -> Option<i64> {
+        match &*self.source.borrow() {
+            Source::Person(id, _) => Some(*id),
+            _ => None,
+        }
+    }
+
+    /// The unnamed face cluster id the grid is currently showing, if any.
+    pub fn current_cluster(&self) -> Option<i64> {
+        match &*self.source.borrow() {
+            Source::Cluster(id, _) => Some(*id),
+            _ => None,
+        }
+    }
+
     /// The stylised cluster id the grid is currently showing, if any.
     pub fn current_style_cluster(&self) -> Option<i64> {
         match &*self.source.borrow() {

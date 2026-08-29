@@ -573,15 +573,23 @@ impl CharactersView {
     /// Mark every photo in every selected group as "do not scan". This excludes
     /// the photos from every future face scan and removes them from every group.
     fn skip_selected(self: &Rc<Self>) {
-        let Some(state) = self.state.borrow().clone() else {
-            return;
-        };
         let keys: Vec<TileKey> = self.selected.borrow().clone();
         if keys.is_empty() {
             return;
         }
+        self.skip_keys(&keys);
+    }
+
+    /// Mark every photo in the given groups as "do not scan", then refresh.
+    fn skip_keys(self: &Rc<Self>, keys: &[TileKey]) {
+        let Some(state) = self.state.borrow().clone() else {
+            return;
+        };
+        if keys.is_empty() {
+            return;
+        }
         let mut ids: Vec<i64> = Vec::new();
-        for key in &keys {
+        for key in keys {
             let group_ids = match key {
                 TileKey::Named(cid) => state.lib.photo_ids_of_character(*cid),
                 TileKey::Cluster(clid) => state.lib.photo_ids_in_style_cluster(*clid),
@@ -629,7 +637,7 @@ impl CharactersView {
         } else {
             menu.append(Some("Name this group…"), Some("char.name"));
         }
-        menu.append(Some("Do not scan this group"), Some("char.skip"));
+        menu.append(Some("Do not scan selected"), Some("char.skip"));
 
         let add = |act_name: &str, cb: Box<dyn Fn()>| {
             let a = gio::SimpleAction::new(act_name, None);
@@ -738,24 +746,21 @@ impl CharactersView {
 
         {
             let this = self.clone();
-            let state = state.clone();
             add(
                 "skip",
                 Box::new(move || {
-                    let ids = if named {
-                        state.lib.photo_ids_of_character(character_id)
+                    // Apply to every selected group. If the clicked tile is not
+                    // in the selection, apply to just it.
+                    let clicked = if named {
+                        TileKey::Named(character_id)
                     } else {
-                        state.lib.photo_ids_in_style_cluster(cluster_id)
+                        TileKey::Cluster(cluster_id)
+                    };
+                    let mut keys: Vec<TileKey> = this.selected.borrow().clone();
+                    if !keys.contains(&clicked) {
+                        keys = vec![clicked];
                     }
-                    .unwrap_or_default();
-                    if let Err(e) = state.lib.set_photos_skip_face_scan(&ids, true) {
-                        super::state::show_error(&state, &e.to_string());
-                        return;
-                    }
-                    this.reload();
-                    if let Some(sb) = state.sidebar.borrow().as_ref() {
-                        sb.reload_deferred();
-                    }
+                    this.skip_keys(&keys);
                 }),
             );
         }

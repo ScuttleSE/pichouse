@@ -90,6 +90,9 @@ pub struct AppState {
     /// Cached Immich albums per server id, filled by a background refresh. The
     /// sidebar reads this cache. HTTP never runs on the GTK main thread.
     pub immich_albums: RefCell<std::collections::HashMap<i64, Vec<crate::model::ImmichAlbum>>>,
+    /// The character id chosen in the last merge. Used to pre-select the merge
+    /// dropdown next time. None until the first merge. Resets on restart.
+    pub last_merged_character: RefCell<Option<i64>>,
 }
 
 impl AppState {
