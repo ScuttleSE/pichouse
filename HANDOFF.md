@@ -2,10 +2,12 @@
 
 This document is for an agent with no memory of the last session. It uses
 Simplified Technical English (ASD-STE100, Strict). Read AGENTS.md first. Read
-ROADMAP.md for planned features. Read section 00000000000000 first — it
-describes the most recent work (a large-library performance overhaul plus five
+ROADMAP.md for planned features. Read section 000000000000000 first — it
+describes the most recent work (a during-scan sidebar-refresh performance fix
+for very large libraries). Then read section 00000000000000 — it
+describes a large-library performance overhaul plus five
 features: a separate read connection, a demand-driven thumbnail grid, a scan
-resume cursor, sort and filename options, and a banned-matches system). Then
+resume cursor, sort and filename options, and a banned-matches system. Then
 read section 0000000000000 — it
 describes a scan-tree responsiveness overhaul (a
 postpone-thumbnails option, live tree growth during a scan, and a fix for
@@ -29,7 +31,87 @@ Then read section 00 — it describes four earlier follow-up features. Then read
 section 0 — it describes the Immich integration. The later sections describe
 earlier features and are still correct.
 
-## 00000000000000. Large-library performance overhaul and five features (most recent work — read this first)
+## 000000000000000. During-scan sidebar refresh performance (most recent work — read this first)
+
+This section describes the last session. All work is complete, on `main`, and
+pushed. One functional commit. CI's automatic version-bump commits sit between
+pushes. Ignore those.
+
+The user reported that the initial Phase 1 folder scan slowed down as it
+progressed. At about 500000 files the tree-walk looked slower and slower.
+
+Diagnosis: the walk speed was near constant. The cost was the periodic sidebar
+refresh. During a scan the scan thread posts a `ReloadOnly` message on a timer.
+The message rebuilt both sidebars. Each rebuild ran about twelve queries. Most
+queries took the writer lock, so they queued behind the constant
+`insert_structure_batch` writes. Each rebuild also replaced every root row in
+the tree model and redid expansion, selection, and focus over the whole tree.
+The cost grew with the folder and album count, so each refresh tick got heavier
+as the database grew.
+
+The fix has two phases.
+
+### 000000000000000.1 Phase A — lock, throttle, and skip redundant work
+
+- Routed the sidebar-reload read queries to the read-only connection
+  (`self.lock()` to `self.read_lock()`): `folders` (`db/library.rs`), `albums`
+  and `folder_albums` (`db/albums.rs`), `virtual_albums` (`db/virtual_albums.rs`),
+  `persons` and `total_face_count` (`db/faces.rs`), `characters` and
+  `total_style_face_count` (`db/style_faces.rs`), `immich_servers` and
+  `linked_immich_folders` (`db/immich.rs`). A scan write no longer blocks a
+  sidebar refresh, because WAL lets the read connection read while the writer
+  commits.
+- Raised the during-scan tree-refresh interval to 5 seconds
+  (`SCAN_TREE_REFRESH` in `src/ui/actions.rs`).
+- In the `ReloadOnly` handler (`src/ui/actions.rs`), skip
+  `grid().reload_from_source()` while a scan runs and no folder is open. The
+  initial import rarely writes the folder the user views.
+- The count cache (`folder_photo_counts`, `new_photos_count`) already clears on
+  a write and recomputes on the next read. With the 5 second throttle this
+  recomputes at most once per refresh tick, not once per directory. No new
+  dirty-flag struct was needed.
+
+### 000000000000000.2 Phase B — do not rebuild the whole tree each tick
+
+- Added `Library::tree_signature()` (`src/db/library.rs`). It returns the
+  folder count and the album count as two `COUNT(*)` reads on the read
+  connection.
+- `Sidebar::reload` (`src/ui/sidebar.rs`) now holds `last_tree_signature`. While
+  a scan runs, `reload` compares the live signature against the last rebuild and
+  returns early when neither count grew. So an idle refresh tick does no
+  `TreeData` build and no tree-model work.
+- The root list is now spliced only where it changed. The old code did
+  `list_root.splice(0, n, all_roots)`, which replaced every root row each tick.
+  The new code compares the current root strings to the new ones and splices
+  only the differing tail. During a scan new folders land as children of
+  existing album roots, so the root list is unchanged and the splice does
+  nothing.
+- Because the root splice no longer recreates rows each tick, an expanded
+  album's child `StringList` would not gain the folders filed under it during a
+  scan. `refresh_expanded_children` (`src/ui/sidebar.rs`) walks the realized
+  rows and, for each expanded row, splices its child list to match `child_ids`.
+  It snapshots the rows first, then applies the splices, because a splice
+  changes the flattened item count.
+- The scan end must always refresh, even if the last tick left the counts
+  unchanged. `app::reload_folders_force` and `Sidebar::invalidate_signature`
+  clear the guard and force a full rebuild. The `ReloadAndEnrich` handler
+  (`src/ui/actions.rs`), sent once after the scan drains, now calls the force
+  path.
+
+### 000000000000000.3 Accepted trade-offs and open items
+
+- During a scan the sidebar updates less often (about every 5 seconds) and a
+  folder's photo-count label may lag until a row rebinds or the scan ends. The
+  user accepted this.
+- A folder renamed on disk during a scan (same counts) may not refresh its
+  label until the end-of-scan sweep. The end-of-root `sync_disk_tree` plus the
+  forced final reload correct the tree when the scan finishes.
+- `photos_in_virtual_album` and `virtual_album_photo_count` stay on the writer
+  lock (multiple lock sites, low volume). A later change could move them.
+- Verify on the real 500000-plus scan that the `sidebar.reload ... Xs` debug
+  timing stays flat across the scan instead of climbing.
+
+## 00000000000000. Large-library performance overhaul and five features
 
 This section describes the last session. All work is complete, on `main`, and
 pushed. The session made eight functional commits. CI's automatic
