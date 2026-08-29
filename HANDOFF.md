@@ -2,9 +2,12 @@
 
 This document is for an agent with no memory of the last session. It uses
 Simplified Technical English (ASD-STE100, Strict). Read AGENTS.md first. Read
-ROADMAP.md for planned features. Read section 000000000000000 first — it
-describes the most recent work (a during-scan sidebar-refresh performance fix
-for very large libraries). Then read section 00000000000000 — it
+ROADMAP.md for planned features. Read section 0000000000000000 first — it
+describes the most recent work (viewport-driven enrichment and a Tools
+"Generate Thumbnails" pass; automatic enrichment is removed). Then read
+section 000000000000000 — it
+describes a during-scan sidebar-refresh performance fix for very large
+libraries. Then read section 00000000000000 — it
 describes a large-library performance overhaul plus five
 features: a separate read connection, a demand-driven thumbnail grid, a scan
 resume cursor, sort and filename options, and a banned-matches system. Then
@@ -31,7 +34,83 @@ Then read section 00 — it describes four earlier follow-up features. Then read
 section 0 — it describes the Immich integration. The later sections describe
 earlier features and are still correct.
 
-## 000000000000000. During-scan sidebar refresh performance (most recent work — read this first)
+## 0000000000000000. Viewport-driven enrichment and Tools "Generate Thumbnails" (most recent work — read this first)
+
+This section describes the last session. All work is complete, on `main`, and
+pushed. One functional commit. CI version-bump commits sit between pushes.
+Ignore those.
+
+The user reported a flood of "Reading photo info" while opening folders during
+a Phase 1 scan. Opening four or five large folders read every photo in them.
+
+Diagnosis: Phase 2 enrichment (thumbnails, EXIF, hash) is a worker pool that is
+separate from thumbnail rendering. Opening a folder called
+`enrich::prioritize_folder`, which queued every un-enriched photo in the folder.
+Several other paths also started bulk enrichment on their own (startup, scan
+end, reconcile, inotify, the Postpone setting). The grid does not need
+enrichment to show a thumbnail: `thumb::get_edited` decodes an un-enriched photo
+from its path on the fly, but does not persist it without a hash.
+
+The user chose: enrichment follows the viewport, enrichment never starts on its
+own, and a Tools button starts a deliberate, throttled, disposable full pass.
+
+### 0000000000000000.1 Removed every automatic enrichment trigger
+
+- `src/ui/app.rs`: removed `ensure_running` at startup and `prioritize_folder`
+  on folder open.
+- `src/ui/actions.rs`: the `ReloadAndEnrich` handler no longer starts
+  enrichment at scan end.
+- `src/ui/freshness.rs` and `src/ui/watcher.rs`: reconcile and inotify no longer
+  enqueue enrichment (they still reload and auto-upload to Immich).
+- `src/ui/settings.rs`: removed the "Postpone thumbnail scan" checkbox and its
+  `ensure_running` call. `prefs::KEY_POSTPONE_THUMBS` is deprecated (kept inert).
+
+### 0000000000000000.2 Viewport enrichment
+
+- `src/ui/grid.rs`: added `on_enrich_request`, `set_on_enrich_request`,
+  `request_enrich`, and `drop_enrich_request`. The factory `bind` calls
+  `request_enrich(id)` when a bound cell's photo has an empty hash (not yet
+  enriched). Ids collect in `enrich_buffer` and flush once, about 180 ms after
+  the last realize burst, via `glib::timeout_add_local_once`. `unbind` drops a
+  not-yet-flushed id.
+- `src/ui/app.rs`: wired the callback to `enrich::enqueue_visible`.
+- `src/ui/enrich.rs`: `enqueue_visible` pushes ids to the FRONT of the worklist
+  (skipping ids already queued) and starts the pool. So opening a folder during
+  a scan enriches only the on-screen cells, not the whole folder.
+
+### 0000000000000000.3 Tools "Generate Thumbnails" (nice, disposable pass)
+
+- `src/ui/enrich.rs`: `generate_all` seeds the worklist from
+  `photos_needing_enrichment(None)` and starts the pool with `enrich_nice` set.
+  `stop` cancels the pass and clears the worklist. `running` reports the state.
+  The worker sleeps `NICE_SLEEP_MS` (40 ms) after each photo while `enrich_nice`
+  is set, so the pass does not choke the system or a running Phase 1 scan.
+- `src/ui/state.rs`: added `enrich_nice: Arc<AtomicBool>` and
+  `gen_thumbs_action: RefCell<Option<gio::SimpleAction>>`.
+- `src/ui/toolbar.rs`: added a stateful "Generate Thumbnails" toggle
+  (`tools.gen_thumbs`) in the Library section. Off starts `generate_all`; on
+  calls `stop`. The action is stored in `AppState` so the worker turns it off
+  when the pass finishes on its own (`Msg::Finished` in `enrich.rs`).
+- The pass is in memory only. Stopping the app discards it. Re-running resumes
+  from the photos still needing enrichment, because `generate_all` re-seeds from
+  the same query and enrichment is idempotent.
+
+### 0000000000000000.4 Notes and open items
+
+- The explicit per-scope actions still work: Settings "Scan Thumbnails Now"
+  (per root, `enqueue_root`), and the folder right-click "Scan/Rescan all
+  thumbnails" (`enqueue_folder` / `rescan_folder`).
+- A folder never viewed, and never covered by a Generate Thumbnails pass, keeps
+  un-enriched photos (no hash, no EXIF date, no phash). The duplicate finder
+  backfills phash on demand for its scope, so that path still works.
+- `AppState::pause_enrichment` is now unused (grid.rs pushes the shared
+  `pause_until` directly). It is kept with `#[allow(dead_code)]`.
+- Verify: during a Phase 1 scan, open several large folders without scrolling
+  and confirm only an on-screen batch enriches. Then run Tools > Generate
+  Thumbnails and confirm it is slow and does not choke, and that stopping the
+  app discards it.
+
+## 000000000000000. During-scan sidebar refresh performance
 
 This section describes the last session. All work is complete, on `main`, and
 pushed. One functional commit. CI's automatic version-bump commits sit between
