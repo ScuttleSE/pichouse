@@ -2,10 +2,13 @@
 
 This document is for an agent with no memory of the last session. It uses
 Simplified Technical English (ASD-STE100, Strict). Read AGENTS.md first. Read
-ROADMAP.md for planned features. Read section 000000000000 first — it
-describes the most recent work (GitHub release prep, the Unlicense switch,
-and the first named release, v0.1.0). Then read section 00000000000 — it
-describes four context-menu and character-view fixes. Then read
+ROADMAP.md for planned features. Read section 0000000000000 first — it
+describes the most recent work (a scan-tree responsiveness overhaul: a
+postpone-thumbnails option, live tree growth during a scan, and a fix for
+lost focus and swallowed clicks during a scan). Then read
+section 000000000000 — it describes GitHub release prep, the Unlicense
+switch, and the first named release, v0.1.0. Then read section 00000000000 —
+it describes four context-menu and character-view fixes. Then read
 section 0000000000 — it describes a named-release workflow that mirrors to
 GitHub. Then read
 section 000000000 — it describes four fixes (a sidebar crash, an album drag bug,
@@ -22,9 +25,167 @@ Then read section 00 — it describes four earlier follow-up features. Then read
 section 0 — it describes the Immich integration. The later sections describe
 earlier features and are still correct.
 
-## 000000000000. GitHub release prep, the Unlicense switch, and v0.1.0 (most recent work — read this first)
+## 0000000000000. Scan-tree responsiveness: postpone thumbnails, live tree growth, and a focus/click fix (most recent work — read this first)
 
 This section describes the last session. All work is complete, on `main`,
+and pushed, except where noted. Four fix commits plus one feature commit;
+CI's automatic version-bump commits sit between them as usual (see
+section 000000000000.6 in the next section — ignore those).
+
+### 0000000000000.1 Added a "postpone thumbnail scan" option
+
+User request: on a large or slow library root, the full two-phase import
+(structure scan, then EXIF/hash/thumbnail enrichment) could run for hours
+before it was needed. Added, in Settings → Library Folders: a checkbox
+"Postpone thumbnail scan until a folder is opened" (default off) and a
+"Scan Thumbnails Now" button with a live pending-count label for the
+selected root.
+
+When on, enrichment only ever runs for the one folder the user opens
+(`enrich::prioritize_folder`, already existed for on-demand priority) — bulk
+enrichment (`ensure_running`/`enqueue`) is gated off by a new `postponed()`
+check. The button bypasses the gate explicitly via a new
+`enrich::enqueue_root`. New DB method: `Library::photos_needing_enrichment_under`
+(`src/db/library.rs`, matches by path prefix like `remove_library_folder`
+does). New setting key `KEY_POSTPONE_THUMBS` (`src/ui/prefs.rs`). Commit
+`4be26e3`.
+
+### 0000000000000.2 The structure scan now populates the Library tree live, not only after it finishes
+
+Two follow-up bug reports drove this. First: even with live status text, the
+sidebar tree itself only grew once a whole root finished scanning. Cause:
+`Scanner::scan_folder` (`src/scan.rs`) ran two full sequential passes over
+the *entire* root — a discovery pass that walked the whole tree into an
+in-memory map before writing anything, then a recording pass that inserted
+each directory's photos and filed it into the tree. On a large or slow root,
+discovery alone could take most of the scan, during which the tree was
+frozen.
+
+Fix: merged discovery and recording into one recursive walk (`scan_dir`,
+replacing the old two-pass body and the now-deleted free function
+`collect_images`). Each directory's photos are written and filed into the
+tree the instant that directory is visited, so the Library sidebar now grows
+live throughout the scan. Trade-off (confirmed with the user): the Phase 1
+progress bar is gone, since the total photo count is no longer known ahead
+of time — the status bar instead shows a running count, e.g. "Scanning
+`/mnt/nas/2019/summer` (4,213 found)". Phase 2 enrichment's own progress bar
+is unaffected; it always computed its total from a DB query, not a
+pre-walk.
+
+An earlier, smaller attempt at the same underlying problem (add a live
+status message during a still-separate discovery pass, commit `69de6aa`) is
+superseded by this merge and no longer exists as separate code — mentioned
+here only so its commit hash isn't a mystery in `git log`. Final
+architecture: commit `cf40433`.
+
+### 0000000000000.3 Fixed the Library tree stealing focus and swallowing clicks during a scan
+
+Once the tree started refreshing live (previous item), the user reported
+keyboard focus getting stolen while navigating the tree during a scan. A
+first attempt (commit `16e0576`) captured and restored the selected row ids
+and whether the tree had keyboard focus, around `Sidebar::reload()`'s
+teardown/rebuild (`list_root.splice` replaces every root row with a fresh
+GObject, which is what destroys the focused/selected row in the first
+place). **This attempt did not work** — the user reported focus was still
+stolen, and, new symptom, clicking a folder to view its thumbnails now did
+nothing at all (no freeze, no error).
+
+Two Explore agents ran down both root causes precisely (see the plan file
+this session used, now stale/reusable:
+`~/.claude/plans/i-want-to-adjust-quizzical-hellman.md`, if it still exists):
+
+- **Reloads fired too often.** The scan's `on_folder` callback
+  (`src/ui/actions.rs`) sent `Msg::ReloadOnly` every 4 folders discovered —
+  on a fast disk, often enough to fire multiple times per second. A GTK
+  mouse click is a press-then-release gesture resolved against the widget it
+  started on; a reload tearing down that row *between* press and release
+  silently drops the click. This is the primary cause of both symptoms.
+- **`grab_focus()` targets the wrong thing.** Confirmed by reading the
+  vendored gtk4-rs 0.7.3 source: the correct per-row-by-position focus API,
+  `ListView::scroll_to(pos, ListScrollFlags::FOCUS, ..)`, is gated behind
+  `#[cfg(feature = "v4_12")]` — unavailable under this project's `v4_10` pin
+  (`Cargo.toml`: "Do not upgrade past the GLib version Debian 13 ships").
+  `self.list_view.grab_focus()` instead moves focus to GTK's own internal
+  list-focus-position tracker, invalidated by the splice — not to the row
+  just reselected.
+
+Fix (commit `434bdf1`):
+- `src/ui/actions.rs`: replaced the per-4-folders counter with a wall-clock
+  throttle, `SCAN_TREE_REFRESH = Duration::from_millis(750)` — comfortably
+  longer than any click or keypress, so a reload should essentially never
+  land mid-gesture again.
+- `src/ui/sidebar.rs`: added `pending_focus_id: RefCell<Option<String>>`.
+  `reload()` records the previously-focused row's id into it (instead of
+  calling `grab_focus()` on the container); `bind_row` grabs focus itself
+  (`expander.grab_focus()`) the moment it binds a widget to that id — `bind`
+  fires synchronously for visible rows as part of the model-change signal,
+  which a same-frame `grab_focus()` call cannot rely on — then clears the
+  pending id so it only fires once.
+
+### 0000000000000.4 Note: clicking a top-level Album still does nothing (separate, pre-existing gap)
+
+Investigated, then explicitly ruled out of scope for this session after
+asking the user directly: `Sidebar::on_selection_changed`
+(`src/ui/sidebar.rs`) has no `album_id_of` branch at all. Selecting a real
+Album row (a user-created album, as opposed to a scanned folder) has never
+shown anything, in any version, scanning or not — a permanent gap, not a
+scan-specific regression. The intended UX (README.md) is to expand an Album
+and click its child folders individually; a combined "click an album, see
+every photo under it" view was never built. `Library::folders_under_album`
+(`src/db/albums.rs`) already returns the right recursive folder set if this
+is ever built — it is just not wired to the grid. Not touched this session.
+
+### 0000000000000.5 graphify knowledge graph added to the repo (uncommitted)
+
+Ran `/graphify .` this session: built a 1756-node / 4298-edge knowledge
+graph of the codebase into `graphify-out/` (`graph.json`, `graph.html`,
+`GRAPH_REPORT.md`). As part of its own automation, the skill also added a
+"## graphify" section to `AGENTS.md` and created `CLAUDE.md`,
+`.claude/settings.json`, and `.opencode/`. **None of this is committed.**
+It is unrelated to this session's actual code changes and was left
+untouched for review, not reverted and not committed — decide either way
+next session.
+
+### 0000000000000.6 Files changed this session
+
+- `src/ui/prefs.rs` — `KEY_POSTPONE_THUMBS`.
+- `src/db/library.rs` — `photos_needing_enrichment_under` + test.
+- `src/ui/enrich.rs` — `postponed()` gate on `ensure_running`/`enqueue`,
+  `enqueue_root()`, adjusted `prioritize_folder` browse-pause logic.
+- `src/ui/settings.rs` — the postpone checkbox and "Scan Thumbnails Now" row.
+- `README.md` — documented the postpone option.
+- `src/scan.rs` — merged `collect_images` and the two-pass `scan_folder`
+  body into one recursive `scan_dir` walk; deleted the now-unused `Progress`
+  struct.
+- `src/ui/actions.rs` — matching simplification of the scan-progress
+  bookkeeping, plus the `SCAN_TREE_REFRESH` throttle.
+- `src/ui/sidebar.rs` — `suppress_selection_notify`, `pending_focus_id`, and
+  the focus/selection restore logic in `reload()` and `bind_row`.
+- Not committed (see 0000000000000.5): `AGENTS.md`, `CLAUDE.md`, `.claude/`,
+  `.opencode/`, `graphify-out/`.
+
+### 0000000000000.7 Verification
+
+`cargo build` clean after every commit (54 warnings throughout — the same
+pre-session baseline; no new warnings introduced, one accidental new warning
+caught and fixed before committing). `cargo test`: 67 passed, 2 ignored,
+after every commit.
+
+**Not verified: any of the actual GUI behavior.** This working environment
+has no display, so the live tree growth, the running-count status text, and
+the focus/click fix could only be verified by reading code and reasoning
+about GTK's documented behavior, not by running the app. The next session
+should confirm, against a real scan of a large or slow library root: the
+tree visibly grows folder-by-folder during the scan; clicking folders in the
+tree reliably opens them while a scan is running; and keyboard arrow-key
+navigation of the tree keeps its position and focus across a scan's
+background refreshes instead of resetting every ~750ms.
+
+---
+
+## 000000000000. GitHub release prep, the Unlicense switch, and v0.1.0
+
+This section describes an earlier session. All work is complete, on `main`,
 and pushed. Named release `v0.1.0` is live on Gitea and on GitHub.
 
 ### 000000000000.1 Removed an accidentally committed session transcript
