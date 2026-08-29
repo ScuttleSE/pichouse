@@ -343,7 +343,7 @@ impl Library {
 
     /// All characters with their face counts, ordered by name.
     pub fn characters(&self) -> Result<Vec<(Character, i64)>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let mut stmt = conn.prepare(
             "SELECT c.id, c.name, c.cover_face_id, \
                 (SELECT COUNT(*) FROM style_faces f WHERE f.character_id = c.id) AS n \
@@ -370,7 +370,7 @@ impl Library {
 
     /// The total number of detected stylised faces in the library.
     pub fn total_style_face_count(&self) -> Result<i64> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let n: i64 = conn.query_row("SELECT COUNT(*) FROM style_faces", [], |r| r.get(0))?;
         Ok(n)
     }

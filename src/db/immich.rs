@@ -30,7 +30,7 @@ impl Library {
 
     /// Every Immich server, ordered by id.
     pub fn immich_servers(&self) -> Result<Vec<ImmichServer>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let mut stmt = conn.prepare(
             "SELECT id, name, base_url, api_key, added_at FROM immich_servers ORDER BY id",
         )?;
@@ -143,7 +143,7 @@ impl Library {
 
     /// Every folder id that is currently linked to an Immich album.
     pub fn linked_immich_folders(&self) -> Result<std::collections::HashSet<i64>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let mut stmt = conn.prepare("SELECT folder_id FROM immich_folder_links")?;
         let rows = stmt.query_map([], |r| r.get::<_, i64>(0))?;
         let mut out = std::collections::HashSet::new();

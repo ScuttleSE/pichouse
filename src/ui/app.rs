@@ -310,6 +310,18 @@ pub fn reload_folders(state: &Rc<AppState>) {
     }
 }
 
+/// Reload both sidebars, forcing a full rebuild even if the scan skip guard
+/// would otherwise skip it. Used at scan end so the final refresh always lands.
+pub fn reload_folders_force(state: &Rc<AppState>) {
+    if let Some(sidebar) = state.sidebar.borrow().clone() {
+        sidebar.invalidate_signature();
+        sidebar.reload();
+    }
+    if let Some(ft) = state.folder_tree.borrow().clone() {
+        ft.reload();
+    }
+}
+
 fn populate(state: &Rc<AppState>) {
     reload_folders(state);
 

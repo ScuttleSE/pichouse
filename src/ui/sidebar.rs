@@ -133,6 +133,11 @@ pub struct Sidebar {
     /// `bind_row` grabs focus itself the moment it binds a widget to this id,
     /// then clears it so it only fires once.
     pending_focus_id: RefCell<Option<String>>,
+    /// The last `(folder_count, album_count)` this sidebar rebuilt from. During
+    /// a scan, `reload` compares the live signature against this and skips the
+    /// rebuild when neither grew, so an idle refresh tick costs nothing. `None`
+    /// forces the next reload to run (set on any real change, e.g. a user edit).
+    last_tree_signature: std::cell::Cell<Option<(i64, i64)>>,
 }
 
 impl Sidebar {
@@ -243,6 +248,7 @@ impl Sidebar {
                 suppress_expand_notify: std::cell::Cell::new(false),
                 suppress_selection_notify: std::cell::Cell::new(false),
                 pending_focus_id: RefCell::new(None),
+                last_tree_signature: std::cell::Cell::new(None),
             }
         });
 
@@ -725,9 +731,32 @@ impl Sidebar {
         });
     }
 
+    /// Force a full rebuild on the next `reload`, ignoring the scan skip guard.
+    /// Used at scan end so the final refresh always lands even if the folder and
+    /// album counts did not change on the last scan tick.
+    pub fn invalidate_signature(&self) {
+        self.last_tree_signature.set(None);
+    }
+
     /// Rebuild the tree from the current database state.
     pub fn reload(self: &Rc<Self>) {
         let Some(state) = self.state() else { return };
+        // Skip the rebuild during a scan when nothing visible changed. The scan
+        // fires a refresh on a timer; if no new folder or album appeared since
+        // the last rebuild, the tree would be identical, so the full `TreeData`
+        // build and tree-model splice are wasted work that grows with the
+        // library. A user action (add/remove folder, album edit) is not a scan
+        // tick, so it always rebuilds and refreshes the baseline below.
+        let signature = state.lib.tree_signature().ok();
+        if state.scan.running() {
+            if let (Some(sig), Some(last)) = (signature, self.last_tree_signature.get()) {
+                if sig == last {
+                    log::debug!("sidebar.reload: skipped (scan, unchanged {sig:?})");
+                    return;
+                }
+            }
+        }
+        self.last_tree_signature.set(signature);
         // The splice below replaces every root row with a fresh object, which
         // also discards any expanded subtree's rows — including the currently
         // selected and/or keyboard-focused one. Capture both here so they can
@@ -890,9 +919,38 @@ impl Sidebar {
                 roots.push(IMMICH_HEADER_ID.to_string());
             }
         }
+        // Splice the root list only where it actually changed. Replacing every
+        // root row (the old `splice(0, n, all)`) forces the tree model to
+        // recreate all root rows and their expanded child models, and to redo
+        // selection/expansion/focus restoration over the whole realized tree —
+        // a cost that grows with the tree. During a scan new folders usually
+        // land as children of existing album roots, so the root list is
+        // unchanged and this does nothing. When it does change (a new top-level
+        // album), only the differing tail is spliced.
         let n = self.list_root.n_items();
-        let root_refs: Vec<&str> = roots.iter().map(|s| s.as_str()).collect();
-        self.list_root.splice(0, n, &root_refs);
+        let current: Vec<String> = (0..n)
+            .filter_map(|i| self.list_root.string(i).map(|s| s.to_string()))
+            .collect();
+        if current != roots {
+            // Common prefix stays; replace the differing suffix in one splice.
+            let common = current
+                .iter()
+                .zip(roots.iter())
+                .take_while(|(a, b)| a == b)
+                .count();
+            let tail_refs: Vec<&str> =
+                roots[common..].iter().map(|s| s.as_str()).collect();
+            self.list_root
+                .splice(common as u32, n - common as u32, &tail_refs);
+        }
+
+        // Refresh the child lists of already-expanded rows in place. Because the
+        // root splice above no longer recreates every root each tick, an
+        // expanded album's static child `StringList` would otherwise never gain
+        // the folders filed under it during a scan. Walk the realized rows and,
+        // for each expanded row, splice its child list to match `child_ids`.
+        // Only the differing tail is spliced, so an unchanged subtree is free.
+        self.refresh_expanded_children();
 
         self.restore_expansion();
         self.suppress_expand_notify.set(false);
@@ -936,6 +994,53 @@ impl Sidebar {
             new_ms,
             va_ms
         );
+    }
+
+    /// Update the child `StringList` of every currently-expanded row so it
+    /// matches `child_ids` from the freshly rebuilt `TreeData`. Splices only the
+    /// differing tail, so an unchanged subtree costs one comparison. This lets
+    /// an expanded album grow live during a scan without recreating the row.
+    fn refresh_expanded_children(&self) {
+        // Snapshot the expanded rows first. Splicing a child list changes the
+        // flattened item count, so collecting row handles up front (GObject
+        // references, not indices) keeps the walk stable while we apply splices.
+        let n = self.tree_model.n_items();
+        let mut targets: Vec<(StringList, String)> = Vec::new();
+        for i in 0..n {
+            let Some(row) = self.tree_model.row(i) else {
+                continue;
+            };
+            if !row.is_expanded() {
+                continue;
+            }
+            let Some(so) = row.item().and_downcast::<StringObject>() else {
+                continue;
+            };
+            let Some(child_model) = row.children() else {
+                continue;
+            };
+            let Some(list) = child_model.downcast_ref::<StringList>() else {
+                continue;
+            };
+            targets.push((list.clone(), so.string().to_string()));
+        }
+        for (list, id) in targets {
+            let want = self.child_ids(&id);
+            let have_n = list.n_items();
+            let have: Vec<String> = (0..have_n)
+                .filter_map(|j| list.string(j).map(|s| s.to_string()))
+                .collect();
+            if have == want {
+                continue;
+            }
+            let common = have
+                .iter()
+                .zip(want.iter())
+                .take_while(|(a, b)| a == b)
+                .count();
+            let tail: Vec<&str> = want[common..].iter().map(|s| s.as_str()).collect();
+            list.splice(common as u32, have_n - common as u32, &tail);
+        }
     }
 
     fn save_expansion(&self) {

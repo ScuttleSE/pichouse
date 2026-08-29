@@ -452,7 +452,7 @@ impl Library {
 
     /// All scanned folders ordered by year (desc) then name.
     pub fn folders(&self) -> Result<Vec<Folder>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let mut stmt = conn.prepare(
             "SELECT id, path, name, mtime, year FROM folders ORDER BY year DESC, name ASC",
         )?;
@@ -466,6 +466,18 @@ impl Library {
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// A cheap change-signature for the sidebar: the folder count and the album
+    /// count. During a scan the sidebar compares this against the last reload
+    /// and skips the whole rebuild when neither grew, so an idle refresh tick
+    /// does no `TreeData` or tree-model work. Both queries are `COUNT(*)` on the
+    /// read connection, so they do not block on the scan writer.
+    pub fn tree_signature(&self) -> Result<(i64, i64)> {
+        let conn = self.read_lock();
+        let folders: i64 = conn.query_row("SELECT COUNT(*) FROM folders", [], |r| r.get(0))?;
+        let albums: i64 = conn.query_row("SELECT COUNT(*) FROM albums", [], |r| r.get(0))?;
+        Ok((folders, albums))
     }
 
     /// Load a single folder by id.

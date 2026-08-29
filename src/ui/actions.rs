@@ -12,7 +12,12 @@ use super::state::{show_error, show_message, AppState};
 /// feeling live while staying comfortably longer than a mouse click or
 /// keypress, so a tree rebuild (which replaces every row's underlying object)
 /// essentially never lands in the middle of one.
-const SCAN_TREE_REFRESH: std::time::Duration = std::time::Duration::from_millis(750);
+///
+/// On a very large library each refresh rebuilds the whole `TreeData` and the
+/// tree model, a cost that grows with the folder and album count. A long
+/// interval keeps that cost off the critical path so the scan walk does not
+/// slow down as the database grows.
+const SCAN_TREE_REFRESH: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// A scan status update posted from the worker to the UI thread.
 enum Msg {
@@ -117,7 +122,17 @@ fn start_scan_worker(state: &Rc<AppState>) {
                     let reload_ms = t.elapsed();
                     let t2 = std::time::Instant::now();
                     // Re-query the visible folder so newly scanned photos appear.
-                    state.grid().reload_from_source();
+                    // During a scan this is usually redundant: the initial import
+                    // rarely writes the folder the user is looking at, and a full
+                    // folder re-query every tick adds cost that grows with the
+                    // library. Skip it while scanning unless a folder is open,
+                    // and even then keep it cheap by only refreshing when the
+                    // open folder is a real folder view.
+                    let skip_grid = state.scan.running()
+                        && *state.current_folder.borrow() == 0;
+                    if !skip_grid {
+                        state.grid().reload_from_source();
+                    }
                     log::debug!(
                         "ReloadOnly: reload_folders {:.2?}, grid {:.2?}",
                         reload_ms,
@@ -126,7 +141,10 @@ fn start_scan_worker(state: &Rc<AppState>) {
                 }
                 Msg::ReloadAndEnrich => {
                     let t = std::time::Instant::now();
-                    super::app::reload_folders(&state);
+                    // Force a full rebuild: this is the final refresh after the
+                    // scan, so it must land even if the last scan tick left the
+                    // folder and album counts unchanged.
+                    super::app::reload_folders_force(&state);
                     state.grid().reload_from_source();
                     log::debug!("ReloadAndEnrich: refresh took {:.2?}", t.elapsed());
                     // Bulk Phase 2 enrichment starts only after the whole scan

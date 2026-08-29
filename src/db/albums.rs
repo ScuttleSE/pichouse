@@ -78,7 +78,7 @@ impl Library {
 
     /// All albums ordered by position then name.
     pub fn albums(&self) -> Result<Vec<Album>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let mut stmt = conn.prepare(
             "SELECT id, name, COALESCE(parent_id, 0), position, kind
              FROM albums ORDER BY position ASC, name ASC",
@@ -224,7 +224,7 @@ impl Library {
     /// A map of folder id to the album id it belongs to. Folders not in any
     /// album are absent from the map.
     pub fn folder_albums(&self) -> Result<std::collections::HashMap<i64, i64>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let mut stmt = conn.prepare("SELECT folder_id, album_id FROM album_folders")?;
         let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?;
         let mut out = std::collections::HashMap::new();

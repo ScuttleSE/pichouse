@@ -337,7 +337,7 @@ impl Library {
 
     /// All persons with their face counts, ordered by name.
     pub fn persons(&self) -> Result<Vec<(Person, i64)>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let mut stmt = conn.prepare(
             "SELECT p.id, p.name, p.cover_face_id, \
                 (SELECT COUNT(*) FROM faces f WHERE f.person_id = p.id) AS n \
@@ -364,7 +364,7 @@ impl Library {
 
     /// The total number of detected faces in the library.
     pub fn total_face_count(&self) -> Result<i64> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let n: i64 = conn.query_row("SELECT COUNT(*) FROM faces", [], |r| r.get(0))?;
         Ok(n)
     }

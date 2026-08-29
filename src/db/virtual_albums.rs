@@ -98,7 +98,7 @@ impl Library {
 
     /// All virtual albums ordered by position then name.
     pub fn virtual_albums(&self) -> Result<Vec<VirtualAlbum>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let mut stmt = conn.prepare(
             "SELECT id, name, COALESCE(parent_id, 0), position, rule_match
              FROM virtual_albums ORDER BY position ASC, name ASC",
