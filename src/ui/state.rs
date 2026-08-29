@@ -304,6 +304,29 @@ impl AppState {
             .set_message(&format!("Missing Files — {n} gone from disk"));
     }
 
+    /// Show the photos involved in banned duplicate matches. Each banned pair
+    /// contributes both photos. The user un-bans everything with the section's
+    /// right-click "Clear Banned Matches…" action.
+    pub fn show_banned_matches(self: &Rc<Self>) {
+        *self.current_folder.borrow_mut() = 0;
+        let pairs = self.lib.banned_dup_photo_pairs().unwrap_or_default();
+        // Flatten to a de-duplicated photo list, keeping pair order.
+        let mut seen = std::collections::HashSet::new();
+        let mut photos = Vec::new();
+        for (a, b) in &pairs {
+            for p in [a, b] {
+                if seen.insert(p.id) {
+                    photos.push(p.clone());
+                }
+            }
+        }
+        let n = pairs.len();
+        self.grid().show_photos("Banned Matches", &photos);
+        self.show_grid();
+        self.status()
+            .set_message(&format!("Banned Matches — {n} pairs will not group again"));
+    }
+
     /// Show the Faces view in the center, rebuilding its group tiles.
     pub fn show_faces(self: &Rc<Self>) {
         *self.current_folder.borrow_mut() = 0;

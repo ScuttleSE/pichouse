@@ -9,9 +9,20 @@
 //! Each group names a "keep" photo. The keep photo is the best copy by a
 //! quality ranking. Every other photo in the group is a delete candidate.
 
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::model::Photo;
+
+/// Normalise a photo-id pair to `(low, high)` so a banned pair is order
+/// independent. Used as the key in the banned-pair set.
+pub fn norm_pair(a: i64, b: i64) -> (i64, i64) {
+    if a <= b {
+        (a, b)
+    } else {
+        (b, a)
+    }
+}
 
 /// A group of photos that are the same picture. `keep_id` is the id of the best
 /// copy to keep. All other photos are delete candidates.
@@ -94,7 +105,17 @@ impl UnionFind {
 /// hash (not computable) match only by exact SHA-256.
 ///
 /// The scan stops early and returns what it has if `cancel` is set.
-pub fn find_duplicates(photos: &[Photo], threshold: u32, cancel: &AtomicBool) -> Vec<DupGroup> {
+///
+/// `banned` holds photo-id pairs the user marked "not a duplicate". A banned
+/// pair is never unioned directly, so two photos the user separated do not group
+/// together on their own. A third photo that matches both can still bridge them
+/// (union-find is transitive); that case is rare and acceptable for now.
+pub fn find_duplicates(
+    photos: &[Photo],
+    threshold: u32,
+    banned: &HashSet<(i64, i64)>,
+    cancel: &AtomicBool,
+) -> Vec<DupGroup> {
     let n = photos.len();
     let mut uf = UnionFind::new(n);
 
@@ -107,7 +128,11 @@ pub fn find_duplicates(photos: &[Photo], threshold: u32, cancel: &AtomicBool) ->
                 continue;
             }
             match by_hash.get(p.hash.as_str()) {
-                Some(&j) => uf.union(i, j),
+                Some(&j) => {
+                    if !banned.contains(&norm_pair(photos[i].id, photos[j].id)) {
+                        uf.union(i, j);
+                    }
+                }
                 None => {
                     by_hash.insert(p.hash.as_str(), i);
                 }
@@ -131,7 +156,9 @@ pub fn find_duplicates(photos: &[Photo], threshold: u32, cancel: &AtomicBool) ->
                 if hj == 0 {
                     continue;
                 }
-                if crate::phash::hamming(hi, hj) <= threshold {
+                if crate::phash::hamming(hi, hj) <= threshold
+                    && !banned.contains(&norm_pair(photos[i].id, photos[j].id))
+                {
                     uf.union(i, j);
                 }
             }
@@ -195,7 +222,7 @@ mod tests {
             photo(2, "aa", 0, 100, 100, "b.jpg"),
             photo(3, "bb", 0, 100, 100, "c.jpg"),
         ];
-        let g = find_duplicates(&ps, 0, &AtomicBool::new(false));
+        let g = find_duplicates(&ps, 0, &HashSet::new(), &AtomicBool::new(false));
         assert_eq!(g.len(), 1);
         assert_eq!(g[0].photos.len(), 2);
     }
@@ -206,8 +233,8 @@ mod tests {
             photo(1, "", 0b1111, 100, 100, "a.jpg"),
             photo(2, "", 0b1110, 100, 100, "b.jpg"),
         ];
-        assert_eq!(find_duplicates(&ps, 1, &AtomicBool::new(false)).len(), 1);
-        assert_eq!(find_duplicates(&ps, 0, &AtomicBool::new(false)).len(), 0);
+        assert_eq!(find_duplicates(&ps, 1, &HashSet::new(), &AtomicBool::new(false)).len(), 1);
+        assert_eq!(find_duplicates(&ps, 0, &HashSet::new(), &AtomicBool::new(false)).len(), 0);
     }
 
     #[test]
@@ -216,14 +243,26 @@ mod tests {
             photo(1, "aa", 0, 100, 100, "small.jpg"),
             photo(2, "aa", 0, 200, 200, "big.jpg"),
         ];
-        let g = find_duplicates(&ps, 0, &AtomicBool::new(false));
+        let g = find_duplicates(&ps, 0, &HashSet::new(), &AtomicBool::new(false));
         assert_eq!(g[0].keep_id, 2);
 
         let ps = vec![
             photo(1, "aa", 0, 100, 100, "x.jpg"),
             photo(2, "aa", 0, 100, 100, "x.png"),
         ];
-        let g = find_duplicates(&ps, 0, &AtomicBool::new(false));
+        let g = find_duplicates(&ps, 0, &HashSet::new(), &AtomicBool::new(false));
         assert_eq!(g[0].keep_id, 2);
+    }
+
+    #[test]
+    fn banned_pair_is_not_grouped() {
+        let ps = vec![
+            photo(1, "aa", 0, 100, 100, "a.jpg"),
+            photo(2, "aa", 0, 100, 100, "b.jpg"),
+        ];
+        let mut banned = HashSet::new();
+        banned.insert(norm_pair(2, 1)); // order independent
+        let g = find_duplicates(&ps, 0, &banned, &AtomicBool::new(false));
+        assert_eq!(g.len(), 0);
     }
 }

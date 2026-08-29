@@ -24,6 +24,7 @@ use super::state::{show_error, AppState};
 const NEW_FOLDERS_ID: &str = "newfolders";
 const NEW_FILES_ID: &str = "newfiles";
 const MISSING_FILES_ID: &str = "missingfiles";
+const BANNED_MATCHES_ID: &str = "bannedmatches";
 const ALBUM_PREFIX: &str = "album:";
 const FOLDER_PREFIX: &str = "folder:";
 const VALBUM_PREFIX: &str = "valbum:";
@@ -61,6 +62,7 @@ struct TreeData {
     new_files_count: i64,
     /// Count of photos gone from disk (for the Missing Files row).
     missing_files_count: i64,
+    banned_matches_count: i64,
     /// Virtual albums by id, plus the parent→children adjacency and per-album
     /// photo counts.
     virtual_albums: HashMap<i64, VirtualAlbum>,
@@ -411,6 +413,11 @@ impl Sidebar {
                 format!("Missing Files ({})", data.missing_files_count),
                 "edit-delete-symbolic",
             )
+        } else if id == BANNED_MATCHES_ID {
+            (
+                format!("Banned Matches ({})", data.banned_matches_count),
+                "action-unavailable-symbolic",
+            )
         } else if id == VIRTUAL_HEADER_ID {
             ("Virtual Albums".to_string(), "starred-symbolic")
         } else if id == PEOPLE_HEADER_ID {
@@ -525,6 +532,12 @@ impl Sidebar {
             if id == MISSING_FILES_ID {
                 if let Some(state) = self.state() {
                     state.show_missing_files();
+                    return;
+                }
+            }
+            if id == BANNED_MATCHES_ID {
+                if let Some(state) = self.state() {
+                    state.show_banned_matches();
                     return;
                 }
             }
@@ -760,6 +773,7 @@ impl Sidebar {
         let new_ms = t_new.elapsed();
 
         let missing_files_count = state.lib.missing_photo_count().unwrap_or(0);
+        let banned_matches_count = state.lib.banned_dup_count().unwrap_or(0);
 
         folders.sort_by(|a, b| a.name.cmp(&b.name));
         // Show albums alphabetically at every level (case-insensitive). They are
@@ -771,6 +785,7 @@ impl Sidebar {
             counts,
             new_files_count,
             missing_files_count,
+            banned_matches_count,
             ..TreeData::default()
         };
         for a in &albums {
@@ -848,6 +863,9 @@ impl Sidebar {
             }
             if data.missing_files_count > 0 {
                 roots.push(MISSING_FILES_ID.to_string());
+            }
+            if data.banned_matches_count > 0 {
+                roots.push(BANNED_MATCHES_ID.to_string());
             }
             if !data.unassigned.is_empty() {
                 roots.push(NEW_FOLDERS_ID.to_string());
@@ -1268,6 +1286,29 @@ impl Sidebar {
                     return;
                 }
                 this.reload_deferred();
+            },
+        );
+    }
+
+    fn clear_banned_matches(self: &Rc<Self>) {
+        let Some(state) = self.state() else { return };
+        let n = state.lib.banned_dup_count().unwrap_or(0);
+        if n == 0 {
+            return;
+        }
+        let this = self.clone();
+        let state2 = state.clone();
+        confirm(
+            &state,
+            None,
+            "Clear Banned Matches",
+            &format!("Remove all {n} banned match(es)? These pairs can group as duplicates again."),
+            move || match state2.lib.clear_all_dup_bans() {
+                Ok(_) => {
+                    this.reload_deferred();
+                    state2.show_grid();
+                }
+                Err(e) => show_error(&state2, &e.to_string()),
             },
         );
     }
@@ -1839,6 +1880,14 @@ impl Sidebar {
         {
             let this = self.clone();
             add(
+                "clear-banned",
+                &group,
+                Rc::new(move |_| this.clear_banned_matches()),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
                 "rename-character",
                 &group,
                 Rc::new(move |t| this.prompt_rename_character(character_id_of(t).unwrap_or(0))),
@@ -2031,6 +2080,11 @@ impl Sidebar {
             menu.append(
                 Some("Clear Missing Files…"),
                 Some(&detailed("clear-missing", id)),
+            );
+        } else if id == BANNED_MATCHES_ID {
+            menu.append(
+                Some("Clear Banned Matches…"),
+                Some(&detailed("clear-banned", id)),
             );
         } else if valbum_id_of(id).is_some() {
             menu.append(Some("New Sub-Album…"), Some(&detailed("new-subvalbum", id)));

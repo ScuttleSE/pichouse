@@ -123,6 +123,11 @@ pub struct Grid {
     /// Called when the user clicks "Delete marked" with the list of marked
     /// photos to hard delete.
     on_dup_delete: RefCell<Option<Box<dyn Fn(Vec<Photo>)>>>,
+    /// The "Not duplicates" button in the duplicate action bar.
+    dup_ban_btn: Button,
+    /// Called when the user clicks "Not duplicates" with the (marked, keep)
+    /// pairs to ban from matching again.
+    on_dup_ban: RefCell<Option<Box<dyn Fn(Vec<(Photo, Photo)>)>>>,
     /// The scroller that holds the center view. In normal mode its child is the
     /// `GridView`. In duplicate mode it holds the framed group container.
     scroller: ScrolledWindow,
@@ -298,6 +303,7 @@ impl Grid {
         dup_label.set_hexpand(true);
         let dup_delete_btn = Button::with_label("Delete marked");
         dup_delete_btn.add_css_class("destructive-action");
+        let dup_ban_btn = Button::with_label("Not duplicates");
         let dup_bar = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
         dup_bar.add_css_class("toolbar");
         dup_bar.set_margin_start(6);
@@ -305,6 +311,7 @@ impl Grid {
         dup_bar.set_margin_top(4);
         dup_bar.set_margin_bottom(4);
         dup_bar.append(&dup_label);
+        dup_bar.append(&dup_ban_btn);
         dup_bar.append(&dup_delete_btn);
         dup_bar.set_visible(false);
 
@@ -510,6 +517,8 @@ impl Grid {
             dup_label,
             dup_delete_btn,
             on_dup_delete: RefCell::new(None),
+            dup_ban_btn,
+            on_dup_ban: RefCell::new(None),
             scroller,
             dup_container,
             dup_state: RefCell::new(Vec::new()),
@@ -578,6 +587,20 @@ impl Grid {
                 }
             });
         }
+        // Duplicate mode: the "Not duplicates" button bans each marked photo
+        // from grouping with its group's kept copy again.
+        {
+            let rc2 = rc.clone();
+            rc.dup_ban_btn.connect_clicked(move |_| {
+                let pairs = rc2.marked_ban_pairs();
+                if pairs.is_empty() {
+                    return;
+                }
+                if let Some(cb) = rc2.on_dup_ban.borrow().as_ref() {
+                    cb(pairs);
+                }
+            });
+        }
         // Right-click anywhere in the grid raises the context menu over the
         // current selection.
         {
@@ -635,6 +658,12 @@ impl Grid {
     /// Register the "Delete marked" callback for duplicate mode.
     pub fn set_on_dup_delete<F: Fn(Vec<Photo>) + 'static>(&self, f: F) {
         *self.on_dup_delete.borrow_mut() = Some(Box::new(f));
+    }
+
+    /// Register the "Not duplicates" ban callback for duplicate mode. The
+    /// callback receives `(marked, keep)` pairs to ban from matching again.
+    pub fn set_on_dup_ban<F: Fn(Vec<(Photo, Photo)>) + 'static>(&self, f: F) {
+        *self.on_dup_ban.borrow_mut() = Some(Box::new(f));
     }
 
     /// Show the duplicate groups. Each group is drawn as its own framed box
@@ -811,6 +840,24 @@ impl Grid {
             for c in &g.cells {
                 if c.marked.get() {
                     out.push(c.photo.clone());
+                }
+            }
+        }
+        out
+    }
+
+    /// For each marked photo, the pair `(marked, keep)` where keep is the
+    /// group's kept copy (the first cell). Backs the "Not duplicates" ban
+    /// action: banning each pair stops the marked copy grouping with the keep.
+    fn marked_ban_pairs(&self) -> Vec<(Photo, Photo)> {
+        let mut out = Vec::new();
+        for g in self.dup_state.borrow().iter() {
+            let Some(keep) = g.cells.first().map(|c| c.photo.clone()) else {
+                continue;
+            };
+            for c in &g.cells {
+                if c.marked.get() && c.photo.id != keep.id {
+                    out.push((c.photo.clone(), keep.clone()));
                 }
             }
         }

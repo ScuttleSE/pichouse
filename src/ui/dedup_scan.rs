@@ -80,6 +80,7 @@ pub fn find_duplicates(state: &Rc<AppState>, scope: Scope, threshold: u32) {
     }
 
     let lib = state.lib.clone();
+    let banned = state.lib.banned_dup_pairs().unwrap_or_default();
     std::thread::spawn(move || {
         // Backfill perceptual hashes that are missing (0) so the near pass has
         // data. This decodes each such image once and stores the result.
@@ -109,7 +110,7 @@ pub fn find_duplicates(state: &Rc<AppState>, scope: Scope, threshold: u32) {
         }
 
         let _ = tx.send(Msg::Message("Comparing…".into()));
-        let groups = dedup::find_duplicates(&photos, threshold, &cancel);
+        let groups = dedup::find_duplicates(&photos, threshold, &banned, &cancel);
         let _ = tx.send(Msg::Done(groups));
     });
 }
@@ -161,6 +162,24 @@ fn present_results(state: &Rc<AppState>, label: &str, groups: Vec<DupGroup>) {
             confirm(&state, None, "Delete marked duplicates?", &detail, move || {
                 delete_marked(&state2, &marked)
             });
+        });
+    }
+
+    // Wire the "Not duplicates" button to ban each marked pair, then re-run.
+    {
+        let state = state.clone();
+        grid.set_on_dup_ban(move |pairs| {
+            let mut banned = 0;
+            for (a, b) in &pairs {
+                if state.lib.ban_dup_pair(a.id, b.id).is_ok() {
+                    banned += 1;
+                }
+            }
+            state
+                .status()
+                .set_message(&format!("Banned {banned} matches. They will not group again."));
+            state.grid().exit_dup_mode();
+            state.grid().reload_from_source();
         });
     }
 

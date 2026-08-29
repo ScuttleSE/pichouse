@@ -364,3 +364,17 @@ CREATE TABLE IF NOT EXISTS style_face_rejections (
 );
 
 CREATE INDEX IF NOT EXISTS idx_style_face_rejections_face ON style_face_rejections(face_id);
+
+-- ---------------------------------------------------------------------------
+-- Duplicate-finder bans. The user marked two photos as "not a duplicate" so the
+-- duplicate finder never groups that pair again. The pair is stored normalised
+-- (photo_a < photo_b). Either photo's deletion cascades the ban away.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS dup_bans (
+    photo_a  INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
+    photo_b  INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
+    banned_at INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (photo_a, photo_b)
+);
+
+CREATE INDEX IF NOT EXISTS idx_dup_bans_b ON dup_bans(photo_b);
