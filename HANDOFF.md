@@ -2,11 +2,12 @@
 
 This document is for an agent with no memory of the last session. It uses
 Simplified Technical English (ASD-STE100, Strict). Read AGENTS.md first. Read
-ROADMAP.md for planned features. Read section 00000000000000000 first — it
-describes the most recent work (bounding on-demand grid work to the true
-visible window). Then read section 0000000000000000 — it describes
-viewport-driven enrichment and a Tools "Generate Thumbnails" pass; automatic
-enrichment is removed. Then read
+ROADMAP.md for planned features. Read section 000000000000000000 first — it
+describes the most recent work (stopping the Phase 1 scan slowdown at 1M+
+photos). Then read section 00000000000000000 — it describes bounding on-demand
+grid work to the true visible window. Then read section 0000000000000000 — it
+describes viewport-driven enrichment and a Tools "Generate Thumbnails" pass;
+automatic enrichment is removed. Then read
 section 000000000000000 — it
 describes a during-scan sidebar-refresh performance fix for very large
 libraries. Then read section 00000000000000 — it
@@ -36,7 +37,62 @@ Then read section 00 — it describes four earlier follow-up features. Then read
 section 0 — it describes the Immich integration. The later sections describe
 earlier features and are still correct.
 
-## 00000000000000000. Bound on-demand grid work to the true visible window (most recent work — read this first)
+## 000000000000000000. Stop the Phase 1 scan slowdown at 1M+ photos (most recent work — read this first)
+
+This section describes the last session. All work is complete, on `main`, and
+pushed. One functional commit. CI version-bump commits sit between pushes.
+Ignore those.
+
+The user reported that the Phase 1 tree scan (structure only, no EXIF or hash)
+slowed down badly after about one million photos. A basic file-tree scan should
+stay fast.
+
+Diagnosis: the tree walk and the per-row inserts are not the problem. The
+progressive slowdown came from the 5-second sidebar refresh that runs during a
+scan. Each tick recomputed two aggregates over the whole `photos` table:
+`folder_photo_counts` (a `GROUP BY` over every row) and `new_photos_count` (a
+join over recent photos with a per-candidate correlated prefix subquery). Both
+are O(total photos). The per-batch `invalidate_count_cache` cleared the cache
+before every reload, so both recomputed from scratch each tick. The
+`tree_signature` skip-guard did not help, because new folders bump the folder
+count on almost every tick during a scan.
+
+Fixes:
+
+- A (`src/ui/sidebar.rs`): during a scan (`state.scan.running()`), skip
+  `folder_photo_counts` and `new_photos_count`. Folder rows show no photo count
+  and New Files shows 0 until the scan ends. `node_label` now omits the ` (N)`
+  suffix when the count map has no entry for a folder. At scan end the forced
+  reload (`reload_folders_force`) runs with the scan no longer active and
+  recomputes the real counts once. The reload during a scan is now O(folders).
+- B1 (`src/db/library.rs`, `new_photos_count`): short-circuit to 0 when no root
+  has finished its first scan (max `first_scan_done_at` is 0). During the
+  initial import nothing is "new" yet, so this skips the heavy join and
+  correlated subquery entirely.
+- C3 (`src/db/library.rs`, `open_at`): raise `cache_size` from 64 MiB to 256 MiB
+  on both connections, so the `photos.path` unique index (probed on every
+  `ON CONFLICT(path)` insert) stays cached longer at 1M+ rows.
+- C2 (`src/db/library.rs`, `checkpoint()`, and `src/ui/actions.rs`): add a
+  best-effort `PRAGMA wal_checkpoint(TRUNCATE)` and call it between roots and on
+  a 30-second timer during a long single-root scan. The UI read connection holds
+  snapshots that block the automatic passive checkpoint, so without this the WAL
+  grows without bound and every read pays a longer WAL scan.
+
+Held for later (not done): C1, deferring or dropping the non-essential
+`photos` indexes (`idx_photos_scan_state`, `idx_photos_added_at`,
+`idx_photos_hash`) during Phase 1. It needs a schema/migration change and is the
+riskiest. Revisit only if A + B1 + C2 + C3 do not flatten the curve.
+
+Verify: run the scan with `-vvv` and watch the `sidebar.reload ... (folder_counts
+..., new_photos_count ...)` debug line. `folder_counts` and `new_photos_count`
+should now read near 0 during the scan (the queries are skipped), and the reload
+time should stay flat across 100k -> 1M instead of climbing.
+
+Note on testing: the app is a GTK4 desktop binary and needs a display, so an
+agent running headless cannot exercise the real scan+reload path. The
+authoritative check is the user's `-vvv` timing line before and after.
+
+## 00000000000000000. Bound on-demand grid work to the true visible window
 
 This section describes the last session. All work is complete, on `main`, and
 pushed. One functional commit. CI version-bump commits sit between pushes.
