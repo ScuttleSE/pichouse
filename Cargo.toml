@@ -1,0 +1,80 @@
+[package]
+name = "pichouse"
+version = "0.1.0"
+edition = "2021"
+description = "A Picasa-like photo library GUI application for Linux."
+license = "Unlicense"
+
+[[bin]]
+name = "pichouse"
+path = "src/main.rs"
+
+[dependencies]
+# GUI. Pinned to a gtk4-rs release that targets GLib 2.84 / GTK 4.10 (Debian 13).
+# Do not upgrade past the GLib version Debian 13 ships.
+gtk4 = { version = "0.7", features = ["v4_10"] }
+
+# Database. Bundled SQLite (includes FTS5 for tag search).
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Image decode / resize / encode.
+image = "0.25"
+fast_image_resize = "4"
+
+# EXIF taken-date extraction.
+kamadak-exif = "0.5"
+
+# Content hashing (thumbnail cache key).
+sha2 = "0.10"
+
+# Ollama HTTP client (blocking, to mirror the Go goroutine worker model).
+# Use rustls to avoid a system OpenSSL dependency on the CI runner.
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls", "multipart"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+
+# XDG data/config directory resolution.
+dirs = "5"
+
+# Logging facade + console backend. Verbosity is controlled by CLI flags
+# (-v/-vv/-vvv/-q); output goes to stderr. Pure Rust, no system dependencies.
+# env_logger default features (timestamps via jiff, regex filtering, colors) are
+# disabled to keep the dependency/link footprint small.
+log = "0.4"
+env_logger = { version = "0.11", default-features = false }
+
+# Facial detection and recognition (in-process ONNX inference).
+# ort wraps ONNX Runtime. The load-dynamic feature links no runtime at build
+# time. It loads a vendored ONNX Runtime shared library at run time. The build
+# needs no system libonnxruntime and no build-time download. Point ort at the
+# vendored library with the ORT_DYLIB_PATH environment variable, or place the
+# library beside the binary. See vendor/onnxruntime/.
+# ndarray builds the input tensors for the models.
+ort = { version = "=2.0.0-rc.10", default-features = false, features = ["load-dynamic", "ndarray"] }
+ndarray = "0.16"
+
+# Extract the ONNX Runtime release archive (gzip tar) in process. Both crates
+# are pure Rust, so they add no native build dependency. Used only by the face
+# runtime downloader (src/face/runtime.rs).
+flate2 = "1"
+tar = "0.4"
+
+# HDBSCAN clustering for stylised faces (anime/cartoon/furry). Pure Rust, small
+# dependency set. Used by src/styleface/cluster.rs. MIT OR Apache-2.0.
+hdbscan = "0.12"
+
+# Filesystem change notifications (inotify on Linux) for the library-freshness
+# fast path. Reconciliation remains the reliable core; this is only a
+# low-latency optimization for local folders and is never required for
+# correctness (inotify does not see remote changes on NFS/SMB mounts).
+notify = "6"
+
+[profile.release]
+opt-level = 3
+# Shrink the release binary. strip removes symbols. thin LTO and a single
+# codegen unit cut dead code and inline across crates. panic stays as unwind
+# to keep normal crash behaviour. These options make the CI build slower.
+strip = true
+lto = "thin"
+codegen-units = 1

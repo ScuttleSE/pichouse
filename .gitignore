@@ -1,0 +1,16 @@
+# Build artifacts
+/dist/
+/pichouse
+/target/
+
+# Local databases and app data
+*.db
+*.db-shm
+*.db-wal
+
+# Editor/OS cruft
+*.swp
+.DS_Store
+
+# Saved AI agent session transcripts
+session-*.md
