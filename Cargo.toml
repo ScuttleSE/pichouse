@@ -3,7 +3,7 @@ name = "pichouse"
 version = "0.0.99"
 edition = "2021"
 description = "A Picasa-like photo library GUI application for Linux."
-license = "MIT"
+license = "Unlicense"
 
 [[bin]]
 name = "pichouse"

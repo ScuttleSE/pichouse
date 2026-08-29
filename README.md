@@ -286,4 +286,19 @@ rather build from source, see [Build and run](#build-and-run) above.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+pichouse's own source code is released into the public domain under the
+[Unlicense](LICENSE) — do whatever you want with it.
+
+This does **not** cover the third-party models the optional AI features
+download at runtime (see [Facial recognition](#facial-recognition-local-optional)
+and [Immich integration](#immich-integration-optional) above); nothing here
+is shipped in the binary, but if you enable a feature and it downloads a
+model, that model's own license applies to it:
+
+- **YuNet** (face detection) — MIT
+- **SFace** (face embedding) — Apache 2.0
+- **Anime detector** (YOLOv8-nano, stylised faces) — MIT
+- **CCIP CaFormer** (stylised face embedding) — OpenRAIL-M
+
+pichouse's Rust dependencies each carry their own (permissive)
+open-source licenses as well; see `Cargo.toml`.
