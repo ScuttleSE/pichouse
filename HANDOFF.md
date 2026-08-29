@@ -2,8 +2,12 @@
 
 This document is for an agent with no memory of the last session. It uses
 Simplified Technical English (ASD-STE100, Strict). Read AGENTS.md first. Read
-ROADMAP.md for planned features. Read section 0000000000000 first — it
-describes the most recent work (a scan-tree responsiveness overhaul: a
+ROADMAP.md for planned features. Read section 00000000000000 first — it
+describes the most recent work (a large-library performance overhaul plus five
+features: a separate read connection, a demand-driven thumbnail grid, a scan
+resume cursor, sort and filename options, and a banned-matches system). Then
+read section 0000000000000 — it
+describes a scan-tree responsiveness overhaul (a
 postpone-thumbnails option, live tree growth during a scan, and a fix for
 lost focus and swallowed clicks during a scan). Then read
 section 000000000000 — it describes GitHub release prep, the Unlicense
@@ -25,7 +29,191 @@ Then read section 00 — it describes four earlier follow-up features. Then read
 section 0 — it describes the Immich integration. The later sections describe
 earlier features and are still correct.
 
-## 0000000000000. Scan-tree responsiveness: postpone thumbnails, live tree growth, and a focus/click fix (most recent work — read this first)
+## 00000000000000. Large-library performance overhaul and five features (most recent work — read this first)
+
+This section describes the last session. All work is complete, on `main`, and
+pushed. The session made eight functional commits. CI's automatic
+version-bump commits sit between pushes as usual. Ignore those.
+
+The user reported that a 2-million-photo library made the application slow. The
+user also asked for five features. The work fixed the slow paths first, then
+added the features. The release build is clean. All tests pass (68 pass, 2
+ignored).
+
+### 00000000000000.1 Separate read connection and PRAGMA tuning
+
+Problem: the scan thread and the UI thread shared one `Mutex<Connection>`. A
+UI read waited behind an in-flight scan write. The log showed
+`db lock: waited 2.6s` during a scan.
+
+Fix, in `src/db/library.rs`:
+- `Library` now holds a second connection, `read_conn: Mutex<Connection>`. It
+  opens the same file read-only. WAL mode lets it read while the writer
+  connection commits.
+- A new `read_lock()` helper mirrors `lock()`. Hot UI read methods take
+  `read_lock()`: `folder_photo_counts`, `photos_in_folder`, `new_photos_count`,
+  `new_photos_grouped`, `missing_photo_count`, and the new duplicate-ban read
+  methods.
+- `open_at` sets writer PRAGMAs: `synchronous=NORMAL`, `busy_timeout=5000`,
+  `cache_size=-65536`, `temp_store=MEMORY`, `mmap_size=268435456`,
+  `wal_autocheckpoint=2000`. The read connection sets `query_only`, a
+  busy_timeout, a cache, and mmap.
+
+### 00000000000000.2 Scalar new-files count and a count cache
+
+Problem: `new_photos_count` called `new_photos_grouped`, which loaded and
+sorted every candidate row only to sum the lengths. It took 2.4 s. The startup
+reloads two sidebars, so it ran twice.
+
+Fix, in `src/db/library.rs`:
+- `new_photos_count` is now a scalar SQL `COUNT`. A correlated subquery finds
+  each photo's owning-root boundary (the max `first_scan_done_at` of any root
+  whose path is a prefix of the folder path) and counts photos added strictly
+  after a non-zero boundary. This mirrors `new_photos_grouped` without loading
+  the rows.
+- `Library` holds a `count_cache: Mutex<CountCache>`. It caches
+  `folder_photo_counts` and the last `new_photos_count`. The two back-to-back
+  sidebar reloads share one computation. `invalidate_count_cache` clears it.
+  Every photo write path calls it: `insert_structure_batch`,
+  `upsert_photo_structure`, `apply_reconcile_plan`, `delete_missing_photos`,
+  `mark_first_scan_done`, and `delete_photo_hard`.
+
+Note: the two startup sidebars still each call `reload`. The cache makes the
+second call cheap. It does not remove the second call.
+
+### 00000000000000.3 Demand-driven thumbnail grid
+
+Problem: opening a non-enriched folder enqueued a thumbnail job for every photo
+in the folder at once. On a huge folder this flooded the worker pool.
+
+Fix, in `src/ui/grid.rs`:
+- The grid enqueues a thumbnail job only when the `GridView` factory binds a
+  cell. A bind covers the visible range plus the `GridView` overscan (one or
+  two extra rows). The new method `ensure_thumb_for` serves the texture cache,
+  then enqueues only if the cell has no texture and no pending job.
+- `connect_unbind` calls `drop_pending_for` to forget an in-flight job for a
+  cell that scrolled away (only when the cell holds no texture yet), so the
+  worker result is discarded.
+- `rebuild` and `set_photos_preserving` now only serve the texture cache. They
+  do not enqueue jobs. The factory bind fills the rest on demand.
+- `build_factory` now takes a `Weak<Grid>`. The real factory is installed in
+  `into_rc`, after the `Rc<Grid>` exists, so the bind closure can reach the
+  grid. `set_thumb_size` now takes `self: &Rc<Grid>`.
+
+Caveat: a currently-visible cell whose hash changes mid-view (enrichment fills
+the hash) does not re-enqueue until it re-binds on scroll. This is rare and
+acceptable.
+
+### 00000000000000.4 Scan resume cursor and startup resume popup
+
+Problem: an interrupted first scan had no resume. A re-run re-walked the whole
+tree and re-inserted every photo. The user also asked how to continue an
+interrupted first scan, and warned that remaining folders must not wrongly land
+in "New Files".
+
+Fix:
+- `src/db/library.rs` adds `folder_scan_cursor(path)`. It returns
+  `(stored_mtime, is_done)` for a directory, joining `folders` with
+  `scan_state`.
+- `src/scan.rs` `scan_dir` now skips the folder upsert and the batch insert for
+  a directory that is `Done` with an unchanged mtime. It still recurses into
+  subdirectories. So a re-run continues fast over folders it already recorded.
+- `src/db/library.rs` adds `interrupted_scan_roots()`. It lists roots with
+  `first_scan_done_at = 0` that already hold at least one photo (a partial
+  first scan). A never-scanned root with no photos is excluded.
+- `src/ui/actions.rs` adds public `resume_scan(state, paths)`. It enqueues the
+  partial roots.
+- `src/ui/app.rs` `populate_deferred` shows a popup at startup when
+  `interrupted_scan_roots()` is non-empty: "The initial scan of ... was
+  interrupted. Resume now?". Yes calls `resume_scan`.
+
+The boundary stays unset until a root's walk completes. So a resumed scan does
+not flood "New Files". The scanner stamps `first_scan_done_at` only on a full
+`Ok` completion (see `src/ui/actions.rs`).
+
+### 00000000000000.5 Filename tooltip, Show Filenames toggle, extended sort
+
+In `src/ui/grid.rs`:
+- Every cell now has a filename tooltip.
+- The cell is a vertical box: the thumbnail overlay on top and an optional
+  filename caption below. The caption is hidden unless "Show Filenames" is on.
+- New setting key `KEY_SHOW_FILENAMES` in `src/ui/prefs.rs`. Grid field
+  `show_filenames: Cell<bool>`. Public methods `set_show_filenames` and
+  `show_filenames`.
+- The `SortOrder` enum grew from two variants to six: `DateDesc`, `DateAsc`,
+  `NameAsc`, `NameDesc`, `SizeDesc`, `SizeAsc`. It is now `pub` with
+  `from_setting`, `as_setting`, `dropdown_index`, and `from_dropdown_index`.
+  `sort_photos` handles all six. Size sort uses `photo.size`.
+- Public `set_sort_order(self: &Rc<Grid>, order)` persists the choice, syncs the
+  header dropdown, and re-sorts. `sort_order_setting()` returns the current
+  value string.
+
+In `src/ui/toolbar.rs`, the Tools menu gained:
+- A stateful "Show Filenames" toggle action (`tools.show_filenames`).
+- A "Sort By" submenu with six items. A stateful string action (`tools.sort`)
+  drives the grid and carries the active order as its state, so GTK draws the
+  check mark. The header dropdown and the Tools submenu stay in sync.
+
+### 00000000000000.6 Right-click folder thumbnail scan
+
+In `src/ui/sidebar.rs`, the folder context menu gained two items:
+- "Scan all thumbnails (unfinished)" calls `enrich::enqueue_folder`.
+- "Rescan all thumbnails (all)" calls `enrich::rescan_folder`.
+
+`src/ui/enrich.rs` adds `enqueue_folder` (photos still needing enrichment in the
+folder) and `rescan_folder` (reset then re-queue all). `src/db/library.rs` adds
+`reset_folder_enrichment(folder_id)`. It sets `scan_state = 0` for the folder's
+non-missing photos and returns their ids, so the enrichment worker rebuilds
+every thumbnail.
+
+### 00000000000000.7 Banned matches (duplicate finder)
+
+The user asked for a collection of "banned" matched photos, with an un-ban that
+lets them match again.
+
+Schema, in `src/db/schema.sql`: a new table `dup_bans(photo_a, photo_b,
+banned_at, PRIMARY KEY(photo_a, photo_b))`. The pair is stored normalised (low
+id first). A photo delete cascades the ban away.
+
+Engine, in `src/dedup.rs`: `find_duplicates` now takes a
+`banned: &HashSet<(i64, i64)>`. It skips a union for a banned pair in both the
+exact pass and the near pass. Helper `norm_pair(a, b)` gives the normalised key.
+
+Caveat: the grouping is transitive union-find. A banned pair is not unioned
+directly, but a third photo that matches both can still bridge them. This is
+rare and acceptable for now.
+
+DB access, in `src/db/duplicates.rs`: `ban_dup_pair`, `unban_dup_pair`,
+`banned_dup_pairs` (the set for the engine), `banned_dup_photo_pairs` (both
+photos per pair, for the view), `banned_dup_count`, and `clear_all_dup_bans`.
+
+UI review, in `src/ui/grid.rs` and `src/ui/dedup_scan.rs`: the duplicate action
+bar gained a "Not duplicates" button. It bans each marked photo against its
+group's kept copy (`marked_ban_pairs`, `on_dup_ban`, `set_on_dup_ban`). The
+scan loads `banned_dup_pairs` and passes them to the engine.
+
+Sidebar, in `src/ui/sidebar.rs`: a new leaf section "Banned Matches"
+(`BANNED_MATCHES_ID`). It follows the "Missing Files" leaf template: an id
+constant, a `TreeData` count field `banned_matches_count`, a `reload` push when
+the count is over zero, a `node_label` branch, an `on_selection_changed`
+dispatch to `AppState::show_banned_matches`, and a right-click "Clear Banned
+Matches…" action (`clear-banned` -> `clear_banned_matches` ->
+`clear_all_dup_bans`). `AppState::show_banned_matches` (in `src/ui/state.rs`)
+shows the banned photos in the grid.
+
+### 00000000000000.8 Open items
+
+- The interrupted-scan continuation runs through the scan queue (`resume_scan`),
+  not "Refresh Library". "Refresh Library" is the disk reconcile
+  (`freshness::reconcile_now`), which is a no-op while a root's first scan is
+  unfinished. The startup popup is the intended resume path.
+- The banned-pair transitive-bridge caveat (section 00000000000000.7) stands.
+- The two startup sidebars still each reload. The count cache makes the second
+  cheap. A later change could dedupe the second reload.
+- Test the demand-driven thumbnails on the real 2-million-photo library on the
+  user's machine, during fast scroll.
+
+## 0000000000000. Scan-tree responsiveness: postpone thumbnails, live tree growth, and a focus/click fix
 
 This section describes the last session. All work is complete, on `main`,
 and pushed, except where noted. Four fix commits plus one feature commit;
