@@ -28,6 +28,18 @@ const THUMB_WORKERS: usize = 4;
 /// How long (ms) each landed thumbnail keeps background scan/enrichment paused,
 /// so the visible folder always wins the disk while it is still rendering.
 const BROWSE_PAUSE_MS: u64 = 2000;
+/// Extra spacing (px) added to the thumbnail size to estimate a grid cell's
+/// footprint (inter-item gap plus the small caption row). Used only to compute
+/// the visible index range, so an approximate value is fine.
+const CELL_SPACING: i32 = 14;
+/// How many extra rows above and below the visible window still count as
+/// "visible" for on-demand work, so work starts a little before a row is
+/// scrolled into view.
+const VISIBLE_MARGIN_ROWS: usize = 2;
+/// When the grid geometry is not yet known (width or page size is 0, e.g. right
+/// after a folder opens before the first allocation), treat the first this-many
+/// items as visible so the first screen still fills.
+const VISIBLE_FALLBACK: usize = 60;
 /// A thumbnail job sent from the UI thread to a worker.
 struct Job {
     key: String,
@@ -117,6 +129,8 @@ pub struct Grid {
     /// flush at a time.
     enrich_buffer: RefCell<Vec<i64>>,
     enrich_flush_scheduled: std::cell::Cell<bool>,
+    /// Guards against scheduling more than one scroll-settle refresh at a time.
+    scroll_settle_scheduled: std::cell::Cell<bool>,
     /// Called with (x, y) in grid coordinates on a right-click, so the app can
     /// show a context menu over the current selection.
     on_context_menu: RefCell<Option<Box<dyn Fn(f64, f64)>>>,
@@ -523,6 +537,7 @@ impl Grid {
             on_enrich_request: RefCell::new(None),
             enrich_buffer: RefCell::new(Vec::new()),
             enrich_flush_scheduled: std::cell::Cell::new(false),
+            scroll_settle_scheduled: std::cell::Cell::new(false),
             on_context_menu: RefCell::new(None),
             dup_mode: std::cell::Cell::new(false),
             dup_bar,
@@ -649,7 +664,58 @@ impl Grid {
             });
             rc.grid_view.add_controller(src);
         }
+        // Scroll-settle: when the user stops scrolling, fill on-demand work for
+        // the new visible window. Because GTK's bind is not a reliable "visible"
+        // signal, this is the authoritative trigger for enriching/thumbnailing
+        // the window the user actually stopped on.
+        {
+            let rc2 = rc.clone();
+            rc.scroller
+                .vadjustment()
+                .connect_value_changed(move |_| {
+                    rc2.schedule_visible_refresh();
+                });
+        }
         rc
+    }
+
+    /// Schedule a debounced refresh of on-demand work for the visible window.
+    /// Called on scroll. Coalesces a burst of scroll events into one refresh
+    /// ~200 ms after scrolling stops.
+    fn schedule_visible_refresh(self: &Rc<Self>) {
+        if self.scroll_settle_scheduled.replace(true) {
+            return;
+        }
+        let this = self.clone();
+        glib::timeout_add_local_once(std::time::Duration::from_millis(200), move || {
+            this.scroll_settle_scheduled.set(false);
+            this.refresh_visible_window();
+        });
+    }
+
+    /// Request thumbnails and enrichment for the photos in the current visible
+    /// window that still need them. Idempotent: cached/enriched cells are
+    /// skipped inside `ensure_thumb_for` and by the empty-hash check.
+    fn refresh_visible_window(self: &Rc<Self>) {
+        if self.dup_mode.get() {
+            return;
+        }
+        let (start, end) = self.visible_index_range();
+        let mut enrich_ids: Vec<i64> = Vec::new();
+        for i in start..end {
+            let Some(obj) = self.store.item(i as u32).and_downcast::<PhotoObject>() else {
+                continue;
+            };
+            self.ensure_thumb_for(&obj);
+            if obj.hash().is_empty() && !obj.path().is_empty() && obj.id() != 0 {
+                enrich_ids.push(obj.id());
+            }
+        }
+        if !enrich_ids.is_empty() {
+            if let Some(cb) = self.on_enrich_request.borrow().as_ref() {
+                cb(enrich_ids);
+            }
+        }
     }
 
     /// Register the activation callback (opens the viewer).
@@ -688,9 +754,15 @@ impl Grid {
         let this = self.clone();
         // ~180 ms after the last realize burst, hand the collected ids to the
         // app for enrichment. New binds inside the window join the same batch.
+        // The batch is filtered to the current visible window, because GTK may
+        // have bound the whole model, not only the on-screen cells.
         glib::timeout_add_local_once(std::time::Duration::from_millis(180), move || {
             this.enrich_flush_scheduled.set(false);
             let ids: Vec<i64> = this.enrich_buffer.borrow_mut().drain(..).collect();
+            if ids.is_empty() {
+                return;
+            }
+            let ids = this.filter_ids_to_visible(ids);
             if ids.is_empty() {
                 return;
             }
@@ -698,6 +770,22 @@ impl Grid {
                 cb(ids);
             }
         });
+    }
+
+    /// Keep only the ids whose photo is within the current visible index window.
+    /// Used to discard the off-screen ids GTK bound during a full-model measure
+    /// pass, so enrichment follows the viewport.
+    fn filter_ids_to_visible(&self, ids: Vec<i64>) -> Vec<i64> {
+        let (start, end) = self.visible_index_range();
+        // Build the set of visible ids once, then keep the requested ids that
+        // fall in it, preserving order.
+        let mut visible: std::collections::HashSet<i64> = std::collections::HashSet::new();
+        for i in start..end {
+            if let Some(obj) = self.store.item(i as u32).and_downcast::<PhotoObject>() {
+                visible.insert(obj.id());
+            }
+        }
+        ids.into_iter().filter(|id| visible.contains(id)).collect()
     }
 
     /// Drop a photo id from the pending enrich batch when its cell scrolled out
@@ -1370,16 +1458,73 @@ impl Grid {
     }
 
     /// Enqueue a thumbnail job for one cell (local or Immich).
+    /// The store index window that is currently on screen, plus a margin of
+    /// `VISIBLE_MARGIN_ROWS` rows above and below. On-demand work (thumbnails,
+    /// enrichment) is limited to this window.
+    ///
+    /// GTK's `GridView` can bind far more cells than are visible (it realises
+    /// the whole model while it first measures a freshly populated grid whose
+    /// viewport height is not yet allocated). So the `bind` signal is not a
+    /// reliable "is visible" test. This computes the true window from the
+    /// scroller's vertical adjustment and the cell geometry instead.
+    ///
+    /// Returns a half-open `[start, end)` range of store indices. When the
+    /// geometry is not ready (width or page size is 0), returns
+    /// `[0, VISIBLE_FALLBACK)` so a just-opened folder still fills its first
+    /// screen.
+    fn visible_index_range(&self) -> (usize, usize) {
+        let n = self.store.n_items() as usize;
+        if n == 0 {
+            return (0, 0);
+        }
+        let size = self.thumb_size.get();
+        let width = self.grid_view.allocated_width();
+        let vadj = self.scroller.vadjustment();
+        let page = vadj.page_size();
+        // Geometry not ready yet: fall back to the first screenful.
+        if width <= 0 || page <= 0.0 {
+            return (0, VISIBLE_FALLBACK.min(n));
+        }
+        let cell_w = (size + CELL_SPACING).max(1);
+        let cols = ((width / cell_w).max(1) as usize).min(20);
+        let row_h = (size + CELL_SPACING).max(1) as f64;
+        let first_row = (vadj.value() / row_h).floor() as i64;
+        let rows_visible = (page / row_h).ceil() as i64 + 1;
+        let margin = VISIBLE_MARGIN_ROWS as i64;
+        let start_row = (first_row - margin).max(0) as usize;
+        let end_row = (first_row + rows_visible + margin).max(0) as usize;
+        let start = (start_row * cols).min(n);
+        let end = (end_row * cols).min(n);
+        (start, end)
+    }
+
+    /// Whether a photo object is within the current visible index window. When
+    /// the geometry is not ready, treats the fallback first-screen as visible.
+    fn is_object_visible(&self, obj: &PhotoObject) -> bool {
+        let (start, end) = self.visible_index_range();
+        if let Some(i) = self.store.find(obj) {
+            let i = i as usize;
+            i >= start && i < end
+        } else {
+            false
+        }
+    }
+
     /// Ensure a thumbnail exists for a cell that just scrolled into view.
     ///
     /// This is the demand-driven path: the factory `bind` calls it for every
-    /// cell GTK realises (the visible range plus the `GridView` overscan). It
-    /// serves the in-memory texture cache first, and only sends a worker job
-    /// when the cell has no texture yet. Loading a huge non-enriched folder no
-    /// longer enqueues a job for every photo up front; jobs follow the viewport.
+    /// cell GTK realises. Because GTK can bind the whole model, the work is
+    /// gated by `is_object_visible` so only the on-screen window (plus a small
+    /// margin) is decoded. It serves the in-memory texture cache first, and only
+    /// sends a worker job when the cell has no texture yet.
     fn ensure_thumb_for(&self, obj: &PhotoObject) {
         // Nothing to do in duplicate mode (that path renders its own cells).
         if self.dup_mode.get() {
+            return;
+        }
+        // Gate to the visible window so a full-model bind pass does not queue a
+        // decode job for every photo in a large folder.
+        if !self.is_object_visible(obj) {
             return;
         }
         // Rebuild the minimal Photo fields the job needs from the object.
