@@ -2,8 +2,10 @@
 
 This document is for an agent with no memory of the last session. It uses
 Simplified Technical English (ASD-STE100, Strict). Read AGENTS.md first. Read
-ROADMAP.md for planned features. Read section 0000000000 first — it describes the
-most recent work (a named-release workflow that mirrors to GitHub). Then read
+ROADMAP.md for planned features. Read section 00000000000 first — it describes
+the most recent work (four context-menu and character-view fixes). Then read
+section 0000000000 — it describes a named-release workflow that mirrors to
+GitHub. Then read
 section 000000000 — it describes four fixes (a sidebar crash, an album drag bug,
 a scan freeze, and a smaller release binary). Then read section 00000000 — it describes the
 CCIP embedder swap and six face and character features.
@@ -18,7 +20,113 @@ Then read section 00 — it describes four earlier follow-up features. Then read
 section 0 — it describes the Immich integration. The later sections describe
 earlier features and are still correct.
 
-## 0000000000. Named-release workflow with GitHub mirror (most recent work — read this first)
+## 00000000000. Context-menu and character-view fixes (most recent work — read this first)
+
+This section describes the last session. All work is complete. All work is on
+`main`. All work is pushed. The version was 0.0.98 at the start of the session.
+CI increases the version on each push. Do not change the version by hand.
+
+The session fixed four problems the user reported. The commit is
+`5ab1015`. All four changes are in one commit.
+
+### 00000000000.1 The grid right-click menu was all greyed out
+
+The user reported that a right-click on a photo in a face-group showed a menu
+with every item greyed out.
+
+The cause was an action-scope mismatch in `src/ui/vmenu.rs`. The code installed
+the `grid` action group on `grid.grid_view()`. That widget is a DESCENDANT of
+the grid root box. But the context-menu popover parents to `grid.widget()` (the
+root box). GTK resolves a menu action by a walk UP the widget tree from the
+popover parent. The walk never goes DOWN into the `GridView`. So GTK found no
+`grid.*` action and greyed out every item.
+
+Note: an earlier session (section 00000000.8) moved the popover parent from the
+`GridView` to the root box, to stop the menu from being clipped and scrolled.
+That change broke the action resolution. This was not specific to face-groups.
+It affected the menu in every grid view.
+
+The fix changes one line. `insert_action_group("grid", ...)` now runs on
+`grid.widget()`, the same widget the popover parents to. The actions resolve.
+The anti-clip fix stays.
+
+### 00000000000.2 New "Remove from…" items in a face-group menu
+
+The user wanted a way to remove a photo from a person or an unnamed face group
+through the grid right-click menu. The menu had removal only for virtual albums,
+characters, and style clusters.
+
+The session added:
+- `Library::remove_photo_from_person` and `Library::remove_photo_from_cluster`
+  in `src/db/faces.rs`. Each clears the link (`faces.person_id` or
+  `faces.cluster_id`) for that photo's faces. A later re-cluster may group the
+  photo again. This mirrors the character "remove" semantics, not the "ban"
+  semantics.
+- `Grid::current_person` and `Grid::current_cluster` in `src/ui/grid.rs`. Each
+  reads the grid `Source` and returns the id when the source matches.
+- Two new actions in `src/ui/vmenu.rs`: `remove-from-person` and
+  `remove-from-cluster`. Each loops over the selected local photos and calls the
+  new DB method, then reloads the grid.
+- Menu items in `build_menu`: "Remove from this person" (a named person source)
+  and "Remove from this group" (an unnamed cluster source). The user chose the
+  person/group wording split.
+
+### 00000000000.3 Character-view "Do not scan" now honors the selection
+
+The user reported that in the Characters view the red "Do not scan selected"
+button worked on every selected group, but the right-click "Do not scan this
+group" item worked on one group only.
+
+The cause was in `show_tile_menu` in `src/ui/charactersview.rs`. The `skip`
+action captured only the single clicked tile's id.
+
+The fix:
+- The session factored the id-gather logic out of `skip_selected` into a new
+  method `skip_keys(&[TileKey])`. Both the button and the menu now use it.
+- The `skip` action now builds the key list from `self.selected`. If the clicked
+  tile is not in the selection, it falls back to just the clicked tile. This
+  matches the "name" action pattern.
+- The menu label changed from "Do not scan this group" to "Do not scan
+  selected", so the two places match.
+
+### 00000000000.4 Merge dialog pre-selects the last-merged character
+
+The user wanted the merge dropdown to remember the last character. After a merge
+of a group into CharA, the next merge dialog should pre-select CharA.
+
+The session added an in-memory field `last_merged_character:
+RefCell<Option<i64>>` to `AppState` in `src/ui/state.rs`. It is initialized to
+`None` in `src/ui/app.rs`. The merge dialog `name_style_clusters_dialog` in
+`src/ui/characters.rs` reads the field and calls `drop.set_selected` when the id
+still exists in the character list. A successful merge writes the chosen id back
+to the field. The field is in-memory only. It resets on restart.
+
+### 00000000000.5 Files changed this session
+
+- `src/db/faces.rs` — `remove_photo_from_person`, `remove_photo_from_cluster`.
+- `src/ui/grid.rs` — `current_person`, `current_cluster`.
+- `src/ui/vmenu.rs` — action-group scope fix, two remove actions, two menu items.
+- `src/ui/charactersview.rs` — `skip_keys`, selection-aware skip action, label.
+- `src/ui/state.rs` — `last_merged_character` field.
+- `src/ui/app.rs` — `last_merged_character` init.
+- `src/ui/characters.rs` — merge dropdown pre-select and write-back.
+
+### 00000000000.6 Verification
+
+`cargo build` is clean (pre-existing warnings only). `cargo test` passes 66
+tests plus 2 ignored tests. The disposable cache was deleted (RULE FOUR).
+
+### 00000000000.7 Open follow-ups (not built)
+
+- The face-group "Remove from…" items use a plain remove, not a ban. A removed
+  photo may re-group on a later cluster. If the user needs a durable ban for a
+  person or cluster (like the character "ban"), a future agent must add a
+  rejection path for the human face system in the grid menu.
+- The `last_merged_character` field is transient. If the user wants it to persist
+  across restarts, store it in the `settings` table instead (see
+  `Library::set_setting` and the keys in `src/ui/prefs.rs`).
+
+## 0000000000. Named-release workflow with GitHub mirror
 
 This section describes the last session. All work is complete. All work is on
 `main`. All work is pushed. The version was 0.0.96 at the start of the session.
