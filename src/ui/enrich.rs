@@ -7,10 +7,14 @@
 //! second read). The visible grid re-queries periodically so placeholders are
 //! replaced by real thumbnails as data lands.
 //!
-//! On-demand priority: opening a folder whose photos are not yet enriched moves
-//! those ids to the front of the worklist, and briefly pauses background
-//! enrichment entirely (`enrich_pause_until`) so on-demand UI work always wins
-//! the disk on a slow HDD/network mount.
+//! Enrichment never starts on its own. Two things drive it:
+//!
+//! * Browsing: when a cell scrolls into view, the grid asks to enrich that one
+//!   photo (`enqueue_visible`). Ids go to the front of the worklist, so what is
+//!   on screen fills in first.
+//! * Tools > Generate Thumbnails: an explicit, "nice" (throttled) pass over the
+//!   whole library (`generate_all`). It shares the same in-memory worklist and
+//!   is discarded when the app stops, so the user re-runs it to continue.
 
 use std::rc::Rc;
 use std::sync::atomic::Ordering;
@@ -33,9 +37,9 @@ const ENRICH_WORKERS: usize = 2;
 /// How often (in enriched photos) to refresh the visible grid/sidebar.
 const REFRESH_EVERY: usize = 12;
 
-/// How long to fully pause background enrichment when the user opens a folder,
-/// so on-demand UI work (cached-thumbnail loads, scrolling) gets the disk.
-const BROWSE_PAUSE_SECS: u64 = 3;
+/// Sleep after each photo while a "nice" bulk pass runs, so Tools > Generate
+/// Thumbnails does not choke the system or a running Phase 1 scan.
+const NICE_SLEEP_MS: u64 = 40;
 
 /// A status update posted from a worker coordinator to the UI thread.
 enum Msg {
@@ -48,57 +52,55 @@ enum Msg {
     Finished,
 }
 
-/// Report whether bulk Phase 2 enrichment is postponed. When postponed, a
-/// folder's photos are enriched only when the user opens that folder; the rest
-/// of the library stays structure-only until "Scan Thumbnails Now" is used.
-pub fn postponed(state: &Rc<AppState>) -> bool {
-    state
-        .lib
-        .get_setting(super::prefs::KEY_POSTPONE_THUMBS, "0")
-        .map(|v| v == "1")
-        .unwrap_or(false)
-}
-
-/// Ensure the background enrichment worker pool is running, seeding the
-/// worklist from every photo still needing enrichment. Idempotent: if a session
-/// is already active, new ids appended to the shared queue are picked up without
-/// starting a second pool. No-op when bulk enrichment is postponed.
-pub fn ensure_running(state: &Rc<AppState>) {
-    if postponed(state) {
-        return;
-    }
-    let ids = state
-        .lib
-        .photos_needing_enrichment(None)
-        .unwrap_or_default();
-    append_ids(state, ids);
-    start_if_idle(state);
-}
-
-/// Append ids (from a just-scanned root or a reconcile) to the back of the
-/// worklist and start the pool if it is idle. When bulk enrichment is
-/// postponed, the ids are not queued in bulk; if the user currently has a
-/// Library folder open, that folder is still prioritized so photos that
-/// appear while browsing get thumbnails.
-pub fn enqueue(state: &Rc<AppState>, ids: Vec<i64>) {
+/// Enrich the photos that just scrolled into view. Ids go to the FRONT of the
+/// worklist (skipping ids already queued) so what the user looks at fills in
+/// first, ahead of any running bulk pass. Starts the pool if it is idle. This
+/// is the only automatic enrichment path, and it covers only on-screen cells.
+pub fn enqueue_visible(state: &Rc<AppState>, ids: Vec<i64>) {
     if ids.is_empty() {
         return;
     }
-    if postponed(state) {
-        let current = *state.current_folder.borrow();
-        if current != 0 {
-            prioritize_folder(state, current);
+    {
+        let mut q = state.enrich_queue.lock().unwrap();
+        let present: std::collections::HashSet<i64> = q.iter().copied().collect();
+        // Push to the front, preserving order, skipping ids already queued.
+        for id in ids.into_iter().rev() {
+            if !present.contains(&id) {
+                q.push_front(id);
+            }
         }
-        return;
     }
+    start_if_idle(state);
+}
+
+/// Start a "nice" (throttled) enrichment pass over the whole library. Seeds the
+/// worklist from every photo still needing enrichment and starts the pool.
+/// Backs Tools > Generate Thumbnails. The pass lives only in memory: stopping
+/// the app discards it, and re-running resumes from the photos still needing
+/// enrichment.
+pub fn generate_all(state: &Rc<AppState>) {
+    state.enrich_nice.store(true, Ordering::Relaxed);
+    let ids = state.lib.photos_needing_enrichment(None).unwrap_or_default();
     append_ids(state, ids);
     start_if_idle(state);
 }
 
-/// Queue every photo still needing enrichment under one library root
-/// (regardless of the postpone setting) and start the pool if idle. Backs the
-/// "Scan Thumbnails Now" action, an explicit user request that bypasses the
-/// postpone gate.
+/// Stop the current enrichment pass. The worklist is cleared and the workers
+/// exit. Backs the Tools > Generate Thumbnails toggle when it is turned off.
+pub fn stop(state: &Rc<AppState>) {
+    state.enrich_job.stop();
+    state.enrich_queue.lock().unwrap().clear();
+    state.enrich_nice.store(false, Ordering::Relaxed);
+}
+
+/// Whether an enrichment pass is currently running.
+pub fn running(state: &Rc<AppState>) -> bool {
+    state.enrich_job.running()
+}
+
+/// Queue every photo still needing enrichment under one library root and start
+/// the pool if idle. Backs the Settings "Scan Thumbnails Now" per-root button,
+/// an explicit user request.
 pub fn enqueue_root(state: &Rc<AppState>, root_path: &str) {
     let ids = state
         .lib
@@ -111,9 +113,8 @@ pub fn enqueue_root(state: &Rc<AppState>, root_path: &str) {
     start_if_idle(state);
 }
 
-/// Queue every photo still needing enrichment in one folder (bypassing the
-/// postpone gate) and start the pool if idle. Backs the folder right-click
-/// "Scan all thumbnails (unfinished)" action.
+/// Queue every photo still needing enrichment in one folder and start the pool
+/// if idle. Backs the folder right-click "Scan all thumbnails (unfinished)".
 pub fn enqueue_folder(state: &Rc<AppState>, folder_id: i64) {
     let ids = state
         .lib
@@ -135,40 +136,6 @@ pub fn rescan_folder(state: &Rc<AppState>, folder_id: i64) {
         return;
     }
     append_ids(state, ids);
-    start_if_idle(state);
-}
-
-/// Move a folder's un-enriched photos to the FRONT of the worklist so the folder
-/// the user just opened is enriched first, then start the pool if idle.
-///
-/// Also briefly pauses background enrichment so the just-opened folder's cached
-/// thumbnails load from disk without competing with background hashing on a slow
-/// disk. Enrichment resumes after the pause, now front-loaded on this folder.
-pub fn prioritize_folder(state: &Rc<AppState>, folder_id: i64) {
-    // Yield the disk to the UI on a folder open, unless enrichment is
-    // postponed and nothing else is running: the pause would only delay the
-    // on-demand work the user just asked for, with no background job
-    // competing for the disk.
-    if !postponed(state) || state.scan.running() || state.enrich_job.running() {
-        state.pause_enrichment(BROWSE_PAUSE_SECS);
-    }
-    let ids = state
-        .lib
-        .photos_needing_enrichment(Some(folder_id))
-        .unwrap_or_default();
-    if ids.is_empty() {
-        return;
-    }
-    {
-        let mut q = state.enrich_queue.lock().unwrap();
-        // Remove any of these ids already queued, then push them to the front
-        // (preserving their order) so they run before everything else.
-        let front: std::collections::HashSet<i64> = ids.iter().copied().collect();
-        q.retain(|id| !front.contains(id));
-        for id in ids.into_iter().rev() {
-            q.push_front(id);
-        }
-    }
     start_if_idle(state);
 }
 
@@ -234,12 +201,15 @@ fn start_workers(state: &Rc<AppState>) {
                     // If new work arrived while finishing, restart.
                     if !state.enrich_queue.lock().unwrap().is_empty() {
                         start_workers(&state);
-                    } else if postponed(&state) {
-                        state
-                            .status()
-                            .set_message("Folder ready. Other folders are read when you open them.");
                     } else {
-                        state.status().set_message("Library up to date.");
+                        state.enrich_nice.store(false, Ordering::Relaxed);
+                        state.status().set_message("Thumbnails up to date.");
+                        // The bulk pass ended on its own: turn the Tools toggle
+                        // back off so it reflects reality.
+                        if let Some(act) = state.gen_thumbs_action.borrow().as_ref() {
+                            use gtk4::prelude::*;
+                            act.set_state(&false.to_variant());
+                        }
                     }
                 }
             }
@@ -251,6 +221,7 @@ fn start_workers(state: &Rc<AppState>) {
     let gen = state.gen.clone();
     let queue = state.enrich_queue.clone();
     let pause_until = state.enrich_pause_until.clone();
+    let nice = state.enrich_nice.clone();
 
     std::thread::spawn(move || {
         let done = Arc::new(Mutex::new(0usize));
@@ -269,6 +240,7 @@ fn start_workers(state: &Rc<AppState>) {
             let done = done.clone();
             let folder_seen = folder_seen.clone();
             let pause_until = pause_until.clone();
+            let nice = nice.clone();
             let builder = std::thread::Builder::new().name(format!("enrich{w}"));
             if let Ok(h) = builder.spawn(move || loop {
                 if cancel.load(Ordering::Relaxed) {
@@ -297,6 +269,13 @@ fn start_workers(state: &Rc<AppState>) {
                 let Some(id) = id else { return };
 
                 let folder_id = enrich_one(&lib, &gen, id);
+
+                // Be "nice" during a bulk pass: a short sleep between photos so
+                // Tools > Generate Thumbnails does not choke the system or a
+                // running Phase 1 scan. Viewport enrichment leaves this off.
+                if nice.load(Ordering::Relaxed) {
+                    std::thread::sleep(std::time::Duration::from_millis(NICE_SLEEP_MS));
+                }
 
                 let d = {
                     let mut g = done.lock().unwrap();

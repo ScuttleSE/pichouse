@@ -147,9 +147,9 @@ fn start_scan_worker(state: &Rc<AppState>) {
                     super::app::reload_folders_force(&state);
                     state.grid().reload_from_source();
                     log::debug!("ReloadAndEnrich: refresh took {:.2?}", t.elapsed());
-                    // Bulk Phase 2 enrichment starts only after the whole scan
-                    // has finished, so the file tree is fully in Library first.
-                    super::enrich::ensure_running(&state);
+                    // Enrichment (thumbnails, EXIF, hash) never starts on its
+                    // own. The user runs Tools > Generate Thumbnails for a full
+                    // pass, and browsing enriches what is on screen.
                 }
                 Msg::Error(e) => show_error(&state, &e),
                 Msg::Finished => state.scan.finish(),

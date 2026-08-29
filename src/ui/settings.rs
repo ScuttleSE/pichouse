@@ -270,41 +270,10 @@ fn folder_pane(state: &Rc<AppState>, parent: &Window) -> GtkBox {
         });
     }
 
-    let postpone = CheckButton::with_label("Postpone thumbnail scan until a folder is opened");
-    postpone.set_active(
-        state
-            .lib
-            .get_setting(prefs::KEY_POSTPONE_THUMBS, "0")
-            .map(|v| v == "1")
-            .unwrap_or(false),
-    );
-    {
-        let state = state.clone();
-        let update_pending = update_pending.clone();
-        postpone.connect_toggled(move |b| {
-            let _ = state.lib.set_setting(
-                prefs::KEY_POSTPONE_THUMBS,
-                prefs::bool_to_str(b.is_active()),
-            );
-            if !b.is_active() {
-                // Resume background enrichment for anything left pending.
-                super::enrich::ensure_running(&state);
-            }
-            update_pending();
-        });
-    }
-    let postpone_help = Label::new(Some(
-        "When on, a new folder is scanned into the folder tree only. Photo details and thumbnails are read the first time you open that folder.",
-    ));
-    postpone_help.set_xalign(0.0);
-    postpone_help.set_wrap(true);
-
     let root = pane_box();
     root.append(&help);
     root.append(&buttons);
     root.append(&autoscan);
-    root.append(&postpone);
-    root.append(&postpone_help);
     root.append(&scroll);
     root.append(&scan_now_row);
     root

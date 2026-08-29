@@ -108,6 +108,15 @@ pub struct Grid {
     on_activate: RefCell<Option<Box<dyn Fn(Vec<Photo>, usize)>>>,
     /// Called with a photo when the selection changes (single click).
     on_select: RefCell<Option<Box<dyn Fn(Photo)>>>,
+    /// Called with the ids of photos that scrolled into view and still lack a
+    /// hash (not yet enriched), so the app can enrich just the visible cells.
+    /// Ids accumulate in `enrich_buffer` and flush on an idle tick.
+    on_enrich_request: RefCell<Option<Box<dyn Fn(Vec<i64>)>>>,
+    /// Photo ids collected from `bind` that still need enrichment, pending a
+    /// debounced flush. The `bool` guards against scheduling more than one
+    /// flush at a time.
+    enrich_buffer: RefCell<Vec<i64>>,
+    enrich_flush_scheduled: std::cell::Cell<bool>,
     /// Called with (x, y) in grid coordinates on a right-click, so the app can
     /// show a context menu over the current selection.
     on_context_menu: RefCell<Option<Box<dyn Fn(f64, f64)>>>,
@@ -511,6 +520,9 @@ impl Grid {
             sort_dropdown,
             on_activate: RefCell::new(None),
             on_select: RefCell::new(None),
+            on_enrich_request: RefCell::new(None),
+            enrich_buffer: RefCell::new(Vec::new()),
+            enrich_flush_scheduled: std::cell::Cell::new(false),
             on_context_menu: RefCell::new(None),
             dup_mode: std::cell::Cell::new(false),
             dup_bar,
@@ -648,6 +660,50 @@ impl Grid {
     /// Register the selection callback (updates properties).
     pub fn set_on_select<F: Fn(Photo) + 'static>(&self, f: F) {
         *self.on_select.borrow_mut() = Some(Box::new(f));
+    }
+
+    /// Register the viewport-enrichment callback. Called with the ids of photos
+    /// that scrolled into view and still lack a hash.
+    pub fn set_on_enrich_request<F: Fn(Vec<i64>) + 'static>(&self, f: F) {
+        *self.on_enrich_request.borrow_mut() = Some(Box::new(f));
+    }
+
+    /// Record that a bound cell's photo needs enrichment, and schedule one
+    /// debounced flush. Batching turns the burst of `bind` calls on a folder
+    /// open into a single small enrich request for just the realized cells.
+    fn request_enrich(self: &Rc<Self>, id: i64) {
+        if id == 0 {
+            return;
+        }
+        {
+            let mut buf = self.enrich_buffer.borrow_mut();
+            if buf.contains(&id) {
+                return;
+            }
+            buf.push(id);
+        }
+        if self.enrich_flush_scheduled.replace(true) {
+            return; // a flush is already pending
+        }
+        let this = self.clone();
+        // ~180 ms after the last realize burst, hand the collected ids to the
+        // app for enrichment. New binds inside the window join the same batch.
+        glib::timeout_add_local_once(std::time::Duration::from_millis(180), move || {
+            this.enrich_flush_scheduled.set(false);
+            let ids: Vec<i64> = this.enrich_buffer.borrow_mut().drain(..).collect();
+            if ids.is_empty() {
+                return;
+            }
+            if let Some(cb) = this.on_enrich_request.borrow().as_ref() {
+                cb(ids);
+            }
+        });
+    }
+
+    /// Drop a photo id from the pending enrich batch when its cell scrolled out
+    /// of view before the batch flushed.
+    fn drop_enrich_request(&self, id: i64) {
+        self.enrich_buffer.borrow_mut().retain(|&x| x != id);
     }
 
     /// Register the right-click context-menu callback.
@@ -1625,6 +1681,12 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
         // away, unbind marks the job stale so the worker pool drops it.
         if let Some(grid) = grid.upgrade() {
             grid.ensure_thumb_for(&photo);
+            // Viewport enrichment: an on-screen photo with no hash is not yet
+            // enriched, so request enrichment for just this cell. Enrichment
+            // never runs library-wide on its own; it follows what is viewed.
+            if photo.hash().is_empty() && !photo.path().is_empty() {
+                grid.request_enrich(photo.id());
+            }
         }
 
         // Observe future texture changes for this bound object.
@@ -1652,6 +1714,8 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
                 if photo.texture().is_none() {
                     grid.drop_pending_for(&photo);
                 }
+                // Also drop a not-yet-flushed enrich request for this cell.
+                grid.drop_enrich_request(photo.id());
             }
             unsafe {
                 if let Some(handler) = item.steal_data::<glib::SignalHandlerId>("texture-handler") {

@@ -27,6 +27,7 @@ pub fn build_toolbar(state: &Rc<AppState>) -> GtkBox {
     let library_section = gio::Menu::new();
     library_section.append(Some("Rescan All Folders"), Some("tools.rescan"));
     library_section.append(Some("Refresh Library"), Some("tools.refresh"));
+    library_section.append(Some("Generate Thumbnails"), Some("tools.gen_thumbs"));
     tools_menu.append_section(None, &library_section);
 
     let view_section = gio::Menu::new();
@@ -141,6 +142,32 @@ pub fn build_toolbar(state: &Rc<AppState>) -> GtkBox {
         });
         tools_group.add_action(&act);
     }
+    // Stateful "Generate Thumbnails" toggle. Off starts a nice (throttled) full
+    // enrichment pass; on stops it. The pass is in-memory only: stopping the app
+    // discards it, and the user re-runs this to continue. The state mirrors
+    // whether an enrichment pass is currently running.
+    {
+        let running_now = super::enrich::running(state);
+        let act = gio::SimpleAction::new_stateful(
+            "gen_thumbs",
+            None,
+            &running_now.to_variant(),
+        );
+        let state2 = state.clone();
+        act.connect_activate(move |act, _| {
+            let on = act.state().and_then(|s| s.get::<bool>()).unwrap_or(false);
+            if on {
+                super::enrich::stop(&state2);
+                act.set_state(&false.to_variant());
+            } else {
+                super::enrich::generate_all(&state2);
+                act.set_state(&true.to_variant());
+            }
+        });
+        tools_group.add_action(&act);
+        *state.gen_thumbs_action.borrow_mut() = Some(act);
+    }
+
     tools_btn.insert_action_group("tools", Some(&tools_group));
 
     let search = SearchEntry::new();

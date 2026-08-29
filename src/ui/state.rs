@@ -74,6 +74,11 @@ pub struct AppState {
     /// hashing/thumbnailing never competes with on-demand UI work on a slow
     /// disk. Enrichment workers sleep while `now < enrich_pause_until`.
     pub enrich_pause_until: Arc<std::sync::atomic::AtomicU64>,
+    /// True while a "nice" bulk enrichment pass (Tools > Generate Thumbnails) is
+    /// active. The enrichment worker sleeps a short slice between photos when
+    /// this is set, so the full pass does not choke the system. Viewport
+    /// enrichment leaves it false for prompt on-screen results.
+    pub enrich_nice: Arc<std::sync::atomic::AtomicBool>,
 
     pub status: RefCell<Option<Rc<StatusBar>>>,
     pub grid: RefCell<Option<Rc<Grid>>>,
@@ -85,6 +90,9 @@ pub struct AppState {
     pub sidebar: RefCell<Option<Rc<super::sidebar::Sidebar>>>,
     pub folder_tree: RefCell<Option<Rc<super::foldertree::FolderTree>>>,
     pub center_stack: RefCell<Option<Stack>>,
+    /// The Tools > Generate Thumbnails toggle action, so the enrichment worker
+    /// can turn it off when the pass finishes on its own.
+    pub gen_thumbs_action: RefCell<Option<gtk4::gio::SimpleAction>>,
     /// The id of the folder currently shown in the grid (0 = none / raw view).
     pub current_folder: RefCell<i64>,
     /// Cached Immich albums per server id, filled by a background refresh. The
@@ -234,6 +242,7 @@ impl AppState {
     /// UI (folder open, scrolling, thumbnail fetches) gets the disk to itself.
     /// Called on grid interaction. Extending an existing pause simply pushes the
     /// resume time further out.
+    #[allow(dead_code)] // Kept for callers that pause enrichment explicitly.
     pub fn pause_enrichment(&self, secs: u64) {
         use std::sync::atomic::Ordering;
         let until = now_millis().saturating_add(secs.saturating_mul(1000));

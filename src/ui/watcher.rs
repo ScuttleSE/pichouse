@@ -70,7 +70,8 @@ pub fn start(state: &Rc<AppState>) {
                 state.grid().reload_from_source();
                 state.refresh_new_files_if_active();
                 if !added.is_empty() {
-                    super::enrich::enqueue(&state, added.clone());
+                    // Enrichment never starts on its own; browsing or Tools >
+                    // Generate Thumbnails produces thumbnails for added files.
                     super::immich::autoupload_added(&state, &added);
                 }
             }

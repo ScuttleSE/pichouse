@@ -23,9 +23,10 @@ pub const KEY_LAST_LIB_DIR: &str = "ui.last_lib_dir";
 /// When "1", scan a folder into the library right after it is added. When "0",
 /// add the folder to the DB only. Default "1".
 pub const KEY_AUTOSCAN_ON_ADD: &str = "ui.autoscan_on_add";
-/// When "1", stop after the structure scan that fills the Library tree. Photo
-/// data and thumbnails are read only when the user opens a folder. When "0",
-/// the full scan runs in the background. Default "0".
+/// Deprecated. Enrichment no longer runs automatically, so this setting has no
+/// effect. Kept only so an old stored value does not error. Enrichment now
+/// follows the viewport, or the user runs Tools > Generate Thumbnails.
+#[allow(dead_code)]
 pub const KEY_POSTPONE_THUMBS: &str = "ui.postpone_thumbs";
 /// The grid sort order. Value "date" sorts by capture time then filename.
 /// Value "filename" sorts by filename only. Default "date".

@@ -85,6 +85,7 @@ fn build_ui(app: &Application) {
         scan_queue: std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new())),
         enrich_queue: std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new())),
         enrich_pause_until: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        enrich_nice: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         status: RefCell::new(None),
         grid: RefCell::new(None),
         new_files: RefCell::new(None),
@@ -95,6 +96,7 @@ fn build_ui(app: &Application) {
         sidebar: RefCell::new(None),
         folder_tree: RefCell::new(None),
         center_stack: RefCell::new(None),
+        gen_thumbs_action: RefCell::new(None),
         current_folder: RefCell::new(0),
         immich_albums: RefCell::new(std::collections::HashMap::new()),
         last_merged_character: RefCell::new(None),
@@ -147,6 +149,14 @@ fn build_ui(app: &Application) {
         let state = state.clone();
         new_files.set_on_activate(move |photos, index| {
             state.open_viewer(photos, index);
+        });
+    }
+    // Viewport enrichment: the grid asks to enrich the photos that scrolled into
+    // view and still lack a hash. Enrichment never runs library-wide on its own.
+    {
+        let state = state.clone();
+        grid.set_on_enrich_request(move |ids| {
+            super::enrich::enqueue_visible(&state, ids);
         });
     }
 
@@ -358,9 +368,6 @@ fn populate_deferred(state: &Rc<AppState>) {
                 load_folder_into_grid(state, &folder);
             }
         }
-        // Resume Phase 2 enrichment for any photos left structure-only by an
-        // interrupted import in a previous session.
-        super::enrich::ensure_running(state);
     }
     // Offer to resume any root whose initial scan was interrupted. The scanner
     // resume cursor continues from where it stopped; the "New Files" boundary
@@ -410,9 +417,6 @@ pub fn load_folder_into_grid(state: &Rc<AppState>, folder: &crate::model::Folder
     state
         .status()
         .set_message(&format!("{} — {} photos", folder.path, count));
-    // On-demand priority: if this folder has un-enriched photos, move them to
-    // the front of the Phase 2 worklist so what the user opened fills in first.
-    super::enrich::prioritize_folder(state, folder.id);
 }
 
 /// Load a raw filesystem directory's images into the grid (Folders tab). Reuses
