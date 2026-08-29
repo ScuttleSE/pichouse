@@ -9,6 +9,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{
     Align, Box as GtkBox, Button, FlowBox, GestureClick, Image, Label, Orientation, PolicyType,
@@ -70,16 +71,13 @@ impl CharactersView {
         title.set_hexpand(true);
         title.add_css_class("title-4");
         bar.append(&title);
-        root.append(&bar);
 
-        // The selection action bar. Hidden until the user selects a group.
+        // The selection controls live in the title row, so showing them does
+        // not add a new row and does not move the grid. The container is hidden
+        // until the user selects a group.
         let sel_bar = GtkBox::new(Orientation::Horizontal, 6);
-        sel_bar.set_margin_bottom(4);
-        sel_bar.set_margin_start(8);
-        sel_bar.set_margin_end(8);
         let sel_label = Label::new(None);
-        sel_label.set_xalign(0.0);
-        sel_label.set_hexpand(true);
+        sel_label.set_xalign(1.0);
         sel_bar.append(&sel_label);
         let skip_btn = Button::with_label("Do not scan selected");
         skip_btn.add_css_class("destructive-action");
@@ -87,7 +85,8 @@ impl CharactersView {
         let clear_btn = Button::with_label("Clear selection");
         sel_bar.append(&clear_btn);
         sel_bar.set_visible(false);
-        root.append(&sel_bar);
+        bar.append(&sel_bar);
+        root.append(&bar);
 
         let flow = FlowBox::new();
         flow.set_selection_mode(SelectionMode::None);
@@ -344,36 +343,52 @@ impl CharactersView {
         }
 
         // Primary-button clicks. One click toggles the group selection. Two
-        // clicks open the group. We act on release with the final press count,
-        // so a double-click is not consumed by the first press.
+        // clicks open the group. A single click runs after a short delay. A
+        // second click inside the delay cancels the single-click and opens the
+        // group. We do not claim the sequence, so GTK still reports the double.
         let primary = GestureClick::new();
         primary.set_button(gtk4::gdk::BUTTON_PRIMARY);
+        // A generation counter. Each press bumps it. A pending single-click runs
+        // only if its generation still matches, so a double-click cancels it.
+        let click_gen: Rc<std::cell::Cell<u64>> = Rc::new(std::cell::Cell::new(0));
         {
             let this = self.clone();
             let state = state.clone();
             let name = name.to_string();
-            primary.connect_released(move |g, n_press, _, _| {
-                g.set_state(gtk4::EventSequenceState::Claimed);
+            let click_gen = click_gen.clone();
+            primary.connect_pressed(move |g, n_press, _, _| {
+                let gen = click_gen.get().wrapping_add(1);
+                click_gen.set(gen);
                 if n_press >= 2 {
-                    // Open the group. A double-click clears the selection first,
-                    // so the open is not mistaken for a selection. Undo the
-                    // single-click toggle that the first click applied.
+                    // A double-click: open the group. Undo the stray toggle the
+                    // first click applied.
                     this.clear_selection();
                     if named {
                         state.show_character(character_id, &name);
                     } else {
                         state.show_style_cluster(cluster_id, "Unnamed character");
                     }
-                } else {
-                    let shift = g
-                        .current_event_state()
-                        .contains(gtk4::gdk::ModifierType::SHIFT_MASK);
-                    if shift {
-                        this.select_range_to(key);
-                    } else {
-                        this.toggle_selection(key);
-                    }
+                    return;
                 }
+                let shift = g
+                    .current_event_state()
+                    .contains(gtk4::gdk::ModifierType::SHIFT_MASK);
+                if shift {
+                    this.select_range_to(key);
+                    return;
+                }
+                // A single click. Defer the toggle so a second click can cancel
+                // it and open the group instead.
+                let this2 = this.clone();
+                let click_gen2 = click_gen.clone();
+                glib::timeout_add_local_once(
+                    std::time::Duration::from_millis(250),
+                    move || {
+                        if click_gen2.get() == gen {
+                            this2.toggle_selection(key);
+                        }
+                    },
+                );
             });
         }
         tile.add_controller(primary);
