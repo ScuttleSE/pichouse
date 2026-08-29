@@ -225,6 +225,23 @@ impl Library {
         Ok(v)
     }
 
+    /// The representative face id for an unnamed cluster: the highest-scoring
+    /// unassigned face, or 0 when the cluster has none. This is a cheap query.
+    /// It reads no embedding blob, unlike `unassigned_style_faces_in_cluster`.
+    pub fn cluster_representative_face(&self, cluster_id: i64) -> Result<i64> {
+        let conn = self.lock();
+        let fid: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM style_faces \
+                 WHERE cluster_id = ?1 AND character_id IS NULL \
+                 ORDER BY det_score DESC LIMIT 1",
+                params![cluster_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(fid.unwrap_or(0))
+    }
+
     /// The unnamed style clusters with their face counts. The order is stable:
     /// by cluster id, with the noise cluster (-1) last. A stable order stops the
     /// Characters grid from re-ordering while a scan adds faces.

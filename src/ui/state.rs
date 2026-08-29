@@ -204,6 +204,28 @@ impl AppState {
         Some(jpeg)
     }
 
+    /// Return a cached stylised-face crop only. Does not render a missing crop.
+    /// This is cheap and safe to call for many tiles on the main thread.
+    pub fn style_face_crop_cached(&self, face_id: i64) -> Option<Vec<u8>> {
+        let ft = self.style_face_thumbs()?;
+        ft.get(face_id).ok().flatten()
+    }
+
+    /// The inputs needed to render a stylised-face crop off the main thread:
+    /// the source path, the orientation, and the bounding box. Cheap DB reads.
+    pub fn style_face_crop_inputs(
+        &self,
+        face_id: i64,
+    ) -> Option<(std::path::PathBuf, i32, (i32, i32, i32, i32))> {
+        let face = self.lib.style_face_by_id(face_id).ok().flatten()?;
+        let photo = self.lib.photo_by_id(face.photo_id).ok().flatten()?;
+        Some((
+            std::path::PathBuf::from(photo.path),
+            photo.orientation,
+            (face.bbox_x, face.bbox_y, face.bbox_w, face.bbox_h),
+        ))
+    }
+
     /// Pause background Phase 2 enrichment for `secs` seconds from now, so the
     /// UI (folder open, scrolling, thumbnail fetches) gets the disk to itself.
     /// Called on grid interaction. Extending an existing pause simply pushes the
