@@ -92,24 +92,30 @@ impl<'a> Scanner<'a> {
     /// album tree immediately, so it never lingers under "New folders". When
     /// `cancel` becomes true the walk stops promptly. Returns the number of
     /// photos recorded.
-    pub fn scan_folder<F, G>(
+    pub fn scan_folder<F, G, H>(
         &self,
         root: &Path,
         cancel: &Arc<AtomicBool>,
         pause_until: &Arc<std::sync::atomic::AtomicU64>,
         mut progress: F,
         mut on_folder: G,
+        mut on_discover: H,
     ) -> Result<usize, ScanError>
     where
         F: FnMut(Progress),
         G: FnMut(i64, &Path),
+        H: FnMut(&Path, usize),
     {
-        // First pass: collect image files grouped by directory.
+        // First pass: collect image files grouped by directory. Reports each
+        // directory as it is entered via `on_discover`, so the caller can keep
+        // the status bar live during this walk — on a slow or large tree this
+        // pass alone can take a long time, and it otherwise reports nothing
+        // until it returns.
         let mut by_dir: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
         let mut total = 0usize;
         log::info!("collect_images: walking {} …", root.display());
         let t_collect = std::time::Instant::now();
-        collect_images(root, cancel, &mut by_dir, &mut total)?;
+        collect_images(root, cancel, &mut by_dir, &mut total, &mut on_discover)?;
         log::info!(
             "collect_images {}: {} images in {} dirs, took {:.2?}",
             root.display(),
@@ -329,15 +335,20 @@ pub fn enrich_file_with_image(path: &Path) -> Option<(Enrichment, Option<image::
 
 
 /// Recursively collect image files under `root`, grouped by parent directory.
+/// `on_dir` is called as each directory is entered, with the running count of
+/// images found so far, so a caller can show live progress during a walk that
+/// may otherwise run for a long time with no other feedback.
 fn collect_images(
     dir: &Path,
     cancel: &Arc<AtomicBool>,
     by_dir: &mut HashMap<PathBuf, Vec<PathBuf>>,
     total: &mut usize,
+    on_dir: &mut dyn FnMut(&Path, usize),
 ) -> Result<(), ScanError> {
     if cancel.load(Ordering::Relaxed) {
         return Err(ScanError::Cancelled(0));
     }
+    on_dir(dir, *total);
     log::trace!("read_dir {}", dir.display());
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
@@ -356,7 +367,7 @@ fn collect_images(
             Err(_) => continue,
         };
         if file_type.is_dir() {
-            collect_images(&path, cancel, by_dir, total)?;
+            collect_images(&path, cancel, by_dir, total, on_dir)?;
         } else if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
             if is_image(name) {
                 let parent = path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
@@ -568,7 +579,7 @@ mod tests {
         let pause = Arc::new(std::sync::atomic::AtomicU64::new(0));
         let mut seen = 0;
         let n = scanner
-            .scan_folder(&dir, &cancel, &pause, |_p| seen += 1, |_fid, _dir| {})
+            .scan_folder(&dir, &cancel, &pause, |_p| seen += 1, |_fid, _dir| {}, |_dir, _n| {})
             .unwrap();
         assert_eq!(n, 1);
         assert_eq!(seen, 1);

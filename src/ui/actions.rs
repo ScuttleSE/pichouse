@@ -149,6 +149,7 @@ fn start_scan_worker(state: &Rc<AppState>) {
             let _ = tx.send(Msg::Message(format!("Scanning {path}")));
             let tx_progress = tx.clone();
             let tx_folder = tx.clone();
+            let tx_discover = tx.clone();
             let lib_folder = lib.clone();
             let root_folder = path.clone();
             // Per-folder running counts, read back after the folder completes.
@@ -203,6 +204,15 @@ fn start_scan_worker(state: &Rc<AppState>) {
                         dirs_since_reload = 0;
                         let _ = tx_folder.send(Msg::ReloadOnly);
                     }
+                },
+                move |dir, found_so_far| {
+                    // File discovery has no total yet, so this is the only
+                    // feedback available while it runs; on a large or slow
+                    // tree it can otherwise look frozen for a long time.
+                    let _ = tx_discover.send(Msg::Message(format!(
+                        "Finding photos… {} ({found_so_far} found)",
+                        dir.display()
+                    )));
                 },
             );
             // Fold this folder's counts into the cumulative totals.
