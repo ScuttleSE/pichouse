@@ -273,7 +273,14 @@ impl Library {
     /// fine.
     pub fn checkpoint(&self) {
         let conn = self.lock();
-        let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+        // Log the WAL size before/after so a growing WAL is visible in the log.
+        let before: i64 = conn
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| {
+                // Columns: busy, log (pages in WAL), checkpointed.
+                r.get::<_, i64>(1)
+            })
+            .unwrap_or(-1);
+        log::debug!("wal checkpoint(TRUNCATE): wal was {before} pages");
     }
 
     /// Record a user-added root folder. Idempotent.

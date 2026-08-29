@@ -63,6 +63,76 @@ pub struct Scanner<'a> {
     lib: &'a Library,
 }
 
+/// Rolling diagnostic counters for the Phase 1 walk. The walk is metadata-bound
+/// on a network mount, so this measures where the per-directory time goes
+/// (`read_dir`, the entry `file_type` loop, the directory stat, the per-file
+/// stat, the resume cursor read, and the DB batch) and emits a rate summary
+/// every `SUMMARY_EVERY` directories so a slowdown across a huge tree is
+/// visible and attributable in the log.
+#[derive(Default)]
+struct ScanMetrics {
+    dirs: u64,
+    files: u64,
+    skipped_dirs: u64,
+    // Cumulative time per phase, in nanoseconds, over the current interval.
+    read_dir_ns: u128,
+    filetype_ns: u128,
+    dir_stat_ns: u128,
+    file_stat_ns: u128,
+    cursor_ns: u128,
+    db_ns: u128,
+    // Interval bookkeeping.
+    interval_dirs: u64,
+    interval_files: u64,
+    interval_start: Option<std::time::Instant>,
+    last_summary: Option<std::time::Instant>,
+}
+
+/// Emit a rolling summary after this many directories (or after
+/// `SUMMARY_INTERVAL`, whichever comes first).
+const SUMMARY_EVERY: u64 = 200;
+const SUMMARY_INTERVAL: std::time::Duration = std::time::Duration::from_secs(15);
+
+impl ScanMetrics {
+    fn maybe_summary(&mut self) {
+        let now = std::time::Instant::now();
+        let start = *self.interval_start.get_or_insert(now);
+        let last = *self.last_summary.get_or_insert(now);
+        if self.interval_dirs < SUMMARY_EVERY && now.duration_since(last) < SUMMARY_INTERVAL {
+            return;
+        }
+        let elapsed = now.duration_since(start).as_secs_f64().max(1e-9);
+        let dps = self.interval_dirs as f64 / elapsed;
+        let fps = self.interval_files as f64 / elapsed;
+        // Average per-directory phase times over the interval, in milliseconds.
+        let n = self.interval_dirs.max(1) as f64;
+        let avg_ms = |ns: u128| (ns as f64 / 1e6) / n;
+        log::info!(
+            "scan rate: {dps:.0} dirs/s, {fps:.0} files/s | avg/dir ms: read_dir {:.2}, filetype {:.2}, dir_stat {:.2}, file_stat {:.2}, cursor {:.2}, db {:.2} | totals: dirs {}, files {}, skipped {}",
+            avg_ms(self.read_dir_ns),
+            avg_ms(self.filetype_ns),
+            avg_ms(self.dir_stat_ns),
+            avg_ms(self.file_stat_ns),
+            avg_ms(self.cursor_ns),
+            avg_ms(self.db_ns),
+            self.dirs,
+            self.files,
+            self.skipped_dirs,
+        );
+        // Reset the interval accumulators (keep cumulative dirs/files/skipped).
+        self.read_dir_ns = 0;
+        self.filetype_ns = 0;
+        self.dir_stat_ns = 0;
+        self.file_stat_ns = 0;
+        self.cursor_ns = 0;
+        self.db_ns = 0;
+        self.interval_dirs = 0;
+        self.interval_files = 0;
+        self.interval_start = Some(now);
+        self.last_summary = Some(now);
+    }
+}
+
 impl<'a> Scanner<'a> {
     /// Create a scanner backed by the given library.
     pub fn new(lib: &'a Library) -> Scanner<'a> {
@@ -104,12 +174,23 @@ impl<'a> Scanner<'a> {
     {
         let mut done = 0usize;
         let t_scan = std::time::Instant::now();
-        self.scan_dir(root, cancel, pause_until, &mut done, &mut on_dir, &mut on_folder)?;
+        let mut metrics = ScanMetrics::default();
+        self.scan_dir(
+            root,
+            cancel,
+            pause_until,
+            &mut done,
+            &mut metrics,
+            &mut on_dir,
+            &mut on_folder,
+        )?;
         log::info!(
-            "scan {}: recorded {} photos in {:.2?}",
+            "scan {}: recorded {} photos in {:.2?} ({} dirs, {} skipped)",
             root.display(),
             done,
-            t_scan.elapsed()
+            t_scan.elapsed(),
+            metrics.dirs,
+            metrics.skipped_dirs,
         );
         Ok(done)
     }
@@ -123,6 +204,7 @@ impl<'a> Scanner<'a> {
         cancel: &Arc<AtomicBool>,
         pause_until: &Arc<std::sync::atomic::AtomicU64>,
         done: &mut usize,
+        metrics: &mut ScanMetrics,
         on_dir: &mut dyn FnMut(&Path, usize),
         on_folder: &mut dyn FnMut(i64, &Path),
     ) -> Result<(), ScanError> {
@@ -138,7 +220,11 @@ impl<'a> Scanner<'a> {
         }
         on_dir(dir, *done);
 
+        metrics.dirs += 1;
+        metrics.interval_dirs += 1;
+
         log::trace!("read_dir {}", dir.display());
+        let t_read = std::time::Instant::now();
         let entries = match std::fs::read_dir(dir) {
             Ok(e) => e,
             Err(e) => {
@@ -148,10 +234,14 @@ impl<'a> Scanner<'a> {
         };
         let mut files = Vec::new();
         let mut subdirs = Vec::new();
+        // Time the entry iteration and the per-entry file_type() together, since
+        // on a network mount file_type() may cost a round-trip per entry.
+        let mut entry_count = 0u64;
         for entry in entries.flatten() {
             if cancel.load(Ordering::Relaxed) {
                 return Err(ScanError::Cancelled(*done));
             }
+            entry_count += 1;
             let path = entry.path();
             let Ok(file_type) = entry.file_type() else {
                 continue;
@@ -162,8 +252,22 @@ impl<'a> Scanner<'a> {
                 files.push(path);
             }
         }
+        // read_dir + the file_type loop are one fused network cost; record the
+        // whole span under read_dir and note the entry count for per-entry cost.
+        let read_span = t_read.elapsed();
+        metrics.read_dir_ns += read_span.as_nanos();
+        if read_span.as_millis() >= 250 {
+            log::debug!(
+                "slow read_dir {}: {:.2?} for {} entries",
+                dir.display(),
+                read_span,
+                entry_count
+            );
+        }
 
         if !files.is_empty() {
+            metrics.files += files.len() as u64;
+            metrics.interval_files += files.len() as u64;
             // Resume cursor: if this directory was already fully recorded in a
             // previous (possibly interrupted) scan and its mtime is unchanged,
             // skip the folder upsert and the batch insert. This turns a re-run
@@ -171,12 +275,22 @@ impl<'a> Scanner<'a> {
             // already wrote, instead of re-inserting every photo. New or changed
             // directories (different mtime, or never scanned) still record.
             let dir_path = dir.to_string_lossy();
+            // Directory stat for the resume mtime check (one network round-trip
+            // per directory, even on the skip path).
+            let t_stat = std::time::Instant::now();
             let cur_mtime = std::fs::metadata(dir).map(|m| mtime_secs(&m)).unwrap_or(0);
-            let already_done = matches!(
-                self.lib.folder_scan_cursor(&dir_path).ok().flatten(),
-                Some((stored_mtime, true)) if stored_mtime == cur_mtime
-            );
+            metrics.dir_stat_ns += t_stat.elapsed().as_nanos();
+            // Resume cursor DB read.
+            let t_cursor = std::time::Instant::now();
+            let cursor = self.lib.folder_scan_cursor(&dir_path).ok().flatten();
+            let cursor_span = t_cursor.elapsed();
+            metrics.cursor_ns += cursor_span.as_nanos();
+            if cursor_span.as_millis() >= 50 {
+                log::debug!("slow folder_scan_cursor {}: {:.2?}", dir.display(), cursor_span);
+            }
+            let already_done = matches!(cursor, Some((stored_mtime, true)) if stored_mtime == cur_mtime);
             if already_done {
+                metrics.skipped_dirs += 1;
                 log::trace!("scan dir {}: skip (already done, mtime match)", dir.display());
             } else {
                 let t_dir = std::time::Instant::now();
@@ -188,11 +302,16 @@ impl<'a> Scanner<'a> {
                 // photo, keeping the scan fast and leaving the lock free between
                 // directories so the Phase 2 enrichment/thumbnail workers and
                 // the UI are not starved.
+                let t_filestat = std::time::Instant::now();
                 let batch: Vec<Photo> = files
                     .iter()
                     .filter_map(|path| structure_photo(fid, path))
                     .collect();
+                metrics.file_stat_ns += t_filestat.elapsed().as_nanos();
+
+                let t_db = std::time::Instant::now();
                 self.lib.insert_structure_batch(&batch)?;
+                metrics.db_ns += t_db.elapsed().as_nanos();
                 *done += batch.len();
 
                 // File this folder into the Library album tree right away.
@@ -211,8 +330,10 @@ impl<'a> Scanner<'a> {
             }
         }
 
+        metrics.maybe_summary();
+
         for sub in subdirs {
-            self.scan_dir(&sub, cancel, pause_until, done, on_dir, on_folder)?;
+            self.scan_dir(&sub, cancel, pause_until, done, metrics, on_dir, on_folder)?;
         }
         Ok(())
     }
