@@ -231,6 +231,31 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
         group.add_action(&act);
     }
 
+    // Show the folder that a photo comes from. Loads that folder into the grid.
+    {
+        let act = gio::SimpleAction::new("show-source-folder", None);
+        let state = state.clone();
+        let grid = grid.clone();
+        let pop = pop.clone();
+        act.connect_activate(move |_, _| {
+            dismiss(&pop);
+            let photos = grid.selected_photos();
+            let Some(first) = photos.into_iter().find(|p| p.id != 0) else {
+                return;
+            };
+            let folder = match state.lib.folder_by_id(first.folder_id) {
+                Ok(Some(f)) => f,
+                Ok(None) => return,
+                Err(e) => {
+                    show_error(&state, &e.to_string());
+                    return;
+                }
+            };
+            super::app::load_folder_into_grid(&state, &folder);
+        });
+        group.add_action(&act);
+    }
+
     // Export baked copies of the selected photos.
     {
         let act = gio::SimpleAction::new("export", None);
@@ -334,6 +359,7 @@ fn build_menu(state: &Rc<AppState>, grid: &Rc<Grid>) -> gio::Menu {
     }
     if selected_local == 1 {
         tools.append(Some("Edit…"), Some("grid.edit"));
+        tools.append(Some("Show source folder"), Some("grid.show-source-folder"));
     }
     if selected_local >= 1 {
         tools.append(Some("Export edited copy…"), Some("grid.export"));
