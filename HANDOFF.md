@@ -2,9 +2,10 @@
 
 This document is for an agent with no memory of the last session. It uses
 Simplified Technical English (ASD-STE100, Strict). Read AGENTS.md first. Read
-ROADMAP.md for planned features. Read section 000000000 first — it describes the
-most recent work (four fixes: a sidebar crash, an album drag bug, a scan freeze,
-and a smaller release binary). Then read section 00000000 — it describes the
+ROADMAP.md for planned features. Read section 0000000000 first — it describes the
+most recent work (a named-release workflow that mirrors to GitHub). Then read
+section 000000000 — it describes four fixes (a sidebar crash, an album drag bug,
+a scan freeze, and a smaller release binary). Then read section 00000000 — it describes the
 CCIP embedder swap and six face and character features.
 Then read section 0000000 — it describes the duplicate image finder. Then read
 section 000000 — it
@@ -17,11 +18,74 @@ Then read section 00 — it describes four earlier follow-up features. Then read
 section 0 — it describes the Immich integration. The later sections describe
 earlier features and are still correct.
 
-## 000000000. Four fixes (most recent work — read this first)
+## 0000000000. Named-release workflow with GitHub mirror (most recent work — read this first)
 
-This section describes the last session. All work is complete. The application
+This section describes the last session. All work is complete. All work is on
+`main`. All work is pushed. The version was 0.0.96 at the start of the session.
+CI increases the version on each push. Do not change the version by hand.
+
+The session added a named-release path. The rolling build stays as before.
+
+### 0000000000.1 Goal
+
+The user wanted two release types. The first type is the rolling build. It runs
+on each push to `main`. It stays unchanged. The second type is a named release.
+The user starts it with a git tag. A named release also mirrors the code and the
+release to GitHub (`ScuttleSE/pichouse`).
+
+### 0000000000.2 The new workflow
+
+The new file is `.gitea/workflows/release.yaml`. It runs on a tag push that
+matches `v*`. The steps are:
+
+1. Check out `main` with full history and `GITEA_TOKEN`. The build uses `main`,
+   not the tagged commit, so the version-sync commit goes onto `main`.
+2. Parse the version `X.Y.Z` from the tag `vX.Y.Z`. Reject a tag that is not of
+   the form `vX.Y.Z`.
+3. Set up the toolchain PATH and check the prerequisites. These steps are copies
+   from `build.yaml`.
+4. Write `X.Y.Z` into `Cargo.toml`. Update `Cargo.lock` with
+   `cargo update -p pichouse --precise`.
+5. Commit the version to `main` with `[skip ci]`. The marker stops a re-trigger
+   of `build.yaml`. Push to `main`.
+6. Test with `cargo test --release`.
+7. Build with `cargo build --release`. Copy the binary to
+   `dist/pichouse-linux-amd64`.
+8. Publish a Gitea release with `akkuman/gitea-release-action@v1`. The release is
+   not a pre-release. It attaches the binary.
+9. Push the commit and the tag to GitHub over HTTPS. The remote URL holds the
+   token as `x-access-token:${GH_TOKEN}`.
+10. Publish a GitHub release with `curl` and the GitHub REST API. Upload the
+    binary as an asset.
+
+### 0000000000.3 The build workflow
+
+`.gitea/workflows/build.yaml` gained a comment only. A tag push does not match
+its branch filter, so it does not run there. The rolling build is unchanged.
+
+### 0000000000.4 The secret
+
+The GitHub steps need a `GH_TOKEN` secret in the Gitea repo settings. The token
+is a GitHub PAT with `contents: write` on `ScuttleSE/pichouse`. The user must add
+it. Without it, the GitHub push and the GitHub release fail.
+
+### 0000000000.5 How to make a named release
+
+The user asks and gives the exact version `X.Y.Z`. Run `git tag vX.Y.Z`. Run
+`git push origin vX.Y.Z`. Do not push a tag without the user's request.
+
+### 0000000000.6 Open item
+
+`Cargo.lock` lags `Cargo.toml` on `main` after a CI bump (for example lock 0.0.96
+and toml 0.0.97). A normal build resyncs it. The release workflow also resyncs it
+at step 4. This is not a blocker. AGENTS.md RULE THREE now describes the named
+release.
+
+## 000000000. Four fixes
+
+This section describes an earlier session. All work is complete. The application
 builds clean in release. All work is on `main`. All work is pushed. The version
-was 0.0.84 at the start of the session. CI increases the version on each push.
+was 0.0.84 at the start of that session. CI increases the version on each push.
 Do not change the version by hand.
 
 The session fixed four problems the user reported. Each fix is a separate
