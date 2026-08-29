@@ -186,6 +186,7 @@ impl AppState {
     }
 
     /// The cached (or freshly rendered) JPEG crop for a stylised face.
+    #[allow(dead_code)]
     pub fn style_face_crop_jpeg(&self, face_id: i64) -> Option<Vec<u8>> {
         let ft = self.style_face_thumbs()?;
         if let Ok(Some(jpeg)) = ft.get(face_id) {

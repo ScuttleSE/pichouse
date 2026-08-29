@@ -9,13 +9,32 @@ use gtk4::{Box as GtkBox, Button, DropDown, Label, Orientation, Separator, Strin
 use super::dialogs::prompt_text;
 use super::state::{show_error, AppState};
 
-/// Create a character and assign every face in the cluster to it.
-fn name_style_cluster(state: &Rc<AppState>, cluster_id: i64, name: &str) -> Result<(), String> {
+/// Create a character and assign every face in every given cluster to it.
+fn name_style_clusters(
+    state: &Rc<AppState>,
+    cluster_ids: &[i64],
+    name: &str,
+) -> Result<(), String> {
     let character_id = state
         .lib
         .create_character(name)
         .map_err(|e| e.to_string())?;
-    assign_style_cluster_to_character(state, cluster_id, character_id)
+    for &cid in cluster_ids {
+        assign_style_cluster_to_character(state, cid, character_id)?;
+    }
+    Ok(())
+}
+
+/// Assign every face in every given cluster to an existing character.
+fn assign_style_clusters_to_character(
+    state: &Rc<AppState>,
+    cluster_ids: &[i64],
+    character_id: i64,
+) -> Result<(), String> {
+    for &cid in cluster_ids {
+        assign_style_cluster_to_character(state, cid, character_id)?;
+    }
+    Ok(())
 }
 
 /// Assign every unassigned face in a style cluster to a character.
@@ -187,13 +206,17 @@ pub fn assign_style_face_dialog<F: Fn() + 'static>(
     win.present();
 }
 
-/// A dialog to name an unnamed style cluster or merge it into an existing
-/// character. Runs `on_done` on success.
-pub fn name_style_cluster_dialog<F: Fn() + 'static>(
+/// A dialog to name one or more unnamed style clusters as one new character, or
+/// to merge them all into an existing character. Runs `on_done` on success.
+pub fn name_style_clusters_dialog<F: Fn() + 'static>(
     state: &Rc<AppState>,
-    cluster_id: i64,
+    cluster_ids: Vec<i64>,
     on_done: F,
 ) {
+    if cluster_ids.is_empty() {
+        return;
+    }
+    let multi = cluster_ids.len() > 1;
     let win = Window::builder()
         .title("Name Character")
         .modal(true)
@@ -217,9 +240,15 @@ pub fn name_style_cluster_dialog<F: Fn() + 'static>(
         .collect();
 
     let on_done = Rc::new(on_done);
+    let cluster_ids = Rc::new(cluster_ids);
 
     // New character.
-    root.append(&Label::new(Some("Name this group as a new character:")));
+    let new_label = if multi {
+        format!("Name these {} groups as one new character:", cluster_ids.len())
+    } else {
+        "Name this group as a new character:".to_string()
+    };
+    root.append(&Label::new(Some(&new_label)));
     let name_btn = Button::with_label("New character…");
     name_btn.add_css_class("suggested-action");
     root.append(&name_btn);
@@ -227,10 +256,12 @@ pub fn name_style_cluster_dialog<F: Fn() + 'static>(
         let state = state.clone();
         let win = win.clone();
         let on_done = on_done.clone();
+        let cluster_ids = cluster_ids.clone();
         name_btn.connect_clicked(move |_| {
             let state2 = state.clone();
             let win2 = win.clone();
             let on_done2 = on_done.clone();
+            let cluster_ids2 = cluster_ids.clone();
             prompt_text(
                 &state,
                 Some(&win),
@@ -241,7 +272,7 @@ pub fn name_style_cluster_dialog<F: Fn() + 'static>(
                     if name.trim().is_empty() {
                         return;
                     }
-                    if let Err(e) = name_style_cluster(&state2, cluster_id, &name) {
+                    if let Err(e) = name_style_clusters(&state2, &cluster_ids2, &name) {
                         show_error(&state2, &e);
                         return;
                     }
@@ -267,10 +298,11 @@ pub fn name_style_cluster_dialog<F: Fn() + 'static>(
         let chars2 = characters.clone();
         let win2 = win.clone();
         let on_done2 = on_done.clone();
+        let cluster_ids = cluster_ids.clone();
         merge.connect_clicked(move |_| {
             let idx = drop.selected() as usize;
             if let Some(c) = chars2.get(idx) {
-                if let Err(e) = assign_style_cluster_to_character(&state, cluster_id, c.id) {
+                if let Err(e) = assign_style_clusters_to_character(&state, &cluster_ids, c.id) {
                     show_error(&state, &e);
                     return;
                 }

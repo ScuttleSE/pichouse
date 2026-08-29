@@ -144,7 +144,9 @@ You manage a group in two places:
   groups unimportant. A right-click on a tile opens a menu. A named tile offers
   *Rename*, *Clear name*, *Delete character*, and *Do not scan this group*.
   *Clear name* makes the group unnamed again and keeps its members. An unnamed
-  tile offers *Name this group* and *Do not scan this group*.
+  tile offers *Name this group* and *Do not scan this group*. When more than one
+  unnamed group is selected, *Name this group* names every selected group as one
+  new character.
 - **Photo grid (right-click).** Open a group, then right-click one or more
   photos. In a character group you can *Remove from this character* or
   *Not this character (ban)*. A ban records a rejection, so a re-scan never adds

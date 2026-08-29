@@ -129,8 +129,9 @@ impl CharactersView {
         bar.append(&title);
 
         // The selection controls live in the title row, so showing them does
-        // not add a new row and does not move the grid. The container is hidden
-        // until the user selects a group.
+        // not add a new row. The bar always reserves its height, so the grid
+        // never moves. We hide it by opacity, not visibility, so the row height
+        // stays constant whether or not a group is selected.
         let sel_bar = GtkBox::new(Orientation::Horizontal, 6);
         let sel_label = Label::new(None);
         sel_label.set_xalign(1.0);
@@ -140,7 +141,8 @@ impl CharactersView {
         sel_bar.append(&skip_btn);
         let clear_btn = Button::with_label("Clear selection");
         sel_bar.append(&clear_btn);
-        sel_bar.set_visible(false);
+        sel_bar.set_opacity(0.0);
+        sel_bar.set_sensitive(false);
         bar.append(&sel_bar);
         root.append(&bar);
 
@@ -558,9 +560,11 @@ impl CharactersView {
         }
         let n = sel.len();
         if n == 0 {
-            self.sel_bar.set_visible(false);
+            self.sel_bar.set_opacity(0.0);
+            self.sel_bar.set_sensitive(false);
         } else {
-            self.sel_bar.set_visible(true);
+            self.sel_bar.set_opacity(1.0);
+            self.sel_bar.set_sensitive(true);
             let word = if n == 1 { "group" } else { "groups" };
             self.sel_label.set_text(&format!("{n} {word} selected"));
         }
@@ -707,7 +711,22 @@ impl CharactersView {
                 Box::new(move || {
                     let this2 = this.clone();
                     let state2 = state.clone();
-                    super::characters::name_style_cluster_dialog(&state, cluster_id, move || {
+                    // Name every selected unnamed cluster into one character. If
+                    // the clicked group is not in the selection, name just it.
+                    let mut cluster_ids: Vec<i64> = this
+                        .selected
+                        .borrow()
+                        .iter()
+                        .filter_map(|k| match k {
+                            TileKey::Cluster(c) => Some(*c),
+                            TileKey::Named(_) => None,
+                        })
+                        .collect();
+                    if !cluster_ids.contains(&cluster_id) {
+                        cluster_ids = vec![cluster_id];
+                    }
+                    super::characters::name_style_clusters_dialog(&state, cluster_ids, move || {
+                        this2.clear_selection();
                         this2.reload();
                         if let Some(sb) = state2.sidebar.borrow().as_ref() {
                             sb.reload_deferred();
