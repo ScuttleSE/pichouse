@@ -11,3 +11,6 @@
 # Editor/OS cruft
 *.swp
 .DS_Store
+
+# Saved AI agent session transcripts
+session-*.md
