@@ -2,8 +2,10 @@
 
 This document is for an agent with no memory of the last session. It uses
 Simplified Technical English (ASD-STE100, Strict). Read AGENTS.md first. Read
-ROADMAP.md for planned features. Read section 00000000000 first — it describes
-the most recent work (four context-menu and character-view fixes). Then read
+ROADMAP.md for planned features. Read section 000000000000 first — it
+describes the most recent work (GitHub release prep, the Unlicense switch,
+and the first named release, v0.1.0). Then read section 00000000000 — it
+describes four context-menu and character-view fixes. Then read
 section 0000000000 — it describes a named-release workflow that mirrors to
 GitHub. Then read
 section 000000000 — it describes four fixes (a sidebar crash, an album drag bug,
@@ -20,7 +22,145 @@ Then read section 00 — it describes four earlier follow-up features. Then read
 section 0 — it describes the Immich integration. The later sections describe
 earlier features and are still correct.
 
-## 00000000000. Context-menu and character-view fixes (most recent work — read this first)
+## 000000000000. GitHub release prep, the Unlicense switch, and v0.1.0 (most recent work — read this first)
+
+This section describes the last session. All work is complete. All work is on
+`main`. All work is pushed. The version was 0.0.99 at the start of the
+session. Named release `v0.1.0` is live on Gitea and on GitHub.
+
+### 000000000000.1 Removed an accidentally committed session transcript
+
+An earlier session added file `session-ses_fb61.md` by mistake. Commit
+`54e81f4` added a watcher fix. The same commit also added a 4931-line AI
+session transcript.
+
+The transcript held private data. It held the internal Gitea host name. It
+held a local shell prompt. It held raw chat text.
+
+This session deleted the file. Commit `93ff3fb` deletes
+`session-ses_fb61.md`. The commit also adds rule `session-*.md` to
+`.gitignore`. This stops the same mistake next time.
+
+### 000000000000.2 Kept the GitHub mirror clean of internal files
+
+Workflow `.gitea/workflows/release.yaml` used to run `git push github
+HEAD:main`. This command sent the full Gitea history to GitHub. The history
+held `AGENTS.md`, `HANDOFF.md`, and the `.gitea/` workflows.
+
+This session checked `git ls-remote` against the GitHub repo. GitHub had no
+prior push. This was the last chance to fix this before any history reached
+GitHub.
+
+Commit `61cd375` changes the "Push code and tag to GitHub" step. The new
+step builds one fresh commit from the current file tree. The step removes
+`AGENTS.md`, `HANDOFF.md`, and `.gitea/` from that tree first. The step
+force-pushes only that one commit to GitHub, to both `main` and the release
+tag. Gitea's own history stays as it is. The step name is now "Push filtered
+snapshot to GitHub".
+
+A local check confirmed this before the real release ran. The check built
+the same filtered tree and listed the result. `AGENTS.md`, `HANDOFF.md`,
+`.gitea/`, and `session-ses_fb61.md` were absent. `README.md`, `LICENSE`,
+`Cargo.toml`, and `src/` were present.
+
+### 000000000000.3 Added a LICENSE file and updated the README
+
+Commit `9505416` adds file `LICENSE`. It updates `README.md`. It updates
+`ROADMAP.md`.
+
+The README update adds a section for the Immich integration. This feature
+had code in `src/immich/` but no README text before this session. The
+README update also adds a section that explains two separate systems.
+System "People" finds human faces. System "Characters" finds faces in art,
+with its own detector and embedder. The README did not explain this split
+before this session. The README update removes the mention of the internal
+Gitea CI pipeline. It adds a "Releases" section that points to GitHub
+Releases instead.
+
+`ROADMAP.md` line 367 said "the Gitea runner". This session changed the
+words to "the CI runner".
+
+### 000000000000.4 Switched the license from MIT to the Unlicense
+
+The user asked for this change. Commit `7ef615d` changes the license.
+
+`Cargo.toml` field `license` now reads `"Unlicense"`. File `LICENSE` now
+holds the Unlicense text, plus one added part. The added part states that
+the Unlicense covers only the pichouse source code.
+
+The added part also names four models that keep their own license. Model
+YuNet uses the MIT license. Model SFace uses the Apache 2.0 license. The
+anime face detector uses the MIT license. Model CCIP CaFormer uses the
+OpenRAIL-M license. The README "License" section repeats this list.
+
+### 000000000000.5 Cut the first named release, v0.1.0
+
+The user asked for a named release at version `0.1.0`.
+
+The session ran the steps in AGENTS.md RULE THREE. Step one: push `main` to
+`origin`. Step two: run `git tag v0.1.0`. Step three: run `git push origin
+v0.1.0`.
+
+The tag push started `.gitea/workflows/release.yaml`. The workflow set
+`Cargo.toml` to version `0.1.0`. The workflow built and tested the binary.
+The workflow published a Gitea release at tag `v0.1.0`. The workflow pushed
+the filtered snapshot to GitHub. The workflow published a GitHub release
+with the binary asset attached.
+
+This session checked the result with the GitHub API and with `git
+ls-remote`. The GitHub release held the correct binary. The GitHub file tree
+held no internal files.
+
+### 000000000000.6 A version mix-up was not a bug
+
+The user saw two different version numbers. Gitea's `rolling` release read
+`0.0.100`. Gitea's `v0.1.0` release read `0.1.0`. The GitHub release read
+`0.1.0` too.
+
+This session checked the Gitea release API. Both releases were correct on
+their own. The `rolling` release is a separate pre-release. Workflow
+`build.yaml` rebuilds it on every push to `main`. It is not part of a named
+release. It uses its own build-number version, not a named version.
+
+The push of `main` for this session's other changes also triggered a
+`build.yaml` run. `build.yaml` bumped the build number to `0.0.100` first.
+Then `release.yaml` set the version to `0.1.0` for the named release. Both
+releases finished within minutes of each other.
+
+The user found the cause. The user had downloaded the `rolling` binary by
+mistake. The user did not want a change to the `rolling` release name. No
+code change followed.
+
+### 000000000000.7 Files changed this session
+
+- `session-ses_fb61.md` — deleted.
+- `.gitignore` — added rule `session-*.md`.
+- `LICENSE` — added, then rewritten for the Unlicense.
+- `Cargo.toml` — `license` field set to `"Unlicense"`. Version now `0.1.0`.
+- `README.md` — new Immich section, new People/Characters section, new
+  License section, rewritten Releases section.
+- `ROADMAP.md` — one wording fix.
+- `.gitea/workflows/release.yaml` — the GitHub push step now builds a
+  filtered snapshot.
+- `Cargo.lock` — version synced by CI.
+
+### 000000000000.8 Verification
+
+`cargo build` was clean, with only the pre-existing dead-code warnings. The
+filtered-snapshot logic was dry-run against a scratch directory before the
+real release ran. The GitHub API confirmed the `v0.1.0` release, its binary
+asset, and its file tree after the real release ran.
+
+### 000000000000.9 Open follow-ups (not built)
+
+None block the next session. One fact to remember: the Gitea `rolling`
+pre-release always builds close in time to a named release, when both start
+from the same push to `main`. This is normal. It is not a bug to diagnose
+again.
+
+---
+
+## 00000000000. Context-menu and character-view fixes
 
 This section describes the last session. All work is complete. All work is on
 `main`. All work is pushed. The version was 0.0.98 at the start of the session.
