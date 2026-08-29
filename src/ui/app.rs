@@ -350,6 +350,29 @@ fn populate_deferred(state: &Rc<AppState>) {
         // interrupted import in a previous session.
         super::enrich::ensure_running(state);
     }
+    // Offer to resume any root whose initial scan was interrupted. The scanner
+    // resume cursor continues from where it stopped; the "New Files" boundary
+    // stays unset until the walk finishes, so nothing lands there mid-resume.
+    if let Ok(roots) = state.lib.interrupted_scan_roots() {
+        if !roots.is_empty() {
+            let paths: Vec<String> = roots.iter().map(|r| r.path.clone()).collect();
+            let detail = if paths.len() == 1 {
+                format!("The initial scan of \"{}\" was interrupted. Resume now?", paths[0])
+            } else {
+                format!("The initial scan of {} folders was interrupted. Resume now?", paths.len())
+            };
+            let state_yes = state.clone();
+            super::dialogs::confirm(
+                state,
+                None,
+                "Resume scan",
+                &detail,
+                move || {
+                    super::actions::resume_scan(&state_yes, paths.clone());
+                },
+            );
+        }
+    }
     // Reconcile against disk once at startup (catches files added or removed
     // while the app was closed, including on network drives), then keep a
     // periodic reconcile running as the reliable freshness path.

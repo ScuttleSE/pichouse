@@ -50,6 +50,18 @@ pub fn add_library_folder(state: &Rc<AppState>, path: &str) {
     }
 }
 
+/// Resume the scan of roots whose initial scan was interrupted. Enqueues each
+/// partial root; the scanner's resume cursor skips folders it already recorded,
+/// so this continues from where the interrupt stopped. The `first_scan_done_at`
+/// boundary is stamped only when a root's walk completes, so nothing wrongly
+/// lands in "New Files" while the resume is in progress.
+pub fn resume_scan(state: &Rc<AppState>, paths: Vec<String>) {
+    if paths.is_empty() {
+        return;
+    }
+    enqueue_scan(state, paths);
+}
+
 /// Rescan all library folders.
 pub fn rescan_all(state: &Rc<AppState>) {
     let folders = match state.lib.library_folders() {

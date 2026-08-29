@@ -164,34 +164,51 @@ impl<'a> Scanner<'a> {
         }
 
         if !files.is_empty() {
-            let t_dir = std::time::Instant::now();
-            let fid = self.upsert_folder_for(dir)?;
-            self.lib.set_scan_state(fid, ScanStatus::Running)?;
-
-            // Record the whole directory's photos in one transaction. This holds
-            // the DB lock once per directory instead of twice per photo, keeping
-            // the scan fast and leaving the lock free between directories so the
-            // Phase 2 enrichment/thumbnail workers and the UI are not starved.
-            let batch: Vec<Photo> = files
-                .iter()
-                .filter_map(|path| structure_photo(fid, path))
-                .collect();
-            self.lib.insert_structure_batch(&batch)?;
-            *done += batch.len();
-
-            // File this folder into the Library album tree right away.
-            on_folder(fid, dir);
-
-            self.lib.set_scan_state(fid, ScanStatus::Done)?;
-            log::debug!(
-                "scan dir {}: recorded {} photos in {:.2?}",
-                dir.display(),
-                batch.len(),
-                t_dir.elapsed()
+            // Resume cursor: if this directory was already fully recorded in a
+            // previous (possibly interrupted) scan and its mtime is unchanged,
+            // skip the folder upsert and the batch insert. This turns a re-run
+            // of an interrupted first scan into a fast skip over the folders it
+            // already wrote, instead of re-inserting every photo. New or changed
+            // directories (different mtime, or never scanned) still record.
+            let dir_path = dir.to_string_lossy();
+            let cur_mtime = std::fs::metadata(dir).map(|m| mtime_secs(&m)).unwrap_or(0);
+            let already_done = matches!(
+                self.lib.folder_scan_cursor(&dir_path).ok().flatten(),
+                Some((stored_mtime, true)) if stored_mtime == cur_mtime
             );
-            // Yield so the enrichment workers get a turn on the DB lock between
-            // directories rather than the scan monopolizing it.
-            std::thread::yield_now();
+            if already_done {
+                log::trace!("scan dir {}: skip (already done, mtime match)", dir.display());
+            } else {
+                let t_dir = std::time::Instant::now();
+                let fid = self.upsert_folder_for(dir)?;
+                self.lib.set_scan_state(fid, ScanStatus::Running)?;
+
+                // Record the whole directory's photos in one transaction. This
+                // holds the DB lock once per directory instead of twice per
+                // photo, keeping the scan fast and leaving the lock free between
+                // directories so the Phase 2 enrichment/thumbnail workers and
+                // the UI are not starved.
+                let batch: Vec<Photo> = files
+                    .iter()
+                    .filter_map(|path| structure_photo(fid, path))
+                    .collect();
+                self.lib.insert_structure_batch(&batch)?;
+                *done += batch.len();
+
+                // File this folder into the Library album tree right away.
+                on_folder(fid, dir);
+
+                self.lib.set_scan_state(fid, ScanStatus::Done)?;
+                log::debug!(
+                    "scan dir {}: recorded {} photos in {:.2?}",
+                    dir.display(),
+                    batch.len(),
+                    t_dir.elapsed()
+                );
+                // Yield so the enrichment workers get a turn on the DB lock
+                // between directories rather than the scan monopolizing it.
+                std::thread::yield_now();
+            }
         }
 
         for sub in subdirs {

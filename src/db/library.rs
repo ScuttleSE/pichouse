@@ -334,6 +334,35 @@ impl Library {
         Ok(())
     }
 
+    /// Root folders whose first scan never completed but which already hold at
+    /// least one recorded photo. These are the roots an interrupted initial scan
+    /// left partial. The UI offers to resume them at startup. A root with a zero
+    /// boundary and no photos is a freshly added, never-scanned folder, not an
+    /// interrupted one, so it is excluded.
+    pub fn interrupted_scan_roots(&self) -> Result<Vec<LibraryFolder>> {
+        let sep = std::path::MAIN_SEPARATOR.to_string();
+        let conn = self.read_lock();
+        let mut stmt = conn.prepare(
+            "SELECT lf.id, lf.path, lf.added_at, lf.first_scan_done_at
+             FROM library_folders lf
+             WHERE lf.first_scan_done_at = 0
+               AND EXISTS (
+                   SELECT 1 FROM photos p JOIN folders f ON f.id = p.folder_id
+                   WHERE f.path = lf.path OR f.path LIKE lf.path || ?1 || '%'
+               )
+             ORDER BY lf.path",
+        )?;
+        let rows = stmt.query_map(params![sep], |r| {
+            Ok(LibraryFolder {
+                id: r.get(0)?,
+                path: r.get(1)?,
+                added_at: r.get(2)?,
+                first_scan_done_at: r.get(3)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
     /// Insert or update a scanned folder and return its id.
     pub fn upsert_folder(&self, f: &Folder) -> Result<i64> {
         let conn = self.lock();
@@ -359,6 +388,26 @@ impl Library {
             })
             .optional()?;
         Ok(id)
+    }
+
+    /// Resume-cursor lookup for the scanner. Returns `(stored_mtime, is_done)`
+    /// for a directory by path, joining the `folders` row with its `scan_state`.
+    /// `None` when the directory was never scanned. The scanner skips a
+    /// re-walk of a directory that is `Done` and whose stored mtime still
+    /// matches the directory on disk, which turns an interrupted first scan into
+    /// a fast skip over the folders it already recorded.
+    pub fn folder_scan_cursor(&self, path: &str) -> Result<Option<(i64, bool)>> {
+        let conn = self.read_lock();
+        let row: Option<(i64, Option<String>)> = conn
+            .query_row(
+                "SELECT f.mtime, s.status
+                 FROM folders f LEFT JOIN scan_state s ON s.folder_id = f.id
+                 WHERE f.path = ?1",
+                params![path],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        Ok(row.map(|(mtime, status)| (mtime, status.as_deref() == Some("done"))))
     }
 
     /// Delete a scanned folder row (and, by cascade, its photos and album
