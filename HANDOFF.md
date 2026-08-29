@@ -2,9 +2,11 @@
 
 This document is for an agent with no memory of the last session. It uses
 Simplified Technical English (ASD-STE100, Strict). Read AGENTS.md first. Read
-ROADMAP.md for planned features. Read section 0000000000000000 first — it
-describes the most recent work (viewport-driven enrichment and a Tools
-"Generate Thumbnails" pass; automatic enrichment is removed). Then read
+ROADMAP.md for planned features. Read section 00000000000000000 first — it
+describes the most recent work (bounding on-demand grid work to the true
+visible window). Then read section 0000000000000000 — it describes
+viewport-driven enrichment and a Tools "Generate Thumbnails" pass; automatic
+enrichment is removed. Then read
 section 000000000000000 — it
 describes a during-scan sidebar-refresh performance fix for very large
 libraries. Then read section 00000000000000 — it
@@ -34,7 +36,64 @@ Then read section 00 — it describes four earlier follow-up features. Then read
 section 0 — it describes the Immich integration. The later sections describe
 earlier features and are still correct.
 
-## 0000000000000000. Viewport-driven enrichment and Tools "Generate Thumbnails" (most recent work — read this first)
+## 00000000000000000. Bound on-demand grid work to the true visible window (most recent work — read this first)
+
+This section describes the last session. All work is complete, on `main`, and
+pushed. One functional commit. CI version-bump commits sit between pushes.
+Ignore those.
+
+The previous session made enrichment "viewport-driven" by enqueuing from the
+`GridView` factory `bind`. The user tested it: during a Phase 1 scan they opened
+a 280-photo folder with a 3-wide, 6-tall viewport and did not scroll, yet all
+280 photos enriched. A `-vvv` log showed the enrich worker draining the folder
+in file order (001, 002, ... with no gaps), which proves the factory `bind`
+fired for the whole folder, not only the ~18 visible cells.
+
+Root cause: GTK's `GridView` binds far more cells than are visible. When a grid
+is freshly populated and its viewport height is not yet allocated, GTK measures
+by realising the whole model. So the `bind` signal is not a reliable "is
+visible" test. `drop_enrich_request` on unbind could not help, because all ids
+were bound and flushed inside the 180 ms debounce window.
+
+Fix, in `src/ui/grid.rs`:
+- Added `visible_index_range()`. It computes the on-screen store-index window
+  from the scroller's vertical adjustment (`value`, `page_size`) and the cell
+  geometry (columns from `grid_view.allocated_width()`, row height from the
+  thumbnail size plus `CELL_SPACING`). It adds a margin of `VISIBLE_MARGIN_ROWS`
+  (2) rows above and below. When the geometry is not ready (width or page size
+  is 0, right after a folder opens), it returns `[0, VISIBLE_FALLBACK)` where
+  `VISIBLE_FALLBACK` is 60, so the first screen still fills.
+- Added `is_object_visible()` (find the object's index in the store, test the
+  range) and gated `ensure_thumb_for` with it, so a full-model bind pass no
+  longer queues a decode job for every photo.
+- Gated the debounced enrich flush with `filter_ids_to_visible()`, which keeps
+  only the buffered ids whose photo is in the visible window and discards the
+  rest.
+- Added a scroll-settle handler on the scroller's vertical adjustment
+  (`schedule_visible_refresh` -> `refresh_visible_window`, debounced 200 ms).
+  Because `bind` is no longer the authoritative visible signal, this is what
+  fills thumbnails and enrichment for the window the user stops on.
+
+New tuning constants in `src/ui/grid.rs`: `CELL_SPACING` (14 px, an estimate for
+the inter-item gap plus caption row), `VISIBLE_MARGIN_ROWS` (2), and
+`VISIBLE_FALLBACK` (60).
+
+Notes and open items:
+- The geometry is approximate (exact caption height and GridView spacing are not
+  read). The 2-row margin and the 60-item fallback absorb the imprecision. Worst
+  case a few extra rows do work.
+- The one-time cost after a folder opens before the first allocation is up to
+  60 photos (the fallback), not the whole folder. A later refinement could wait
+  for the first allocation before doing any work, but 60 was the agreed value.
+- A worklist-cancel on unbind (removing an already-enqueued off-screen id from
+  `state.enrich_queue`) was considered and skipped: the flush gate already stops
+  off-screen ids at the source, and front-of-queue ids run within about half a
+  second.
+- Verify on the real library: scan running, open the 280-photo folder, no
+  scroll, expect only the visible window plus margin (or the 60 fallback) to
+  enrich, then stop. Scroll and stop, and the new window fills.
+
+## 0000000000000000. Viewport-driven enrichment and Tools "Generate Thumbnails"
 
 This section describes the last session. All work is complete, on `main`, and
 pushed. One functional commit. CI version-bump commits sit between pushes.
