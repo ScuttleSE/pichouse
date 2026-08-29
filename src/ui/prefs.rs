@@ -31,6 +31,9 @@ pub const KEY_POSTPONE_THUMBS: &str = "ui.postpone_thumbs";
 /// Value "filename" sorts by filename only. Default "date".
 pub const KEY_SORT_ORDER: &str = "grid.sort_order";
 
+/// Whether the grid shows a filename caption under each thumbnail.
+pub const KEY_SHOW_FILENAMES: &str = "grid.show_filenames";
+
 /// AI setting keys stored in `library.db`.
 pub const KEY_AI_ENABLED: &str = "ai.enabled";
 pub const KEY_AI_HOST: &str = "ai.host";

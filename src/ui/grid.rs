@@ -100,6 +100,8 @@ pub struct Grid {
     source: RefCell<Source>,
     /// The active sort order for the photo grid.
     sort_order: std::cell::Cell<SortOrder>,
+    /// Whether each cell shows a filename caption under its thumbnail.
+    show_filenames: std::cell::Cell<bool>,
     /// The header dropdown that selects the sort order.
     sort_dropdown: gtk4::DropDown,
     /// Called with (photos, index) when a cell is activated (double-clicked).
@@ -147,27 +149,67 @@ struct DupCellUi {
 
 /// The order the grid sorts its photos in.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum SortOrder {
-    /// Capture time first, then filename. Matches the database query order.
-    Date,
-    /// Filename only, case-insensitive.
-    Filename,
+pub enum SortOrder {
+    /// Capture time, newest first (then filename). Matches the DB query order.
+    DateDesc,
+    /// Capture time, oldest first (then filename).
+    DateAsc,
+    /// Filename, A to Z, case-insensitive.
+    NameAsc,
+    /// Filename, Z to A, case-insensitive.
+    NameDesc,
+    /// File size, largest first.
+    SizeDesc,
+    /// File size, smallest first.
+    SizeAsc,
 }
 
 impl SortOrder {
-    /// Parse a stored setting value. Unknown values fall back to `Date`.
-    fn from_setting(v: &str) -> SortOrder {
+    /// Parse a stored setting value. Unknown values fall back to `DateDesc`.
+    pub fn from_setting(v: &str) -> SortOrder {
         match v {
-            "filename" => SortOrder::Filename,
-            _ => SortOrder::Date,
+            "date_asc" => SortOrder::DateAsc,
+            "name_asc" | "filename" => SortOrder::NameAsc,
+            "name_desc" => SortOrder::NameDesc,
+            "size_desc" => SortOrder::SizeDesc,
+            "size_asc" => SortOrder::SizeAsc,
+            _ => SortOrder::DateDesc,
         }
     }
 
     /// The setting value string for this order.
     fn as_setting(self) -> &'static str {
         match self {
-            SortOrder::Date => "date",
-            SortOrder::Filename => "filename",
+            SortOrder::DateDesc => "date",
+            SortOrder::DateAsc => "date_asc",
+            SortOrder::NameAsc => "name_asc",
+            SortOrder::NameDesc => "name_desc",
+            SortOrder::SizeDesc => "size_desc",
+            SortOrder::SizeAsc => "size_asc",
+        }
+    }
+
+    /// The header dropdown row index for this order.
+    fn dropdown_index(self) -> u32 {
+        match self {
+            SortOrder::DateDesc => 0,
+            SortOrder::DateAsc => 1,
+            SortOrder::NameAsc => 2,
+            SortOrder::NameDesc => 3,
+            SortOrder::SizeDesc => 4,
+            SortOrder::SizeAsc => 5,
+        }
+    }
+
+    /// The order for a header dropdown row index.
+    fn from_dropdown_index(i: u32) -> SortOrder {
+        match i {
+            1 => SortOrder::DateAsc,
+            2 => SortOrder::NameAsc,
+            3 => SortOrder::NameDesc,
+            4 => SortOrder::SizeDesc,
+            5 => SortOrder::SizeAsc,
+            _ => SortOrder::DateDesc,
         }
     }
 }
@@ -229,12 +271,20 @@ impl Grid {
             .get_setting(super::prefs::KEY_SORT_ORDER, "date")
             .unwrap_or_else(|_| "date".to_string());
         let sort_order = SortOrder::from_setting(&sort_setting);
+        let show_filenames = lib
+            .get_setting(super::prefs::KEY_SHOW_FILENAMES, "0")
+            .map(|v| v == "1")
+            .unwrap_or(false);
         let sort_dropdown =
-            gtk4::DropDown::from_strings(&["Date", "Name"]);
-        sort_dropdown.set_selected(match sort_order {
-            SortOrder::Date => 0,
-            SortOrder::Filename => 1,
-        });
+            gtk4::DropDown::from_strings(&[
+                "Date \u{2193}",
+                "Date \u{2191}",
+                "Name \u{2193}",
+                "Name \u{2191}",
+                "Size \u{2193}",
+                "Size \u{2191}",
+            ]);
+        sort_dropdown.set_selected(sort_order.dropdown_index());
         sort_dropdown.set_margin_end(6);
         let sort_label = Label::new(Some("Sort:"));
         sort_label.set_margin_start(6);
@@ -450,6 +500,7 @@ impl Grid {
             tex_cache,
             source: RefCell::new(Source::None),
             sort_order: std::cell::Cell::new(sort_order),
+            show_filenames: std::cell::Cell::new(show_filenames),
             sort_dropdown,
             on_activate: RefCell::new(None),
             on_select: RefCell::new(None),
@@ -479,15 +530,8 @@ impl Grid {
         {
             let rc2 = rc.clone();
             rc.sort_dropdown.connect_selected_notify(move |dd| {
-                let order = match dd.selected() {
-                    1 => SortOrder::Filename,
-                    _ => SortOrder::Date,
-                };
-                rc2.sort_order.set(order);
-                let _ = rc2
-                    .lib
-                    .set_setting(super::prefs::KEY_SORT_ORDER, order.as_setting());
-                rc2.reload_from_source();
+                let order = SortOrder::from_dropdown_index(dd.selected());
+                rc2.set_sort_order(order);
             });
         }
         // Activation (double-click / Enter) opens the viewer.
@@ -1086,18 +1130,38 @@ impl Grid {
     /// case-insensitive.
     fn sort_photos(&self, photos: &mut [Photo]) {
         match self.sort_order.get() {
-            SortOrder::Date => {
+            SortOrder::DateDesc => {
+                photos.sort_by(|a, b| {
+                    b.taken_at
+                        .cmp(&a.taken_at)
+                        .then_with(|| a.filename.cmp(&b.filename))
+                });
+            }
+            SortOrder::DateAsc => {
                 photos.sort_by(|a, b| {
                     a.taken_at
                         .cmp(&b.taken_at)
                         .then_with(|| a.filename.cmp(&b.filename))
                 });
             }
-            SortOrder::Filename => {
+            SortOrder::NameAsc => {
                 photos.sort_by(|a, b| {
-                    a.filename
-                        .to_lowercase()
-                        .cmp(&b.filename.to_lowercase())
+                    a.filename.to_lowercase().cmp(&b.filename.to_lowercase())
+                });
+            }
+            SortOrder::NameDesc => {
+                photos.sort_by(|a, b| {
+                    b.filename.to_lowercase().cmp(&a.filename.to_lowercase())
+                });
+            }
+            SortOrder::SizeDesc => {
+                photos.sort_by(|a, b| {
+                    b.size.cmp(&a.size).then_with(|| a.filename.cmp(&b.filename))
+                });
+            }
+            SortOrder::SizeAsc => {
+                photos.sort_by(|a, b| {
+                    a.size.cmp(&b.size).then_with(|| a.filename.cmp(&b.filename))
                 });
             }
         }
@@ -1307,6 +1371,44 @@ impl Grid {
         self.rebuild();
     }
 
+    /// Set the sort order, persist it, sync the header dropdown, and re-sort.
+    /// Callable from both the header dropdown handler and the Tools menu.
+    pub fn set_sort_order(self: &Rc<Grid>, order: SortOrder) {
+        if self.sort_order.get() == order {
+            return;
+        }
+        self.sort_order.set(order);
+        let _ = self
+            .lib
+            .set_setting(super::prefs::KEY_SORT_ORDER, order.as_setting());
+        // Keep the header dropdown in sync without re-entering this handler.
+        if self.sort_dropdown.selected() != order.dropdown_index() {
+            self.sort_dropdown.set_selected(order.dropdown_index());
+        }
+        self.reload_from_source();
+    }
+
+    /// The current sort order (so the Tools menu can show a check mark).
+    pub fn sort_order_setting(&self) -> &'static str {
+        self.sort_order.get().as_setting()
+    }
+
+    /// Toggle the filename caption under each thumbnail. Persists the choice and
+    /// rebuilds so every cell re-binds with the new visibility.
+    pub fn set_show_filenames(&self, show: bool) {
+        self.show_filenames.set(show);
+        let _ = self.lib.set_setting(
+            super::prefs::KEY_SHOW_FILENAMES,
+            if show { "1" } else { "0" },
+        );
+        self.rebuild();
+    }
+
+    /// Whether the filename caption is currently shown.
+    pub fn show_filenames(&self) -> bool {
+        self.show_filenames.get()
+    }
+
     /// Change the active thumbnail size and rebuild (new factory + jobs).
     pub fn set_thumb_size(self: &Rc<Grid>, size: i32) {
         self.thumb_size.set(size);
@@ -1417,18 +1519,48 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
         image.set_pixel_size(thumb_size);
         overlay.add_overlay(&image);
 
-        item.set_child(Some(&overlay));
+        // A vertical cell: the thumbnail overlay on top and an optional filename
+        // caption below. The caption is hidden unless "Show filenames" is on.
+        let cell = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+        cell.append(&overlay);
+        let caption = Label::new(None);
+        caption.set_wrap(true);
+        caption.set_max_width_chars(1);
+        caption.set_justify(gtk4::Justification::Center);
+        caption.set_halign(Align::Center);
+        caption.set_ellipsize(gtk4::pango::EllipsizeMode::Middle);
+        caption.add_css_class("caption");
+        caption.set_visible(false);
+        cell.append(&caption);
+
+        item.set_child(Some(&cell));
     });
     factory.connect_bind(move |_, item| {
         let item = item.downcast_ref::<ListItem>().unwrap();
         let Some(photo) = item.item().and_downcast::<PhotoObject>() else {
             return;
         };
-        let Some(overlay) = item.child().and_downcast::<Overlay>() else {
+        let Some(cell) = item.child().and_downcast::<gtk4::Box>() else {
             return;
         };
+        let Some(overlay) = cell.first_child().and_downcast::<Overlay>() else {
+            return;
+        };
+        let caption = cell
+            .first_child()
+            .and_then(|c| c.next_sibling())
+            .and_downcast::<Label>();
         let (image, label) = overlay_parts(&overlay);
         label.set_text(&photo.filename());
+
+        // Filename caption (shown only when the setting is on) and a filename
+        // tooltip on every cell.
+        let show_names = grid.upgrade().map(|g| g.show_filenames.get()).unwrap_or(false);
+        if let Some(caption) = &caption {
+            caption.set_text(&photo.filename());
+            caption.set_visible(show_names);
+        }
+        overlay.set_tooltip_text(Some(&photo.filename()));
 
         // Dim the cell when the underlying file is missing from disk.
         if photo.missing() {
@@ -1436,7 +1568,6 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
             overlay.set_tooltip_text(Some("File missing from disk"));
         } else {
             overlay.remove_css_class("dim-label");
-            overlay.set_tooltip_text(None);
         }
 
         // Show the current texture (if already decoded) and update the label.

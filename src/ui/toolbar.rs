@@ -3,6 +3,7 @@
 use std::rc::Rc;
 
 use gtk4::gio;
+use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{
     Box as GtkBox, Button, Image, Orientation, PositionType, Scale, SearchEntry,
@@ -30,6 +31,26 @@ pub fn build_toolbar(state: &Rc<AppState>) -> GtkBox {
 
     let view_section = gio::Menu::new();
     view_section.append(Some("Play Slideshow"), Some("tools.slideshow"));
+    view_section.append(Some("Show Filenames"), Some("tools.show_filenames"));
+    // Sort submenu. Each item targets the sort action with a string value; the
+    // action state carries the active order so GTK draws the check mark.
+    let sort_menu = gio::Menu::new();
+    for (label, value) in [
+        ("Date (newest first)", "date"),
+        ("Date (oldest first)", "date_asc"),
+        ("Name (A–Z)", "name_asc"),
+        ("Name (Z–A)", "name_desc"),
+        ("Size (largest first)", "size_desc"),
+        ("Size (smallest first)", "size_asc"),
+    ] {
+        let item = gio::MenuItem::new(Some(label), None);
+        item.set_action_and_target_value(
+            Some("tools.sort"),
+            Some(&value.to_variant()),
+        );
+        sort_menu.append_item(&item);
+    }
+    view_section.append_submenu(Some("Sort By"), &sort_menu);
     tools_menu.append_section(None, &view_section);
 
     let ai_menu = gio::Menu::new();
@@ -82,6 +103,44 @@ pub fn build_toolbar(state: &Rc<AppState>) -> GtkBox {
         let state = state.clone();
         Box::new(move || super::actions::find_duplicates(&state))
     });
+
+    // Stateful "Show Filenames" toggle. Initial state mirrors the grid setting.
+    {
+        let show_now = state.grid().show_filenames();
+        let act = gio::SimpleAction::new_stateful(
+            "show_filenames",
+            None,
+            &show_now.to_variant(),
+        );
+        let state2 = state.clone();
+        act.connect_activate(move |act, _| {
+            let on = act.state().and_then(|s| s.get::<bool>()).unwrap_or(false);
+            let new = !on;
+            act.set_state(&new.to_variant());
+            state2.grid().set_show_filenames(new);
+        });
+        tools_group.add_action(&act);
+    }
+
+    // Stateful "Sort By" radio action. The state string is the active order.
+    {
+        let order_now = state.grid().sort_order_setting().to_string();
+        let act = gio::SimpleAction::new_stateful(
+            "sort",
+            Some(glib::VariantTy::STRING),
+            &order_now.to_variant(),
+        );
+        let state2 = state.clone();
+        act.connect_activate(move |act, param| {
+            let Some(value) = param.and_then(|p| p.get::<String>()) else {
+                return;
+            };
+            act.set_state(&value.to_variant());
+            let order = super::grid::SortOrder::from_setting(&value);
+            state2.grid().set_sort_order(order);
+        });
+        tools_group.add_action(&act);
+    }
     tools_btn.insert_action_group("tools", Some(&tools_group));
 
     let search = SearchEntry::new();
