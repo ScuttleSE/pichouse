@@ -232,7 +232,7 @@ impl<'a> Scanner<'a> {
                 return Ok(()); // skip unreadable directories
             }
         };
-        let mut files = Vec::new();
+        let mut files: Vec<(std::path::PathBuf, std::fs::Metadata)> = Vec::new();
         let mut subdirs = Vec::new();
         // Time the entry iteration and the per-entry file_type() together, since
         // on a network mount file_type() may cost a round-trip per entry.
@@ -249,7 +249,20 @@ impl<'a> Scanner<'a> {
             if file_type.is_dir() {
                 subdirs.push(path);
             } else if path.file_name().and_then(|n| n.to_str()).is_some_and(is_image) {
-                files.push(path);
+                // Capture the metadata now, from the `DirEntry` the directory
+                // listing just returned, instead of a later fresh
+                // `std::fs::metadata(path)` call. On a network mount (NFS with
+                // READDIRPLUS, CIFS) this reuses the attributes the listing
+                // already fetched; a later separate stat pays a fresh
+                // round-trip once the client's attribute cache for this
+                // directory has been evicted by the rest of a huge walk, which
+                // is what made Phase 1 slow down badly past about a million
+                // files (each per-file stat went from under a millisecond to
+                // hundreds of milliseconds). A file that vanishes between the
+                // listing and this call is skipped, same as before.
+                if let Ok(meta) = entry.metadata() {
+                    files.push((path, meta));
+                }
             }
         }
         // read_dir + the file_type loop are one fused network cost; record the
@@ -305,7 +318,7 @@ impl<'a> Scanner<'a> {
                 let t_filestat = std::time::Instant::now();
                 let batch: Vec<Photo> = files
                     .iter()
-                    .filter_map(|path| structure_photo(fid, path))
+                    .map(|(path, meta)| structure_photo(fid, path, meta))
                     .collect();
                 metrics.file_stat_ns += t_filestat.elapsed().as_nanos();
 
@@ -360,11 +373,11 @@ impl<'a> Scanner<'a> {
     }
 }
 
-/// Build a Phase 1 `Photo` (cheap structure only) for a file, or `None` if the
-/// file vanished before it could be stat'd.
-fn structure_photo(folder_id: i64, path: &Path) -> Option<Photo> {
-    let meta = std::fs::metadata(path).ok()?;
-    Some(Photo {
+/// Build a Phase 1 `Photo` (cheap structure only) from a file's path and its
+/// already-fetched `Metadata` (from the directory listing, not a fresh stat —
+/// see the comment where `files` is built in `scan_dir`).
+fn structure_photo(folder_id: i64, path: &Path, meta: &std::fs::Metadata) -> Photo {
+    Photo {
         folder_id,
         path: path.to_string_lossy().into_owned(),
         filename: path
@@ -372,9 +385,9 @@ fn structure_photo(folder_id: i64, path: &Path) -> Option<Photo> {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default(),
         size: meta.len() as i64,
-        mod_time: mtime_secs(&meta),
+        mod_time: mtime_secs(meta),
         ..Default::default()
-    })
+    }
 }
 
 /// The Phase 2 enrichment result for a single file: EXIF taken date, pixel
