@@ -111,6 +111,33 @@ pub fn enqueue_root(state: &Rc<AppState>, root_path: &str) {
     start_if_idle(state);
 }
 
+/// Queue every photo still needing enrichment in one folder (bypassing the
+/// postpone gate) and start the pool if idle. Backs the folder right-click
+/// "Scan all thumbnails (unfinished)" action.
+pub fn enqueue_folder(state: &Rc<AppState>, folder_id: i64) {
+    let ids = state
+        .lib
+        .photos_needing_enrichment(Some(folder_id))
+        .unwrap_or_default();
+    if ids.is_empty() {
+        return;
+    }
+    append_ids(state, ids);
+    start_if_idle(state);
+}
+
+/// Reset a folder's enrichment and re-queue every photo in it, forcing a full
+/// re-hash and thumbnail rebuild. Backs the folder right-click "Rescan all
+/// thumbnails (all)" action.
+pub fn rescan_folder(state: &Rc<AppState>, folder_id: i64) {
+    let ids = state.lib.reset_folder_enrichment(folder_id).unwrap_or_default();
+    if ids.is_empty() {
+        return;
+    }
+    append_ids(state, ids);
+    start_if_idle(state);
+}
+
 /// Move a folder's un-enriched photos to the FRONT of the worklist so the folder
 /// the user just opened is enriched first, then start the pool if idle.
 ///

@@ -1739,6 +1739,30 @@ impl Sidebar {
                 }),
             );
         }
+        {
+            let this = self.clone();
+            add(
+                "scan-folder-thumbs",
+                &group,
+                Rc::new(move |t| {
+                    if let (Some(state), Some(fid)) = (this.state(), folder_id_of(t)) {
+                        super::enrich::enqueue_folder(&state, fid);
+                    }
+                }),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "rescan-folder-thumbs",
+                &group,
+                Rc::new(move |t| {
+                    if let (Some(state), Some(fid)) = (this.state(), folder_id_of(t)) {
+                        super::enrich::rescan_folder(&state, fid);
+                    }
+                }),
+            );
+        }
 
         {
             let this = self.clone();
@@ -2092,6 +2116,15 @@ impl Sidebar {
             menu.append(
                 Some("Remove from Album"),
                 Some(&detailed("remove-folder", id)),
+            );
+            // Thumbnail scan for this folder.
+            menu.append(
+                Some("Scan all thumbnails (unfinished)"),
+                Some(&detailed("scan-folder-thumbs", id)),
+            );
+            menu.append(
+                Some("Rescan all thumbnails (all)"),
+                Some(&detailed("rescan-folder-thumbs", id)),
             );
             // Offer upload only when a server exists and the folder has photos.
             if let Some(fid) = folder_id_of(id) {

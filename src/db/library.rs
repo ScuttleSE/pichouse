@@ -683,6 +683,30 @@ impl Library {
     /// Ids of photos still needing Phase 2 enrichment (structured, not missing).
     /// Pass `Some(folder_id)` to limit to one folder, `None` for the whole
     /// library. Ordered by folder then filename for a stable worklist.
+    /// Reset the Phase 2 enrichment state for every non-missing photo in a
+    /// folder and return their ids. Backs the "Rescan all thumbnails" folder
+    /// action: it forces a re-hash and thumbnail rebuild for the whole folder,
+    /// not only the photos still marked unenriched. Sets `scan_state` back to 0
+    /// so the enrichment worker picks them up again.
+    pub fn reset_folder_enrichment(&self, folder_id: i64) -> Result<Vec<i64>> {
+        let conn = self.lock();
+        conn.execute(
+            "UPDATE photos SET scan_state = 0 WHERE folder_id = ?1 AND missing = 0",
+            params![folder_id],
+        )?;
+        let mut out = Vec::new();
+        {
+            let mut stmt = conn.prepare(
+                "SELECT id FROM photos WHERE folder_id = ?1 AND missing = 0 ORDER BY filename ASC",
+            )?;
+            let rows = stmt.query_map(params![folder_id], |r| r.get::<_, i64>(0))?;
+            for row in rows {
+                out.push(row?);
+            }
+        }
+        Ok(out)
+    }
+
     pub fn photos_needing_enrichment(&self, folder_id: Option<i64>) -> Result<Vec<i64>> {
         let conn = self.lock();
         let mut out = Vec::new();
