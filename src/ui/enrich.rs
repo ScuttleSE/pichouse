@@ -48,11 +48,25 @@ enum Msg {
     Finished,
 }
 
+/// Report whether bulk Phase 2 enrichment is postponed. When postponed, a
+/// folder's photos are enriched only when the user opens that folder; the rest
+/// of the library stays structure-only until "Scan Thumbnails Now" is used.
+pub fn postponed(state: &Rc<AppState>) -> bool {
+    state
+        .lib
+        .get_setting(super::prefs::KEY_POSTPONE_THUMBS, "0")
+        .map(|v| v == "1")
+        .unwrap_or(false)
+}
+
 /// Ensure the background enrichment worker pool is running, seeding the
 /// worklist from every photo still needing enrichment. Idempotent: if a session
 /// is already active, new ids appended to the shared queue are picked up without
-/// starting a second pool.
+/// starting a second pool. No-op when bulk enrichment is postponed.
 pub fn ensure_running(state: &Rc<AppState>) {
+    if postponed(state) {
+        return;
+    }
     let ids = state
         .lib
         .photos_needing_enrichment(None)
@@ -62,8 +76,34 @@ pub fn ensure_running(state: &Rc<AppState>) {
 }
 
 /// Append ids (from a just-scanned root or a reconcile) to the back of the
-/// worklist and start the pool if it is idle.
+/// worklist and start the pool if it is idle. When bulk enrichment is
+/// postponed, the ids are not queued in bulk; if the user currently has a
+/// Library folder open, that folder is still prioritized so photos that
+/// appear while browsing get thumbnails.
 pub fn enqueue(state: &Rc<AppState>, ids: Vec<i64>) {
+    if ids.is_empty() {
+        return;
+    }
+    if postponed(state) {
+        let current = *state.current_folder.borrow();
+        if current != 0 {
+            prioritize_folder(state, current);
+        }
+        return;
+    }
+    append_ids(state, ids);
+    start_if_idle(state);
+}
+
+/// Queue every photo still needing enrichment under one library root
+/// (regardless of the postpone setting) and start the pool if idle. Backs the
+/// "Scan Thumbnails Now" action, an explicit user request that bypasses the
+/// postpone gate.
+pub fn enqueue_root(state: &Rc<AppState>, root_path: &str) {
+    let ids = state
+        .lib
+        .photos_needing_enrichment_under(root_path)
+        .unwrap_or_default();
     if ids.is_empty() {
         return;
     }
@@ -78,8 +118,13 @@ pub fn enqueue(state: &Rc<AppState>, ids: Vec<i64>) {
 /// thumbnails load from disk without competing with background hashing on a slow
 /// disk. Enrichment resumes after the pause, now front-loaded on this folder.
 pub fn prioritize_folder(state: &Rc<AppState>, folder_id: i64) {
-    // Always yield the disk to the UI on a folder open.
-    state.pause_enrichment(BROWSE_PAUSE_SECS);
+    // Yield the disk to the UI on a folder open, unless enrichment is
+    // postponed and nothing else is running: the pause would only delay the
+    // on-demand work the user just asked for, with no background job
+    // competing for the disk.
+    if !postponed(state) || state.scan.running() || state.enrich_job.running() {
+        state.pause_enrichment(BROWSE_PAUSE_SECS);
+    }
     let ids = state
         .lib
         .photos_needing_enrichment(Some(folder_id))
@@ -162,6 +207,10 @@ fn start_workers(state: &Rc<AppState>) {
                     // If new work arrived while finishing, restart.
                     if !state.enrich_queue.lock().unwrap().is_empty() {
                         start_workers(&state);
+                    } else if postponed(&state) {
+                        state
+                            .status()
+                            .set_message("Folder ready. Other folders are read when you open them.");
                     } else {
                         state.status().set_message("Library up to date.");
                     }

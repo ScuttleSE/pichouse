@@ -20,6 +20,11 @@ a thumbnail grid in the center, and a properties panel on the right.
   thumbnail per photo. Un-enriched photos show a filename placeholder until
   their thumbnail lands. Opening a folder moves its photos to the front of the
   enrichment queue, and an interrupted import resumes on the next launch.
+  *Postpone thumbnail scan until a folder is opened*, in Settings → Library
+  Folders, stops after Phase 1 for every new import: the folder tree fills in,
+  but photo details and thumbnails are read only for a folder you open. A
+  *Scan Thumbnails Now* button in the same pane runs the postponed work for
+  one library folder on demand.
 - **Library freshness.** pichouse keeps the library in step with disk. It
   reconciles disk against the database on startup, on demand (the Refresh
   Library toolbar button), and on a periodic timer: files added on disk appear,

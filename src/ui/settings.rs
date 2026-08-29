@@ -112,11 +112,64 @@ fn folder_pane(state: &Rc<AppState>, parent: &Window) -> GtkBox {
     scroll.set_vexpand(true);
     scroll.set_child(Some(&list));
 
+    let scan_now = Button::with_label("Scan Thumbnails Now");
+    let pending_label = Label::new(None);
+    pending_label.set_xalign(0.0);
+    let update_pending: Rc<dyn Fn()> = {
+        let state = state.clone();
+        let selection = selection.clone();
+        let scan_now = scan_now.clone();
+        let pending_label = pending_label.clone();
+        Rc::new(move || {
+            let path = selection
+                .selected_item()
+                .and_downcast::<StringObject>()
+                .map(|o| o.string().to_string());
+            match path {
+                Some(p) => {
+                    let n = state
+                        .lib
+                        .photos_needing_enrichment_under(&p)
+                        .map(|v| v.len())
+                        .unwrap_or(0);
+                    pending_label.set_text(&format!("{n} pending"));
+                    scan_now.set_sensitive(n > 0);
+                }
+                None => {
+                    pending_label.set_text("");
+                    scan_now.set_sensitive(false);
+                }
+            }
+        })
+    };
+    update_pending();
+    {
+        let update_pending = update_pending.clone();
+        selection.connect_selection_changed(move |_, _, _| {
+            update_pending();
+        });
+    }
+    {
+        let state = state.clone();
+        let selection = selection.clone();
+        let update_pending = update_pending.clone();
+        scan_now.connect_clicked(move |_| {
+            if let Some(obj) = selection.selected_item().and_downcast::<StringObject>() {
+                super::enrich::enqueue_root(&state, &obj.string());
+            }
+            update_pending();
+        });
+    }
+    let scan_now_row = GtkBox::new(Orientation::Horizontal, 6);
+    scan_now_row.append(&scan_now);
+    scan_now_row.append(&pending_label);
+
     let add = Button::with_label("Add Folder…");
     {
         let state = state.clone();
         let parent = parent.clone();
         let reload = reload.clone();
+        let update_pending = update_pending.clone();
         add.connect_clicked(move |_| {
             let dialog = FileDialog::new();
             // Open at the last folder the user picked, if any.
@@ -127,6 +180,7 @@ fn folder_pane(state: &Rc<AppState>, parent: &Window) -> GtkBox {
             }
             let state = state.clone();
             let reload = reload.clone();
+            let update_pending = update_pending.clone();
             dialog.select_folder(
                 Some(&parent),
                 gio::Cancellable::NONE,
@@ -145,6 +199,7 @@ fn folder_pane(state: &Rc<AppState>, parent: &Window) -> GtkBox {
                                 &path.to_string_lossy(),
                             );
                             reload();
+                            update_pending();
                         }
                     }
                 },
@@ -159,6 +214,7 @@ fn folder_pane(state: &Rc<AppState>, parent: &Window) -> GtkBox {
         let selection = selection.clone();
         let parent = parent.clone();
         let reload = reload.clone();
+        let update_pending = update_pending.clone();
         remove.connect_clicked(move |_| {
             let Some(obj) = selection.selected_item().and_downcast::<StringObject>() else {
                 return;
@@ -166,6 +222,7 @@ fn folder_pane(state: &Rc<AppState>, parent: &Window) -> GtkBox {
             let path = obj.string().to_string();
             let state2 = state.clone();
             let reload = reload.clone();
+            let update_pending = update_pending.clone();
             confirm(
                 &state,
                 Some(&parent),
@@ -181,6 +238,7 @@ fn folder_pane(state: &Rc<AppState>, parent: &Window) -> GtkBox {
                     // clear it so stale thumbnails are not shown or clickable.
                     state2.clear_grid_if_folder_gone();
                     reload();
+                    update_pending();
                 },
             );
         });
@@ -212,11 +270,43 @@ fn folder_pane(state: &Rc<AppState>, parent: &Window) -> GtkBox {
         });
     }
 
+    let postpone = CheckButton::with_label("Postpone thumbnail scan until a folder is opened");
+    postpone.set_active(
+        state
+            .lib
+            .get_setting(prefs::KEY_POSTPONE_THUMBS, "0")
+            .map(|v| v == "1")
+            .unwrap_or(false),
+    );
+    {
+        let state = state.clone();
+        let update_pending = update_pending.clone();
+        postpone.connect_toggled(move |b| {
+            let _ = state.lib.set_setting(
+                prefs::KEY_POSTPONE_THUMBS,
+                prefs::bool_to_str(b.is_active()),
+            );
+            if !b.is_active() {
+                // Resume background enrichment for anything left pending.
+                super::enrich::ensure_running(&state);
+            }
+            update_pending();
+        });
+    }
+    let postpone_help = Label::new(Some(
+        "When on, a new folder is scanned into the folder tree only. Photo details and thumbnails are read the first time you open that folder.",
+    ));
+    postpone_help.set_xalign(0.0);
+    postpone_help.set_wrap(true);
+
     let root = pane_box();
     root.append(&help);
     root.append(&buttons);
     root.append(&autoscan);
+    root.append(&postpone);
+    root.append(&postpone_help);
     root.append(&scroll);
+    root.append(&scan_now_row);
     root
 }
 

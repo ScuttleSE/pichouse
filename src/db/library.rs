@@ -567,6 +567,26 @@ impl Library {
         Ok(out)
     }
 
+    /// Ids of photos still needing Phase 2 enrichment under one library root
+    /// (matched by path prefix, like `remove_library_folder`). Backs the
+    /// "Scan Thumbnails Now" action and its pending count when bulk
+    /// enrichment is postponed.
+    pub fn photos_needing_enrichment_under(&self, root_path: &str) -> Result<Vec<i64>> {
+        let conn = self.lock();
+        let prefix = format!("{}{}%", root_path, std::path::MAIN_SEPARATOR);
+        let mut stmt = conn.prepare(
+            "SELECT p.id FROM photos p JOIN folders f ON f.id = p.folder_id
+             WHERE p.scan_state <> 2 AND p.missing = 0 AND (f.path = ?1 OR f.path LIKE ?2)
+             ORDER BY f.path ASC, p.filename ASC",
+        )?;
+        let rows = stmt.query_map(params![root_path, prefix], |r| r.get::<_, i64>(0))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
     /// Record the Phase 2 enrichment result for a photo: EXIF taken date,
     /// pixel dimensions, and content hash, and mark it done.
     pub fn enrich_photo(
@@ -960,6 +980,68 @@ mod tests {
 
         // A very small age window drops it (age-based expiry).
         assert_eq!(lib.new_photos_count(-1).unwrap(), 0);
+
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("db-wal"));
+        let _ = std::fs::remove_file(path.with_extension("db-shm"));
+    }
+
+    #[test]
+    fn enrichment_under_root_is_scoped_by_prefix() {
+        let (lib, path) = temp_lib();
+
+        let root_a = "/tmp/pichouse-root-a";
+        let root_b = "/tmp/pichouse-root-a-other";
+        lib.add_library_folder(root_a).unwrap();
+        lib.add_library_folder(root_b).unwrap();
+
+        let fid_a = lib
+            .upsert_folder(&Folder {
+                path: format!("{root_a}/sub"),
+                name: "sub".into(),
+                mtime: 0,
+                year: 2020,
+                ..Default::default()
+            })
+            .unwrap();
+        let fid_b = lib
+            .upsert_folder(&Folder {
+                path: format!("{root_b}/sub"),
+                name: "sub".into(),
+                mtime: 0,
+                year: 2020,
+                ..Default::default()
+            })
+            .unwrap();
+
+        let a1 = lib
+            .upsert_photo_structure(&Photo {
+                folder_id: fid_a,
+                path: format!("{root_a}/sub/a.jpg"),
+                filename: "a.jpg".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        let b1 = lib
+            .upsert_photo_structure(&Photo {
+                folder_id: fid_b,
+                path: format!("{root_b}/sub/b.jpg"),
+                filename: "b.jpg".into(),
+                ..Default::default()
+            })
+            .unwrap();
+
+        // root_b's path is not a proper subdirectory of root_a even though it
+        // shares the same string prefix; it must not leak into root_a's list.
+        let under_a = lib.photos_needing_enrichment_under(root_a).unwrap();
+        assert_eq!(under_a, vec![a1]);
+
+        let under_b = lib.photos_needing_enrichment_under(root_b).unwrap();
+        assert_eq!(under_b, vec![b1]);
+
+        // Enriching a's photo removes it from the pending list.
+        lib.enrich_photo(a1, 0, 1, 1, "hash", 0).unwrap();
+        assert!(lib.photos_needing_enrichment_under(root_a).unwrap().is_empty());
 
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(path.with_extension("db-wal"));
