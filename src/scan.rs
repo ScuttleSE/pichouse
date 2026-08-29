@@ -1,8 +1,7 @@
 //! Filesystem scanner: walk library folders and record photos into the library
 //! database.
 
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::UNIX_EPOCH;
@@ -59,15 +58,6 @@ fn wait_while_paused(
     }
 }
 
-/// Scan progress. `done` is the number of photos processed so far; `total` is
-/// the number discovered.
-#[derive(Debug, Clone)]
-pub struct Progress {
-    pub folder: String,
-    pub done: usize,
-    pub total: usize,
-}
-
 /// Records photos from library folders into the library database.
 pub struct Scanner<'a> {
     lib: &'a Library,
@@ -82,73 +72,100 @@ impl<'a> Scanner<'a> {
     /// Walk `root` recursively, recording folders and photo *structure* only
     /// (Phase 1 of the two-phase import). Per photo this records just cheap
     /// `fs::metadata` (path, filename, folder_id, size, mod_time); EXIF,
-    /// dimensions, and hash are left for the Phase 2 enrichment worker. The
-    /// folder tree and grid can therefore populate almost immediately, even for
-    /// tens of thousands of files.
+    /// dimensions, and hash are left for the Phase 2 enrichment worker.
     ///
-    /// `progress` is called after each photo. `on_folder` is called once per
-    /// directory, right after its photo rows are recorded, with the folder id
-    /// and its path — the caller uses this to file the folder into the Library
-    /// album tree immediately, so it never lingers under "New folders". When
-    /// `cancel` becomes true the walk stops promptly. Returns the number of
-    /// photos recorded.
-    pub fn scan_folder<F, G, H>(
+    /// Discovery and recording happen together, directory by directory, in a
+    /// single walk: as soon as a directory's images are found they are written
+    /// and filed into the tree, before moving on to the next directory. This
+    /// is what lets the Library tree grow live while a large or slow root is
+    /// still being scanned, instead of only appearing once the whole tree has
+    /// been walked.
+    ///
+    /// `on_dir` is called as each directory is entered — including ones with
+    /// no images of their own — with the number of photos recorded so far, so
+    /// the caller can show live status even while walking through container
+    /// folders on a slow disk. `on_folder` is called once per directory that
+    /// actually holds images, right after its photo rows are recorded, with
+    /// the folder id and its path — the caller uses this to file the folder
+    /// into the Library album tree immediately, so it never lingers under
+    /// "New folders". When `cancel` becomes true the walk stops promptly.
+    /// Returns the number of photos recorded.
+    pub fn scan_folder<F, G>(
         &self,
         root: &Path,
         cancel: &Arc<AtomicBool>,
         pause_until: &Arc<std::sync::atomic::AtomicU64>,
-        mut progress: F,
+        mut on_dir: F,
         mut on_folder: G,
-        mut on_discover: H,
     ) -> Result<usize, ScanError>
     where
-        F: FnMut(Progress),
+        F: FnMut(&Path, usize),
         G: FnMut(i64, &Path),
-        H: FnMut(&Path, usize),
     {
-        // First pass: collect image files grouped by directory. Reports each
-        // directory as it is entered via `on_discover`, so the caller can keep
-        // the status bar live during this walk — on a slow or large tree this
-        // pass alone can take a long time, and it otherwise reports nothing
-        // until it returns.
-        let mut by_dir: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
-        let mut total = 0usize;
-        log::info!("collect_images: walking {} …", root.display());
-        let t_collect = std::time::Instant::now();
-        collect_images(root, cancel, &mut by_dir, &mut total, &mut on_discover)?;
-        log::info!(
-            "collect_images {}: {} images in {} dirs, took {:.2?}",
-            root.display(),
-            total,
-            by_dir.len(),
-            t_collect.elapsed()
-        );
-
-        let t_scan = std::time::Instant::now();
         let mut done = 0usize;
-        let ndirs = by_dir.len();
-        for (i, (dir, files)) in by_dir.iter().enumerate() {
-            if cancel.load(Ordering::Relaxed) {
-                return Err(ScanError::Cancelled(done));
+        let t_scan = std::time::Instant::now();
+        self.scan_dir(root, cancel, pause_until, &mut done, &mut on_dir, &mut on_folder)?;
+        log::info!(
+            "scan {}: recorded {} photos in {:.2?}",
+            root.display(),
+            done,
+            t_scan.elapsed()
+        );
+        Ok(done)
+    }
+
+    /// Process one directory: record its images (if any) and file it into the
+    /// tree, then recurse into its subdirectories. See `scan_folder` for the
+    /// callback contract.
+    fn scan_dir(
+        &self,
+        dir: &Path,
+        cancel: &Arc<AtomicBool>,
+        pause_until: &Arc<std::sync::atomic::AtomicU64>,
+        done: &mut usize,
+        on_dir: &mut dyn FnMut(&Path, usize),
+        on_folder: &mut dyn FnMut(i64, &Path),
+    ) -> Result<(), ScanError> {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(ScanError::Cancelled(*done));
+        }
+        // Yield to the UI while the user is browsing: opening a folder sets a
+        // short pause deadline so on-demand thumbnail work gets the disk and
+        // the grid is not rebuilt from under the user by scan reloads.
+        wait_while_paused(pause_until, cancel);
+        if cancel.load(Ordering::Relaxed) {
+            return Err(ScanError::Cancelled(*done));
+        }
+        on_dir(dir, *done);
+
+        log::trace!("read_dir {}", dir.display());
+        let entries = match std::fs::read_dir(dir) {
+            Ok(e) => e,
+            Err(e) => {
+                log::debug!("skip unreadable dir {}: {e}", dir.display());
+                return Ok(()); // skip unreadable directories
             }
-            // Yield to the UI while the user is browsing: opening a folder sets a
-            // short pause deadline so on-demand thumbnail work gets the disk and
-            // the grid is not rebuilt from under the user by scan reloads.
-            wait_while_paused(pause_until, cancel);
+        };
+        let mut files = Vec::new();
+        let mut subdirs = Vec::new();
+        for entry in entries.flatten() {
             if cancel.load(Ordering::Relaxed) {
-                return Err(ScanError::Cancelled(done));
+                return Err(ScanError::Cancelled(*done));
             }
-            log::debug!(
-                "scan dir [{}/{}] {} ({} files): start",
-                i + 1,
-                ndirs,
-                dir.display(),
-                files.len()
-            );
+            let path = entry.path();
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if file_type.is_dir() {
+                subdirs.push(path);
+            } else if path.file_name().and_then(|n| n.to_str()).is_some_and(is_image) {
+                files.push(path);
+            }
+        }
+
+        if !files.is_empty() {
             let t_dir = std::time::Instant::now();
-            let t_upsert = std::time::Instant::now();
             let fid = self.upsert_folder_for(dir)?;
-            let upsert_ms = t_upsert.elapsed();
             self.lib.set_scan_state(fid, ScanStatus::Running)?;
 
             // Record the whole directory's photos in one transaction. This holds
@@ -159,51 +176,28 @@ impl<'a> Scanner<'a> {
                 .iter()
                 .filter_map(|path| structure_photo(fid, path))
                 .collect();
-            log::debug!(
-                "scan dir {}: inserting {} photos …",
-                dir.display(),
-                batch.len()
-            );
-            let t_batch = std::time::Instant::now();
             self.lib.insert_structure_batch(&batch)?;
-            let batch_ms = t_batch.elapsed();
+            *done += batch.len();
 
             // File this folder into the Library album tree right away.
-            log::trace!("scan dir {}: on_folder …", dir.display());
             on_folder(fid, dir);
 
-            for path in files {
-                done += 1;
-                progress(Progress {
-                    folder: dir.to_string_lossy().into_owned(),
-                    done,
-                    total,
-                });
-                log::trace!("recorded {}", path.display());
-                if cancel.load(Ordering::Relaxed) {
-                    return Err(ScanError::Cancelled(done));
-                }
-            }
             self.lib.set_scan_state(fid, ScanStatus::Done)?;
             log::debug!(
-                "scan dir {}: done ({} photos, upsert_folder {:.2?}, insert_batch {:.2?}, dir total {:.2?})",
+                "scan dir {}: recorded {} photos in {:.2?}",
                 dir.display(),
                 batch.len(),
-                upsert_ms,
-                batch_ms,
                 t_dir.elapsed()
             );
             // Yield so the enrichment workers get a turn on the DB lock between
             // directories rather than the scan monopolizing it.
             std::thread::yield_now();
         }
-        log::info!(
-            "scan {}: recorded {} photos in {:.2?}",
-            root.display(),
-            done,
-            t_scan.elapsed()
-        );
-        Ok(done)
+
+        for sub in subdirs {
+            self.scan_dir(&sub, cancel, pause_until, done, on_dir, on_folder)?;
+        }
+        Ok(())
     }
 
     /// Record the folder for a directory. The `year` is derived from the folder
@@ -333,51 +327,6 @@ pub fn enrich_file_with_image(path: &Path) -> Option<(Enrichment, Option<image::
     ))
 }
 
-
-/// Recursively collect image files under `root`, grouped by parent directory.
-/// `on_dir` is called as each directory is entered, with the running count of
-/// images found so far, so a caller can show live progress during a walk that
-/// may otherwise run for a long time with no other feedback.
-fn collect_images(
-    dir: &Path,
-    cancel: &Arc<AtomicBool>,
-    by_dir: &mut HashMap<PathBuf, Vec<PathBuf>>,
-    total: &mut usize,
-    on_dir: &mut dyn FnMut(&Path, usize),
-) -> Result<(), ScanError> {
-    if cancel.load(Ordering::Relaxed) {
-        return Err(ScanError::Cancelled(0));
-    }
-    on_dir(dir, *total);
-    log::trace!("read_dir {}", dir.display());
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(e) => {
-            log::debug!("skip unreadable dir {}: {e}", dir.display());
-            return Ok(()); // skip unreadable directories
-        }
-    };
-    for entry in entries.flatten() {
-        if cancel.load(Ordering::Relaxed) {
-            return Err(ScanError::Cancelled(0));
-        }
-        let path = entry.path();
-        let file_type = match entry.file_type() {
-            Ok(t) => t,
-            Err(_) => continue,
-        };
-        if file_type.is_dir() {
-            collect_images(&path, cancel, by_dir, total, on_dir)?;
-        } else if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            if is_image(name) {
-                let parent = path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
-                by_dir.entry(parent).or_default().push(path.clone());
-                *total += 1;
-            }
-        }
-    }
-    Ok(())
-}
 
 /// A scan error. `Cancelled` carries the number of photos recorded before the
 /// cancel was observed.
@@ -577,12 +526,14 @@ mod tests {
         let scanner = Scanner::new(&lib);
         let cancel = Arc::new(AtomicBool::new(false));
         let pause = Arc::new(std::sync::atomic::AtomicU64::new(0));
-        let mut seen = 0;
+        let mut folders_recorded = 0;
         let n = scanner
-            .scan_folder(&dir, &cancel, &pause, |_p| seen += 1, |_fid, _dir| {}, |_dir, _n| {})
+            .scan_folder(&dir, &cancel, &pause, |_dir, _done| {}, |_fid, _dir| {
+                folders_recorded += 1;
+            })
             .unwrap();
         assert_eq!(n, 1);
-        assert_eq!(seen, 1);
+        assert_eq!(folders_recorded, 1);
         // Phase 1 records structure only: no dimensions or hash yet.
         let folders = lib.folders().unwrap();
         assert_eq!(folders.len(), 1);

@@ -131,12 +131,12 @@ fn start_scan_worker(state: &Rc<AppState>) {
         let mut scan_err: Option<String> = None;
         let mut cancelled = false;
 
-        // Cumulative progress across every folder drained in this session, so
-        // the counter and bar reflect the whole job, not just the current
-        // folder. `base_done` is the number of photos finished in prior
-        // folders; `prior_total` is the sum of prior folders' image counts.
+        // Cumulative photos recorded across every folder drained in this
+        // session, so the status text keeps climbing across queued roots
+        // instead of resetting per root. The total is not known up front (the
+        // walk discovers and records at the same time), so there is no
+        // percentage to show during this pass — see `on_dir` below.
         let mut base_done: usize = 0;
-        let mut prior_total: usize = 0;
 
         // Drain the queue, including paths appended while scanning.
         loop {
@@ -149,39 +149,29 @@ fn start_scan_worker(state: &Rc<AppState>) {
             let _ = tx.send(Msg::Message(format!("Scanning {path}")));
             let tx_progress = tx.clone();
             let tx_folder = tx.clone();
-            let tx_discover = tx.clone();
             let lib_folder = lib.clone();
             let root_folder = path.clone();
-            // Per-folder running counts, read back after the folder completes.
-            let this_done = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-            let this_total = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-            let this_done_cb = this_done.clone();
-            let this_total_cb = this_total.clone();
             // File each scanned directory into the Library album tree the moment
             // its rows are written, so folders never linger under "New folders".
             // A per-root mapper caches albums so this stays cheap.
             let mut mapper = super::albumtree::DiskAlbumMapper::new(&lib_folder);
             let mut dirs_since_reload = 0usize;
+            let base_done_snapshot = base_done;
             let result = scanner.scan_folder(
                 std::path::Path::new(&path),
                 &cancel,
                 &pause_until,
-                move |p| {
-                    use std::sync::atomic::Ordering;
-                    this_done_cb.store(p.done, Ordering::Relaxed);
-                    this_total_cb.store(p.total, Ordering::Relaxed);
-                    // Cumulative across the whole session.
-                    let done = base_done + p.done;
-                    let total = prior_total + p.total;
-                    let frac = if total > 0 {
-                        done as f64 / total as f64
-                    } else {
-                        0.0
-                    };
-                    let _ = tx_progress.send(Msg::Progress(frac));
+                move |dir, done_so_far| {
+                    // Discovery and recording happen together, so this fires
+                    // for every directory entered (even ones with no images)
+                    // and is the only feedback available during this pass; on
+                    // a large or slow tree it can otherwise look frozen for a
+                    // long time. No total is known yet, so this is a running
+                    // count, not a percentage.
+                    let total_done = base_done_snapshot + done_so_far;
                     let _ = tx_progress.send(Msg::Message(format!(
-                        "Scanning {} ({}/{})",
-                        p.folder, done, total
+                        "Scanning {} ({total_done} found)",
+                        dir.display()
                     )));
                 },
                 move |fid, dir| {
@@ -205,22 +195,15 @@ fn start_scan_worker(state: &Rc<AppState>) {
                         let _ = tx_folder.send(Msg::ReloadOnly);
                     }
                 },
-                move |dir, found_so_far| {
-                    // File discovery has no total yet, so this is the only
-                    // feedback available while it runs; on a large or slow
-                    // tree it can otherwise look frozen for a long time.
-                    let _ = tx_discover.send(Msg::Message(format!(
-                        "Finding photos… {} ({found_so_far} found)",
-                        dir.display()
-                    )));
-                },
             );
-            // Fold this folder's counts into the cumulative totals.
-            {
-                use std::sync::atomic::Ordering;
-                base_done += this_done.load(Ordering::Relaxed);
-                prior_total += this_total.load(Ordering::Relaxed);
-            }
+            // Fold this root's count into the cumulative total, whatever the
+            // outcome, so a later queued root's status text keeps climbing
+            // from the right place.
+            base_done += match &result {
+                Ok(n) => *n,
+                Err(ScanError::Cancelled(n)) => *n,
+                Err(_) => 0,
+            };
             match result {
                 Ok(_) => {
                     // Record that this root's first scan is complete, so files
