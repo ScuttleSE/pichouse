@@ -2,9 +2,13 @@
 
 This document is for an agent with no memory of the last session. It uses
 Simplified Technical English (ASD-STE100, Strict). Read AGENTS.md first. Read
-ROADMAP.md for planned features. Read section 000000000000000000 first — it
-describes the most recent work (stopping the Phase 1 scan slowdown at 1M+
-photos). Then read section 00000000000000000 — it describes bounding on-demand
+ROADMAP.md for planned features. Read section 0000000000000000000 first — it
+describes the most recent work (found and fixed the real cause of the Phase 1
+scan slowdown past 1M photos: a per-file re-stat that grew expensive on a
+network mount). Then read section 000000000000000000 — it
+describes an earlier, partial fix (stopping O(total-photos) sidebar work during
+a scan) and the diagnostic logging that led to the real fix above. Then read
+section 00000000000000000 — it describes bounding on-demand
 grid work to the true visible window. Then read section 0000000000000000 — it
 describes viewport-driven enrichment and a Tools "Generate Thumbnails" pass;
 automatic enrichment is removed. Then read
@@ -37,7 +41,69 @@ Then read section 00 — it describes four earlier follow-up features. Then read
 section 0 — it describes the Immich integration. The later sections describe
 earlier features and are still correct.
 
-## 000000000000000000. Stop the Phase 1 scan slowdown at 1M+ photos (most recent work — read this first)
+## 0000000000000000000. Found and fixed the real Phase 1 scan slowdown (most recent work — read this first)
+
+This section describes the last session. All work is complete, on `main`, and
+pushed. Two functional commits (diagnostic logging, then the fix). CI
+version-bump commits sit between pushes. Ignore those.
+
+The previous session (section 000000000000000000 below) fixed the sidebar
+aggregate queries, but the user reported the scan still slowed down at 1M+
+photos, including on a resume run that mostly skips directories, and on both a
+CIFS and an NFSv4 mount. That ruled out SQLite and the sidebar. Read
+section 000000000000000000 first for that background, then this section for
+the real cause and fix.
+
+### 0000000000000000000.1 Diagnostic logging pinpointed the cause
+
+Added `ScanMetrics` to `src/scan.rs`: per-directory phase timing (`read_dir`
+plus the entry `file_type` loop, the directory stat for the resume cursor, the
+per-file stat, the resume cursor DB read, the DB batch) and a rolling summary at
+`info` every 200 directories or 15 seconds (dirs/s, files/s, average per-phase
+milliseconds, cumulative totals). Also logs a slow `read_dir` (>= 250 ms), a
+slow `folder_scan_cursor` (>= 50 ms), and the WAL page count at each periodic
+checkpoint (`Library::checkpoint`, `src/db/library.rs`).
+
+The user ran a scan with `-vvv` and shared the `scan rate:` line from early
+(200 directories in) and late (5847 directories, 1.42M files in). Every phase
+was flat or small except one:
+
+```
+early: file_stat 0.09 ms/dir
+late:  file_stat 209.37 ms/dir   (all other phases flat or small)
+```
+
+`file_stat` climbed about 2300x while `read_dir`, `dir_stat`, `cursor`, and `db`
+did not. This is the whole slowdown.
+
+### 0000000000000000000.2 Root cause and fix
+
+`structure_photo` (`src/scan.rs`) called `std::fs::metadata(path)` a second
+time for every image file, to read its size and mtime. The directory listing
+(`std::fs::read_dir`) already fetches this information for each entry. On a
+network mount (NFS with READDIRPLUS, CIFS) the second, separate `stat` call
+round-trips to the server once the client's attribute cache entry for that file
+(populated by the `read_dir` response) has been evicted — and across a walk of
+over a million files, the cache keeps getting evicted, so the round-trip cost
+climbs. This reproduced on both CIFS and NFSv4, confirming it is the app's extra
+stat, not one mount protocol.
+
+Fix, in `src/scan.rs`:
+- The directory-entry loop now captures each image file's `Metadata` via
+  `entry.metadata()` at listing time (reusing the attributes the directory
+  listing already returned), instead of only the path.
+- `structure_photo(folder_id, path, meta)` takes that `Metadata` directly and no
+  longer calls `std::fs::metadata` itself.
+- A file that vanishes between the listing and this call is skipped, the same
+  as before. No separate fallback re-stat was added: it would hit the same
+  vanished file and stat the network again for no benefit, defeating the fix.
+
+Verify: re-run the scan with `-vvv` and grep
+`"scan rate:|wal checkpoint|slow read_dir|slow folder_scan_cursor|db lock: waited"`.
+`file_stat` should stay near 0 through the whole scan instead of climbing, and
+dirs/s should stay high (bounded mainly by `read_dir`).
+
+## 000000000000000000. Stop the Phase 1 scan slowdown at 1M+ photos
 
 This section describes the last session. All work is complete, on `main`, and
 pushed. One functional commit. CI version-bump commits sit between pushes.
