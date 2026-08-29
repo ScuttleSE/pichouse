@@ -344,18 +344,20 @@ impl CharactersView {
         }
 
         // Primary-button clicks. One click toggles the group selection. Two
-        // clicks open the group.
+        // clicks open the group. We act on release with the final press count,
+        // so a double-click is not consumed by the first press.
         let primary = GestureClick::new();
         primary.set_button(gtk4::gdk::BUTTON_PRIMARY);
         {
             let this = self.clone();
             let state = state.clone();
             let name = name.to_string();
-            primary.connect_pressed(move |g, n_press, _, _| {
+            primary.connect_released(move |g, n_press, _, _| {
                 g.set_state(gtk4::EventSequenceState::Claimed);
                 if n_press >= 2 {
                     // Open the group. A double-click clears the selection first,
-                    // so the open is not mistaken for a selection.
+                    // so the open is not mistaken for a selection. Undo the
+                    // single-click toggle that the first click applied.
                     this.clear_selection();
                     if named {
                         state.show_character(character_id, &name);
