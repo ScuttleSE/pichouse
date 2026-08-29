@@ -137,7 +137,9 @@ You manage a group in two places:
 
 - **Group tile (double-click, single-click, right-click).** A double-click opens
   the group's photos. A single click selects the group. Select more groups with
-  more single clicks. A selection bar then shows *Do not scan selected* and
+  more single clicks. A shift-click selects every group between the last clicked
+  group and the shift-clicked group. A selection bar then shows *Do not scan
+  selected* and
   *Clear selection*. *Do not scan selected* marks every photo in the selected
   groups unimportant. A right-click on a tile opens a menu. A named tile offers
   *Rename*, *Clear name*, *Delete character*, and *Do not scan this group*.

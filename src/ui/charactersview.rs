@@ -47,6 +47,8 @@ pub struct CharactersView {
     tiles: RefCell<Vec<TileEntry>>,
     /// The currently selected groups. Empty when nothing is selected.
     selected: RefCell<Vec<TileKey>>,
+    /// The anchor for a shift-click range. Set on a plain single click.
+    anchor: RefCell<Option<TileKey>>,
     /// The selection action bar. Visible only when the selection is not empty.
     sel_bar: GtkBox,
     /// The selection count label in the action bar.
@@ -125,6 +127,7 @@ impl CharactersView {
             state: RefCell::new(None),
             tiles: RefCell::new(Vec::new()),
             selected: RefCell::new(Vec::new()),
+            anchor: RefCell::new(None),
             sel_bar,
             sel_label,
         });
@@ -274,10 +277,18 @@ impl CharactersView {
         }
 
         // Drop selection entries whose group is gone, then refresh the
-        // highlight and the action bar.
+        // highlight and the action bar. Drop the anchor if its group is gone.
         {
             let mut sel = self.selected.borrow_mut();
             sel.retain(|k| self.tiles.borrow().iter().any(|t| t.key == *k));
+        }
+        {
+            let mut anchor = self.anchor.borrow_mut();
+            if let Some(k) = *anchor {
+                if !self.tiles.borrow().iter().any(|t| t.key == k) {
+                    *anchor = None;
+                }
+            }
         }
         self.update_selection_ui();
     }
@@ -352,7 +363,14 @@ impl CharactersView {
                         state.show_style_cluster(cluster_id, "Unnamed character");
                     }
                 } else {
-                    this.toggle_selection(key);
+                    let shift = g
+                        .current_event_state()
+                        .contains(gtk4::gdk::ModifierType::SHIFT_MASK);
+                    if shift {
+                        this.select_range_to(key);
+                    } else {
+                        this.toggle_selection(key);
+                    }
                 }
             });
         }
@@ -379,7 +397,7 @@ impl CharactersView {
     }
 
     /// Toggle whether a group is in the selection. Updates the highlight and
-    /// the action bar.
+    /// the action bar. Sets the anchor for a later shift-click range.
     fn toggle_selection(self: &Rc<Self>, key: TileKey) {
         {
             let mut sel = self.selected.borrow_mut();
@@ -389,12 +407,48 @@ impl CharactersView {
                 sel.push(key);
             }
         }
+        *self.anchor.borrow_mut() = Some(key);
         self.update_selection_ui();
     }
 
-    /// Clear the whole selection.
+    /// Select every group from the anchor to `key`, in display order. Adds the
+    /// whole range to the selection and keeps the anchor. With no anchor, this
+    /// falls back to a plain toggle.
+    fn select_range_to(self: &Rc<Self>, key: TileKey) {
+        let anchor = *self.anchor.borrow();
+        let Some(anchor) = anchor else {
+            self.toggle_selection(key);
+            return;
+        };
+        let (from, to) = {
+            let tiles = self.tiles.borrow();
+            let a = tiles.iter().position(|t| t.key == anchor);
+            let b = tiles.iter().position(|t| t.key == key);
+            match (a, b) {
+                (Some(a), Some(b)) => (a.min(b), a.max(b)),
+                _ => {
+                    drop(tiles);
+                    self.toggle_selection(key);
+                    return;
+                }
+            }
+        };
+        {
+            let tiles = self.tiles.borrow();
+            let mut sel = self.selected.borrow_mut();
+            for entry in &tiles[from..=to] {
+                if !sel.iter().any(|k| *k == entry.key) {
+                    sel.push(entry.key);
+                }
+            }
+        }
+        self.update_selection_ui();
+    }
+
+    /// Clear the whole selection and the anchor.
     fn clear_selection(self: &Rc<Self>) {
         self.selected.borrow_mut().clear();
+        *self.anchor.borrow_mut() = None;
         self.update_selection_ui();
     }
 
@@ -445,6 +499,7 @@ impl CharactersView {
             return;
         }
         self.selected.borrow_mut().clear();
+        *self.anchor.borrow_mut() = None;
         self.reload();
         let sb = state.sidebar.borrow().as_ref().cloned();
         if let Some(sb) = sb {
