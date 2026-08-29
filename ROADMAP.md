@@ -364,7 +364,7 @@ integration removes the Ollama layer.
 - How the application finds or downloads the model file (no automatic download
   today).
 - GPU support on the target machines, and the CPU fallback.
-- The build and packaging effect on Debian 13 and the Gitea runner if the
+- The build and packaging effect on Debian 13 and the CI runner if the
   in-process option is chosen (a C++ toolchain and CUDA/Vulkan libraries).
 - Migration of the existing AI settings (`src/ui/settings_ai.rs`, the `ai.*`
   keys in `library.db`) to the new backend's settings.

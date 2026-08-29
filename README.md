@@ -98,6 +98,23 @@ Open the toolbar **Tools** menu and pick **Find Duplicates…**. Choose a scope
   "worse" copy shows a red **X**. Click any photo to move the X to it. Click the
   X to unmark. The **Delete marked** button then removes the marked files.
 
+## Immich integration (optional)
+
+pichouse can connect to an [Immich](https://immich.app) server and browse its
+albums and photos alongside your local library.
+
+- **Connect** in *Settings → Immich*: enter your server URL and API key, then
+  *Test Connection*.
+- Immich albums appear in the sidebar next to your local Albums, and their
+  photos load into the same thumbnail grid, viewer, and properties panel used
+  for local photos.
+- **Editing works too.** Immich photos support the same non-destructive
+  editing as local photos (flip, straighten, crop, brightness/contrast, color
+  levels) — the full-resolution asset is fetched on demand, and edits are
+  applied at view time without modifying anything on the Immich server.
+- Thumbnails for Immich photos are cached locally, per connected server
+  (`immich-thumbs-<server-id>.db`), alongside the rest of pichouse's data.
+
 ## Facial recognition (local, optional)
 
 pichouse can detect faces, group the same person across your library, and let
@@ -126,6 +143,18 @@ processing stays on your machine.
 
 Faces, people, and per-photo scan state live in `library.db`; face-crop
 thumbnails live in `face-thumbs.db`.
+
+### People vs. Characters: two separate recognition pipelines
+
+**People** (above) detects and groups *human* faces using YuNet/SFace.
+**Characters** is a separate pipeline for *stylised* art — anime, cartoons,
+illustrations, furries — using its own detector (an anime-tuned YOLOv8-nano)
+and a CCIP CaFormer embedder trained for anime character re-identification
+(both from [deepghs](https://huggingface.co/deepghs); the embedder is
+OpenRAIL-M licensed, the detector MIT). Both pipelines live under *Settings →
+Faces* and work the same way day-to-day (scan, review, name, browse), but
+they run independently: a photo can be grouped by one pipeline, both, or
+neither, depending on whether it contains real or drawn faces.
 
 ### Managing face and character groups
 
@@ -249,7 +278,12 @@ freezes.
 
     cargo test
 
-## Continuous integration
+## Releases
 
-Pushing to `main` triggers a Gitea Actions workflow that builds a
-`linux/amd64` binary and publishes a rolling pre-release.
+Tagged releases (`vX.Y.Z`) publish a prebuilt `linux/amd64` binary as a
+[GitHub Release](https://github.com/ScuttleSE/pichouse/releases). If you'd
+rather build from source, see [Build and run](#build-and-run) above.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
