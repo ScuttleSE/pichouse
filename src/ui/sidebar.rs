@@ -120,6 +120,11 @@ pub struct Sidebar {
     /// expansion set. Set during a reload so tree teardown/rebuild does not wipe
     /// the state.
     suppress_expand_notify: std::cell::Cell<bool>,
+    /// When true, selection-changed notifications do not trigger navigation.
+    /// Set while a reload re-selects the previously selected rows (whose
+    /// underlying objects were just recreated), so a background refresh (e.g.
+    /// during a scan) does not repeatedly reload the currently viewed folder.
+    suppress_selection_notify: std::cell::Cell<bool>,
 }
 
 impl Sidebar {
@@ -228,6 +233,7 @@ impl Sidebar {
                 menu_pop: RefCell::new(None),
                 weak_self: weak.clone(),
                 suppress_expand_notify: std::cell::Cell::new(false),
+                suppress_selection_notify: std::cell::Cell::new(false),
             }
         });
 
@@ -491,6 +497,9 @@ impl Sidebar {
     }
 
     fn on_selection_changed(&self, sel: &gtk4::MultiSelection) {
+        if self.suppress_selection_notify.get() {
+            return;
+        }
         for id in self.selected_ids(sel) {
             if id == NEW_FILES_ID {
                 if let Some(state) = self.state() {
@@ -691,6 +700,20 @@ impl Sidebar {
     /// Rebuild the tree from the current database state.
     pub fn reload(self: &Rc<Self>) {
         let Some(state) = self.state() else { return };
+        // The splice below replaces every root row with a fresh object, which
+        // also discards any expanded subtree's rows — including the currently
+        // selected and/or keyboard-focused one. Capture both here so they can
+        // be restored once the same rows exist again, so a background refresh
+        // (e.g. the live updates during a scan) does not interrupt the user
+        // navigating the tree.
+        let had_focus = self.list_view.focus_child().is_some();
+        let selected_before = self
+            .list_view
+            .model()
+            .and_downcast::<gtk4::MultiSelection>()
+            .map(|sel| self.selected_ids(&sel))
+            .unwrap_or_default();
+
         // Suppress per-row expand/collapse persistence while the tree is torn
         // down and rebuilt, so teardown notifications do not wipe the saved set.
         self.suppress_expand_notify.set(true);
@@ -832,6 +855,38 @@ impl Sidebar {
 
         self.restore_expansion();
         self.suppress_expand_notify.set(false);
+
+        // Re-select whichever of the previously selected rows still exist, on
+        // the freshly created row objects, without re-triggering navigation —
+        // the user is already looking at that folder/album; a background
+        // refresh reselecting it must not reload the grid again.
+        if !selected_before.is_empty() {
+            if let Some(sel) = self.list_view.model().and_downcast::<gtk4::MultiSelection>() {
+                self.suppress_selection_notify.set(true);
+                let mut restored_any = false;
+                let n = self.tree_model.n_items();
+                for i in 0..n {
+                    let Some(row) = self.tree_model.row(i) else {
+                        continue;
+                    };
+                    let Some(so) = row.item().and_downcast::<StringObject>() else {
+                        continue;
+                    };
+                    if selected_before.contains(&so.string().to_string()) {
+                        sel.select_item(i, !restored_any);
+                        restored_any = true;
+                    }
+                }
+                self.suppress_selection_notify.set(false);
+                // Keyboard focus was on this tree before the rebuild; give it
+                // back so the user can keep navigating with the arrow keys
+                // instead of losing focus on every background refresh.
+                if had_focus && restored_any {
+                    self.list_view.grab_focus();
+                }
+            }
+        }
+
         // The expansion set may have changed during this reload (e.g. a newly
         // created album's parent was marked expanded). Persist the final state.
         self.persist_expansion();
