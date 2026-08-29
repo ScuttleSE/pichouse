@@ -8,6 +8,12 @@ use crate::scan::{ScanError, Scanner};
 
 use super::state::{show_error, show_message, AppState};
 
+/// Minimum time between Library-tree refreshes during a scan. Keeps the tree
+/// feeling live while staying comfortably longer than a mouse click or
+/// keypress, so a tree rebuild (which replaces every row's underlying object)
+/// essentially never lands in the middle of one.
+const SCAN_TREE_REFRESH: std::time::Duration = std::time::Duration::from_millis(750);
+
 /// A scan status update posted from the worker to the UI thread.
 enum Msg {
     Message(String),
@@ -155,7 +161,10 @@ fn start_scan_worker(state: &Rc<AppState>) {
             // its rows are written, so folders never linger under "New folders".
             // A per-root mapper caches albums so this stays cheap.
             let mut mapper = super::albumtree::DiskAlbumMapper::new(&lib_folder);
-            let mut dirs_since_reload = 0usize;
+            // Start "already due" so the very first folder discovered still
+            // appears immediately; every following refresh is throttled to
+            // SCAN_TREE_REFRESH.
+            let mut last_reload = std::time::Instant::now() - SCAN_TREE_REFRESH;
             let base_done_snapshot = base_done;
             let result = scanner.scan_folder(
                 std::path::Path::new(&path),
@@ -189,9 +198,14 @@ fn start_scan_worker(state: &Rc<AppState>) {
                     if el.as_millis() >= 50 {
                         log::debug!("mapper.file {} took {:.2?}", dir.display(), el);
                     }
-                    dirs_since_reload += 1;
-                    if dirs_since_reload >= 4 {
-                        dirs_since_reload = 0;
+                    // Throttled by wall-clock time, not folder count: a GTK
+                    // mouse click is a press-then-release gesture resolved
+                    // against the row widget it started on, and tearing that
+                    // widget down mid-gesture (which a full tree rebuild does)
+                    // silently drops the click. Reloading too often on a fast
+                    // disk made every click and keypress a coin flip.
+                    if last_reload.elapsed() >= SCAN_TREE_REFRESH {
+                        last_reload = std::time::Instant::now();
                         let _ = tx_folder.send(Msg::ReloadOnly);
                     }
                 },

@@ -125,6 +125,12 @@ pub struct Sidebar {
     /// underlying objects were just recreated), so a background refresh (e.g.
     /// during a scan) does not repeatedly reload the currently viewed folder.
     suppress_selection_notify: std::cell::Cell<bool>,
+    /// The row id that should receive keyboard focus once its widget exists
+    /// again after a reload. `ListView::grab_focus()` cannot target a specific
+    /// row under GTK 4.10 (the per-position focus API needs 4.12), so instead
+    /// `bind_row` grabs focus itself the moment it binds a widget to this id,
+    /// then clears it so it only fires once.
+    pending_focus_id: RefCell<Option<String>>,
 }
 
 impl Sidebar {
@@ -234,6 +240,7 @@ impl Sidebar {
                 weak_self: weak.clone(),
                 suppress_expand_notify: std::cell::Cell::new(false),
                 suppress_selection_notify: std::cell::Cell::new(false),
+                pending_focus_id: RefCell::new(None),
             }
         });
 
@@ -331,6 +338,14 @@ impl Sidebar {
             return;
         };
         let id = so.string().to_string();
+        // If a reload is waiting to hand keyboard focus back to this row, this
+        // is the moment its widget actually exists again — grab it here, not
+        // via `ListView::grab_focus()` (see `reload()`), and consume the
+        // pending id so it only fires once.
+        if self.pending_focus_id.borrow().as_deref() == Some(id.as_str()) {
+            self.pending_focus_id.borrow_mut().take();
+            expander.grab_focus();
+        }
         expander.set_widget_name(&id);
         let Some(box_) = expander.child().and_downcast::<GtkBox>() else {
             return;
@@ -713,6 +728,14 @@ impl Sidebar {
             .and_downcast::<gtk4::MultiSelection>()
             .map(|sel| self.selected_ids(&sel))
             .unwrap_or_default();
+        // `ListView::grab_focus()` cannot target a specific row under GTK 4.10
+        // (see `bind_row`), so record which row should get focus back and let
+        // `bind_row` grab it once that row's widget exists again.
+        if had_focus {
+            if let Some(id) = selected_before.first() {
+                *self.pending_focus_id.borrow_mut() = Some(id.clone());
+            }
+        }
 
         // Suppress per-row expand/collapse persistence while the tree is torn
         // down and rebuilt, so teardown notifications do not wipe the saved set.
@@ -863,7 +886,7 @@ impl Sidebar {
         if !selected_before.is_empty() {
             if let Some(sel) = self.list_view.model().and_downcast::<gtk4::MultiSelection>() {
                 self.suppress_selection_notify.set(true);
-                let mut restored_any = false;
+                let mut unselect_rest = true;
                 let n = self.tree_model.n_items();
                 for i in 0..n {
                     let Some(row) = self.tree_model.row(i) else {
@@ -873,17 +896,15 @@ impl Sidebar {
                         continue;
                     };
                     if selected_before.contains(&so.string().to_string()) {
-                        sel.select_item(i, !restored_any);
-                        restored_any = true;
+                        sel.select_item(i, unselect_rest);
+                        unselect_rest = false;
                     }
                 }
                 self.suppress_selection_notify.set(false);
-                // Keyboard focus was on this tree before the rebuild; give it
-                // back so the user can keep navigating with the arrow keys
-                // instead of losing focus on every background refresh.
-                if had_focus && restored_any {
-                    self.list_view.grab_focus();
-                }
+                // Keyboard focus, if any, is handed back by `bind_row` once
+                // the focused row's widget exists again (see `pending_focus_id`
+                // above) — `ListView::grab_focus()` cannot target a specific
+                // row under GTK 4.10.
             }
         }
 
