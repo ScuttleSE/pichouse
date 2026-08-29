@@ -377,7 +377,7 @@ impl Grid {
             });
         }
 
-        let factory = build_factory(thumb_size);
+        let factory = build_factory(thumb_size, std::rc::Weak::new());
         let grid_view = GridView::new(Some(selection.clone()), Some(factory));
         grid_view.set_min_columns(1);
         grid_view.set_max_columns(20);
@@ -468,6 +468,13 @@ impl Grid {
 
     fn into_rc(self) -> Rc<Grid> {
         let rc = Rc::new(self);
+        // Install the demand-driven factory now that the `Rc<Grid>` exists, so
+        // the cell `bind` can reach the grid to enqueue a thumbnail only when a
+        // cell scrolls into view.
+        {
+            let factory = build_factory(rc.thumb_size.get(), Rc::downgrade(&rc));
+            rc.grid_view.set_factory(Some(&factory));
+        }
         // The sort dropdown re-orders the current photos and persists the choice.
         {
             let rc2 = rc.clone();
@@ -1162,7 +1169,6 @@ impl Grid {
         // (e.g. the photo just gained its hash). The store items — and thus the
         // selection — are never removed.
         let size = self.thumb_size.get();
-        let gen = self.generation.load(Ordering::Relaxed);
         self.header
             .set_text(&format!("{}  ({})", self.title.borrow(), filtered.len()));
         for (i, p) in filtered.iter().enumerate() {
@@ -1190,14 +1196,83 @@ impl Grid {
                 obj.set_texture(Some(texture));
                 continue;
             }
-            if self.pending.borrow().contains_key(&key) {
-                continue; // already queued
-            }
-            self.enqueue_thumb(p, &obj, &key, edit, gen);
+            // Not cached: leave it to the factory `bind` to enqueue on demand
+            // when the cell scrolls into view. This keeps a huge folder reload
+            // from queuing a job for every photo at once.
         }
     }
 
     /// Enqueue a thumbnail job for one cell (local or Immich).
+    /// Ensure a thumbnail exists for a cell that just scrolled into view.
+    ///
+    /// This is the demand-driven path: the factory `bind` calls it for every
+    /// cell GTK realises (the visible range plus the `GridView` overscan). It
+    /// serves the in-memory texture cache first, and only sends a worker job
+    /// when the cell has no texture yet. Loading a huge non-enriched folder no
+    /// longer enqueues a job for every photo up front; jobs follow the viewport.
+    fn ensure_thumb_for(&self, obj: &PhotoObject) {
+        // Nothing to do in duplicate mode (that path renders its own cells).
+        if self.dup_mode.get() {
+            return;
+        }
+        // Rebuild the minimal Photo fields the job needs from the object.
+        let path = obj.path();
+        let hash = obj.hash();
+        let orientation = obj.orientation();
+        let id = obj.id();
+        let size = self.thumb_size.get();
+        let edit = self.lib.photo_edit(id).unwrap_or_default();
+        let base = if hash.is_empty() { &path } else { &hash };
+        let key = format!("{base}|{size}|{orientation}|{}", edit.edit_rev);
+
+        // Already decoded and cached: set it and skip the worker.
+        if let Some(texture) = self.tex_cache.borrow_mut().get(&key) {
+            obj.set_texture(Some(texture));
+            return;
+        }
+        // Already showing a texture for this exact key: nothing to do.
+        if obj.texture().is_some() {
+            return;
+        }
+        // Already queued for this key: do not double-enqueue.
+        if self.pending.borrow().contains_key(&key) {
+            return;
+        }
+        let gen = self.generation.load(Ordering::Relaxed);
+        self.pending.borrow_mut().insert(key.clone(), obj.clone());
+        if let Some((server_id, asset_id)) = parse_immich_path(&path) {
+            let _ = self.immich_jobs.send(ImmichJob {
+                key,
+                server_id,
+                asset_id,
+                generation: gen,
+            });
+            return;
+        }
+        let _ = self.jobs.send(Job {
+            key,
+            hash,
+            path,
+            orientation,
+            edit,
+            generation: gen,
+        });
+    }
+
+    /// Forget any in-flight job for a cell that scrolled out of view, so a
+    /// landed worker result is discarded instead of applied to a recycled cell.
+    fn drop_pending_for(&self, obj: &PhotoObject) {
+        let path = obj.path();
+        let hash = obj.hash();
+        let orientation = obj.orientation();
+        let id = obj.id();
+        let size = self.thumb_size.get();
+        let edit = self.lib.photo_edit(id).unwrap_or_default();
+        let base = if hash.is_empty() { &path } else { &hash };
+        let key = format!("{base}|{size}|{orientation}|{}", edit.edit_rev);
+        self.pending.borrow_mut().remove(&key);
+    }
+
     fn enqueue_thumb(
         &self,
         p: &Photo,
@@ -1233,9 +1308,9 @@ impl Grid {
     }
 
     /// Change the active thumbnail size and rebuild (new factory + jobs).
-    pub fn set_thumb_size(&self, size: i32) {
+    pub fn set_thumb_size(self: &Rc<Grid>, size: i32) {
         self.thumb_size.set(size);
-        let factory = build_factory(size);
+        let factory = build_factory(size, Rc::downgrade(self));
         self.grid_view.set_factory(Some(&factory));
         self.rebuild();
     }
@@ -1262,7 +1337,10 @@ impl Grid {
     /// re-decode on every scan tick.
     fn rebuild(&self) {
         let photos = self.filtered_photos();
-        let gen = self.generation.fetch_add(1, Ordering::Relaxed) + 1;
+        // Bump the generation so any in-flight jobs from the previous view are
+        // dropped by the workers. New jobs are enqueued on demand by the factory
+        // `bind` as cells scroll into view.
+        let _gen = self.generation.fetch_add(1, Ordering::Relaxed) + 1;
 
         // Snapshot currently-shown textures by stable path key before wiping.
         let mut prev_tex: HashMap<String, gdk::Texture> = HashMap::new();
@@ -1296,34 +1374,12 @@ impl Grid {
             let edit = self.lib.photo_edit(p.id).unwrap_or_default();
             let key = cell_key(p, size, &edit);
             // Serve from the in-memory texture cache when available, skipping a
-            // worker job and JPEG decode entirely.
+            // worker job and JPEG decode entirely. Cells that are not cached are
+            // rendered on demand by the factory `bind` when they scroll into
+            // view, so a huge folder no longer enqueues every photo up front.
             if let Some(texture) = self.tex_cache.borrow_mut().get(&key) {
                 obj.set_texture(Some(texture));
-                continue;
             }
-            // Already showing a carried-over thumbnail for this exact cell key
-            // (nothing changed): no need to re-render.
-            if obj.texture().is_some() && prev_tex.contains_key(&p.path) {
-                continue;
-            }
-            self.pending.borrow_mut().insert(key.clone(), obj);
-            if let Some((server_id, asset_id)) = parse_immich_path(&p.path) {
-                let _ = self.immich_jobs.send(ImmichJob {
-                    key,
-                    server_id,
-                    asset_id,
-                    generation: gen,
-                });
-                continue;
-            }
-            let _ = self.jobs.send(Job {
-                key,
-                hash: p.hash.clone(),
-                path: p.path.clone(),
-                orientation: p.orientation,
-                edit,
-                generation: gen,
-            });
         }
     }
 }
@@ -1339,8 +1395,9 @@ fn cell_key(p: &Photo, size: i32, edit: &crate::model::PhotoEdit) -> String {
 /// Build the recycled cell factory: an `Overlay` of a fallback `Label` under an
 /// `Image`. The image observes the bound `PhotoObject.texture` property; the
 /// label shows the filename until a texture arrives.
-fn build_factory(thumb_size: i32) -> SignalListItemFactory {
+fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFactory {
     let factory = SignalListItemFactory::new();
+    let grid_unbind = grid.clone();
     factory.connect_setup(move |_, item| {
         let item = item.downcast_ref::<ListItem>().unwrap();
         let overlay = Overlay::new();
@@ -1362,7 +1419,7 @@ fn build_factory(thumb_size: i32) -> SignalListItemFactory {
 
         item.set_child(Some(&overlay));
     });
-    factory.connect_bind(|_, item| {
+    factory.connect_bind(move |_, item| {
         let item = item.downcast_ref::<ListItem>().unwrap();
         let Some(photo) = item.item().and_downcast::<PhotoObject>() else {
             return;
@@ -1385,6 +1442,13 @@ fn build_factory(thumb_size: i32) -> SignalListItemFactory {
         // Show the current texture (if already decoded) and update the label.
         apply_texture(&image, &label, photo.texture());
 
+        // Demand-driven thumbnail: enqueue a job only now that this cell is
+        // realised (visible range + GridView overscan). When the cell scrolls
+        // away, unbind marks the job stale so the worker pool drops it.
+        if let Some(grid) = grid.upgrade() {
+            grid.ensure_thumb_for(&photo);
+        }
+
         // Observe future texture changes for this bound object.
         let image_weak = image.downgrade();
         let label_weak = label.downgrade();
@@ -1399,9 +1463,18 @@ fn build_factory(thumb_size: i32) -> SignalListItemFactory {
             item.set_data("texture-handler", handler);
         }
     });
-    factory.connect_unbind(|_, item| {
+    factory.connect_unbind(move |_, item| {
         let item = item.downcast_ref::<ListItem>().unwrap();
         if let Some(photo) = item.item().and_downcast::<PhotoObject>() {
+            // Cell scrolled out of view: drop any in-flight job for it so the
+            // worker result is discarded and the viewport keeps priority. A
+            // re-bind re-enqueues if still needed. Cells that already hold a
+            // texture keep it (the object retains the texture across unbind).
+            if let Some(grid) = grid_unbind.upgrade() {
+                if photo.texture().is_none() {
+                    grid.drop_pending_for(&photo);
+                }
+            }
             unsafe {
                 if let Some(handler) = item.steal_data::<glib::SignalHandlerId>("texture-handler") {
                     photo.disconnect(handler);
