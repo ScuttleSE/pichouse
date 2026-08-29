@@ -2,7 +2,6 @@
 
 use std::path::Path;
 use std::sync::Mutex;
-
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::model::{Folder, LibraryFolder, Photo, PhotoScanState, ScanStatus};
@@ -18,6 +17,26 @@ const SCHEMA: &str = include_str!("schema.sql");
 /// writes and their FTS maintenance.
 pub struct Library {
     pub(super) conn: Mutex<Connection>,
+    /// A second, read-only connection to the same file. WAL mode lets this
+    /// connection read while the writer connection commits, so UI reads do not
+    /// block behind an in-flight scan write on the writer `Mutex`. Hot UI read
+    /// paths take `read_lock()` instead of `lock()`.
+    pub(super) read_conn: Mutex<Connection>,
+    /// Short-lived cache for the two expensive sidebar aggregates
+    /// (`folder_photo_counts` and `new_photos_count`). Startup and many actions
+    /// reload two sidebars back to back; the cache lets the second reload reuse
+    /// the first computation instead of re-scanning the whole `photos` table.
+    /// Every write path that changes photo membership calls
+    /// `invalidate_count_cache`.
+    pub(super) count_cache: Mutex<CountCache>,
+}
+
+/// Cached sidebar aggregates with a coarse validity flag. `folder_counts` and
+/// `new_files` are computed lazily and cleared by `invalidate_count_cache`.
+#[derive(Default)]
+pub(super) struct CountCache {
+    pub(super) folder_counts: Option<std::collections::HashMap<i64, i64>>,
+    pub(super) new_files: Option<(i64, i64)>, // (max_age_secs, count)
 }
 
 /// Current Unix time in seconds.
@@ -54,6 +73,27 @@ impl Library {
             log::warn!("db lock: waited {:.2?} ({caller})", waited);
         } else {
             log::debug!("db lock: acquired after {:.2?} ({caller})", waited);
+        }
+        g
+    }
+
+    /// Acquire the read-only connection lock. Hot UI read paths use this so a
+    /// scan write on the writer connection does not stall the UI. WAL mode
+    /// permits concurrent reads on a separate connection. The read connection
+    /// has its own `Mutex`, so only other UI reads contend here, and those are
+    /// short.
+    #[track_caller]
+    pub(super) fn read_lock(&self) -> std::sync::MutexGuard<'_, Connection> {
+        let caller = std::panic::Location::caller();
+        if let Ok(g) = self.read_conn.try_lock() {
+            return g;
+        }
+        log::debug!("db read lock: waiting ({caller})");
+        let t = std::time::Instant::now();
+        let g = self.read_conn.lock().unwrap();
+        let waited = t.elapsed();
+        if waited.as_millis() >= 200 {
+            log::warn!("db read lock: waited {:.2?} ({caller})", waited);
         }
         g
     }
@@ -175,13 +215,53 @@ impl Library {
 
     /// Open (and initialize) a library database at the given path.
     pub fn open_at<P: AsRef<Path>>(path: P) -> Result<Library> {
+        let path = path.as_ref();
         let conn = Connection::open(path)?;
-        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
+        // Writer connection PRAGMAs. WAL lets a separate reader read while this
+        // connection commits. NORMAL sync is durable under WAL and cuts fsync
+        // cost on a large import. busy_timeout is a safety net. A larger cache,
+        // mmap, and memory temp store speed the bulk scan.
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL;
+             PRAGMA foreign_keys=ON;
+             PRAGMA synchronous=NORMAL;
+             PRAGMA busy_timeout=5000;
+             PRAGMA cache_size=-65536;
+             PRAGMA temp_store=MEMORY;
+             PRAGMA mmap_size=268435456;
+             PRAGMA wal_autocheckpoint=2000;",
+        )?;
         conn.execute_batch(SCHEMA)?;
         migrate(&conn)?;
+
+        // Read-only connection to the same file for hot UI reads.
+        let read_conn = Connection::open_with_flags(
+            path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
+                | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        read_conn.execute_batch(
+            "PRAGMA query_only=ON;
+             PRAGMA busy_timeout=5000;
+             PRAGMA cache_size=-65536;
+             PRAGMA temp_store=MEMORY;
+             PRAGMA mmap_size=268435456;",
+        )?;
+
         Ok(Library {
             conn: Mutex::new(conn),
+            read_conn: Mutex::new(read_conn),
+            count_cache: Mutex::new(CountCache::default()),
         })
+    }
+
+    /// Clear the sidebar aggregate cache. Call this after any write that changes
+    /// which photos exist or which folder they belong to (scan insert,
+    /// reconcile, delete, missing marks).
+    pub fn invalidate_count_cache(&self) {
+        let mut c = self.count_cache.lock().unwrap();
+        c.folder_counts = None;
+        c.new_files = None;
     }
 
     /// Record a user-added root folder. Idempotent.
@@ -249,6 +329,8 @@ impl Library {
              WHERE path = ?2 AND first_scan_done_at = 0",
             params![now(), root_path],
         )?;
+        drop(conn);
+        self.invalidate_count_cache();
         Ok(())
     }
 
@@ -289,7 +371,7 @@ impl Library {
 
     /// Count photos currently marked missing (soft-deleted from disk).
     pub fn missing_photo_count(&self) -> Result<i64> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let n: i64 = conn.query_row("SELECT COUNT(*) FROM photos WHERE missing = 1", [], |r| {
             r.get(0)
         })?;
@@ -302,6 +384,8 @@ impl Library {
     pub fn delete_missing_photos(&self) -> Result<usize> {
         let conn = self.lock();
         let n = conn.execute("DELETE FROM photos WHERE missing = 1", [])?;
+        drop(conn);
+        self.invalidate_count_cache();
         Ok(n)
     }
 
@@ -357,14 +441,21 @@ impl Library {
     }
 
     /// A map of folder id to its photo count.
-    pub fn folder_photo_counts(&self) -> Result<std::collections::HashMap<i64, i64>> {        let conn = self.lock();
-        let mut stmt = conn.prepare("SELECT folder_id, COUNT(*) FROM photos GROUP BY folder_id")?;
-        let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?;
-        let mut out = std::collections::HashMap::new();
-        for row in rows {
-            let (fid, n) = row?;
-            out.insert(fid, n);
+    pub fn folder_photo_counts(&self) -> Result<std::collections::HashMap<i64, i64>> {        if let Some(c) = self.count_cache.lock().unwrap().folder_counts.clone() {
+            return Ok(c);
         }
+        let conn = self.read_lock();
+        let mut out = std::collections::HashMap::new();
+        {
+            let mut stmt = conn.prepare("SELECT folder_id, COUNT(*) FROM photos GROUP BY folder_id")?;
+            let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?;
+            for row in rows {
+                let (fid, n) = row?;
+                out.insert(fid, n);
+            }
+        }
+        drop(conn);
+        self.count_cache.lock().unwrap().folder_counts = Some(out.clone());
         Ok(out)
     }
 
@@ -414,6 +505,8 @@ impl Library {
             conn.query_row("SELECT id FROM photos WHERE path = ?1", params![p.path], |r| {
                 r.get(0)
             })?;
+        drop(conn);
+        self.invalidate_count_cache();
         Ok(id)
     }
 
@@ -504,6 +597,7 @@ impl Library {
             }
         }
         tx.commit()?;
+        self.invalidate_count_cache();
         Ok(added)
     }
 
@@ -533,6 +627,7 @@ impl Library {
             }
         }
         tx.commit()?;
+        self.invalidate_count_cache();
         Ok(())
     }
 
@@ -664,7 +759,7 @@ impl Library {
         let now_ts = now();
         let age_threshold = now_ts - max_age_secs;
 
-        let conn = self.lock();
+        let conn = self.read_lock();
         // Candidate photos: recent, not missing. Join the folder for its path.
         let mut stmt = conn.prepare(
             "SELECT p.id, p.folder_id, p.path, p.filename, p.size, p.mod_time, p.taken_at,
@@ -736,15 +831,50 @@ impl Library {
 
     /// The number of "new files" across the whole library (see
     /// `new_photos_grouped`). Used for the sidebar count.
+    ///
+    /// This is a scalar query, not a materialization of every candidate row.
+    /// For each candidate photo it finds the owning root boundary with a
+    /// correlated subquery (the max `first_scan_done_at` of any root whose path
+    /// is a prefix of the folder path) and counts photos added strictly after
+    /// that non-zero boundary. This mirrors `new_photos_grouped` without loading
+    /// and sorting the rows, which is the slow path on a huge library.
     pub fn new_photos_count(&self, max_age_secs: i64) -> Result<i64> {
-        let grouped = self.new_photos_grouped(max_age_secs)?;
-        Ok(grouped.iter().map(|(_, ps)| ps.len() as i64).sum())
+        if let Some((age, n)) = self.count_cache.lock().unwrap().new_files {
+            if age == max_age_secs {
+                return Ok(n);
+            }
+        }
+        let now_ts = now();
+        let age_threshold = now_ts - max_age_secs;
+        let sep = std::path::MAIN_SEPARATOR.to_string();
+        let conn = self.read_lock();
+        let n: i64 = conn.query_row(
+            "SELECT COUNT(*)
+             FROM photos p JOIN folders f ON f.id = p.folder_id
+             WHERE p.missing = 0 AND p.added_at >= ?1
+               AND p.added_at > (
+                   SELECT COALESCE(MAX(lf.first_scan_done_at), 0)
+                   FROM library_folders lf
+                   WHERE f.path = lf.path
+                      OR f.path LIKE lf.path || ?2 || '%'
+               )
+               AND (
+                   SELECT COALESCE(MAX(lf.first_scan_done_at), 0)
+                   FROM library_folders lf
+                   WHERE f.path = lf.path
+                      OR f.path LIKE lf.path || ?2 || '%'
+               ) > 0",
+            params![age_threshold, sep],
+            |r| r.get(0),
+        )?;
+        self.count_cache.lock().unwrap().new_files = Some((max_age_secs, n));
+        Ok(n)
     }
 
 
     /// All photos for a folder ordered by taken date then name.
     pub fn photos_in_folder(&self, folder_id: i64) -> Result<Vec<Photo>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let mut stmt = conn.prepare(
             "SELECT id, folder_id, path, filename, size, mod_time, taken_at, width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing, added_at, phash, skip_face_scan
              FROM photos WHERE folder_id = ?1 ORDER BY taken_at ASC, filename ASC",

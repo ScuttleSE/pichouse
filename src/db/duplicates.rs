@@ -60,6 +60,7 @@ impl Library {
             let conn = self.lock();
             conn.execute("DELETE FROM photos WHERE id = ?1", params![id])?;
         }
+        self.invalidate_count_cache();
         match std::fs::remove_file(path) {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
