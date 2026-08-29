@@ -195,6 +195,9 @@ fn start_scan_worker(state: &Rc<AppState>) {
             // appears immediately; every following refresh is throttled to
             // SCAN_TREE_REFRESH.
             let mut last_reload = std::time::Instant::now() - SCAN_TREE_REFRESH;
+            // Checkpoint the WAL on a coarse timer during a long single-root
+            // scan, so it stays small even when no root boundary is crossed.
+            let mut last_checkpoint = std::time::Instant::now();
             let base_done_snapshot = base_done;
             let result = scanner.scan_folder(
                 std::path::Path::new(&path),
@@ -238,6 +241,11 @@ fn start_scan_worker(state: &Rc<AppState>) {
                         last_reload = std::time::Instant::now();
                         let _ = tx_folder.send(Msg::ReloadOnly);
                     }
+                    // Keep the WAL small during a long single-root walk.
+                    if last_checkpoint.elapsed() >= std::time::Duration::from_secs(30) {
+                        last_checkpoint = std::time::Instant::now();
+                        lib_folder.checkpoint();
+                    }
                 },
             );
             // Fold this root's count into the cumulative total, whatever the
@@ -267,6 +275,9 @@ fn start_scan_worker(state: &Rc<AppState>) {
                     break;
                 }
             }
+            // Checkpoint the WAL between roots so it does not grow unbounded
+            // across a multi-root scan.
+            lib.checkpoint();
         }
 
         let _ = tx.send(Msg::Scanning(false));

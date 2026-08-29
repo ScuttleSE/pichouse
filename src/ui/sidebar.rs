@@ -508,7 +508,12 @@ impl Sidebar {
                 .get(&fid)
                 .map(|f| f.name.clone())
                 .unwrap_or_default();
-            let count = data.counts.get(&fid).copied().unwrap_or(0);
+            // The photo count is omitted when it is not known (during a scan the
+            // sidebar skips the full-table count query, so the map is empty).
+            let count_suffix = match data.counts.get(&fid) {
+                Some(n) => format!(" ({n})"),
+                None => String::new(),
+            };
             // Mark a folder that is synced to an Immich album.
             let synced = if data.immich_linked_folders.contains(&fid) {
                 " ⇅"
@@ -516,7 +521,7 @@ impl Sidebar {
                 ""
             };
             (
-                format!("{name} ({count}){synced}"),
+                format!("{name}{count_suffix}{synced}"),
                 "image-x-generic-symbolic",
             )
         } else {
@@ -783,22 +788,37 @@ impl Sidebar {
         // down and rebuilt, so teardown notifications do not wipe the saved set.
         self.suppress_expand_notify.set(true);
         let t_reload = std::time::Instant::now();
+        // During a scan the two full-table aggregates below (a GROUP BY over all
+        // photos, and the New Files join) cost O(total photos) and run on every
+        // 5-second scan-refresh tick, so they make the scan slow down as the
+        // library grows. Skip them while scanning: folder rows show no photo
+        // count and New Files shows 0 until the scan ends, when the forced
+        // reload recomputes them once.
+        let scanning = state.scan.running();
         log::debug!("sidebar.reload: folders()");
         let mut folders = state.lib.folders().unwrap_or_default();
-        log::debug!("sidebar.reload: folder_photo_counts()");
         let t_counts = std::time::Instant::now();
-        let counts = state.lib.folder_photo_counts().unwrap_or_default();
+        let counts = if scanning {
+            std::collections::HashMap::new()
+        } else {
+            log::debug!("sidebar.reload: folder_photo_counts()");
+            state.lib.folder_photo_counts().unwrap_or_default()
+        };
         let counts_ms = t_counts.elapsed();
         log::debug!("sidebar.reload: albums()/folder_albums()/virtual_albums()");
         let mut albums = state.lib.albums().unwrap_or_default();
         let folder_album = state.lib.folder_albums().unwrap_or_default();
         let mut virtual_albums = state.lib.virtual_albums().unwrap_or_default();
-        log::debug!("sidebar.reload: new_photos_count()");
         let t_new = std::time::Instant::now();
-        let new_files_count = state
-            .lib
-            .new_photos_count(state.prefs.borrow().new_max_age_secs())
-            .unwrap_or(0);
+        let new_files_count = if scanning {
+            0
+        } else {
+            log::debug!("sidebar.reload: new_photos_count()");
+            state
+                .lib
+                .new_photos_count(state.prefs.borrow().new_max_age_secs())
+                .unwrap_or(0)
+        };
         let new_ms = t_new.elapsed();
 
         let missing_files_count = state.lib.missing_photo_count().unwrap_or(0);

@@ -226,7 +226,7 @@ impl Library {
              PRAGMA foreign_keys=ON;
              PRAGMA synchronous=NORMAL;
              PRAGMA busy_timeout=5000;
-             PRAGMA cache_size=-65536;
+             PRAGMA cache_size=-262144;
              PRAGMA temp_store=MEMORY;
              PRAGMA mmap_size=268435456;
              PRAGMA wal_autocheckpoint=2000;",
@@ -243,7 +243,7 @@ impl Library {
         read_conn.execute_batch(
             "PRAGMA query_only=ON;
              PRAGMA busy_timeout=5000;
-             PRAGMA cache_size=-65536;
+             PRAGMA cache_size=-262144;
              PRAGMA temp_store=MEMORY;
              PRAGMA mmap_size=268435456;",
         )?;
@@ -262,6 +262,18 @@ impl Library {
         let mut c = self.count_cache.lock().unwrap();
         c.folder_counts = None;
         c.new_files = None;
+    }
+
+    /// Truncate the write-ahead log back into the main database file. During a
+    /// long import the UI read connection holds snapshots that stop the
+    /// automatic passive checkpoint from resetting the WAL, so it grows without
+    /// bound and every read pays a longer WAL scan. A periodic TRUNCATE
+    /// checkpoint from the writer keeps the WAL small. It is best-effort: if a
+    /// reader is mid-read the checkpoint does less work and returns, which is
+    /// fine.
+    pub fn checkpoint(&self) {
+        let conn = self.lock();
+        let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
     }
 
     /// Record a user-added root folder. Idempotent.
@@ -933,6 +945,20 @@ impl Library {
         let age_threshold = now_ts - max_age_secs;
         let sep = std::path::MAIN_SEPARATOR.to_string();
         let conn = self.read_lock();
+        // Short-circuit: if no root has finished its first scan yet, nothing can
+        // be "new" (a photo is new only after its root's boundary, which is 0
+        // until the first full scan completes). This skips the heavy join and
+        // correlated subquery during the initial import, when nearly every row
+        // would otherwise be a candidate.
+        let max_boundary: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(first_scan_done_at), 0) FROM library_folders",
+            [],
+            |r| r.get(0),
+        )?;
+        if max_boundary == 0 {
+            self.count_cache.lock().unwrap().new_files = Some((max_age_secs, 0));
+            return Ok(0);
+        }
         let n: i64 = conn.query_row(
             "SELECT COUNT(*)
              FROM photos p JOIN folders f ON f.id = p.folder_id
