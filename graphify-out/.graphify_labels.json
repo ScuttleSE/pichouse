@@ -37,9 +37,9 @@
   "35": "face/models.rs",
   "36": "PhotoObject",
   "37": "Photo",
-  "38": "vrules.rs",
+  "38": "styleface/detector.rs",
   "39": "vmenu.rs",
-  "40": ".new",
+  "40": "build_factory",
   "41": "Prefs",
   "42": "opencode.json",
   "43": "Library",
@@ -112,6 +112,8 @@
   "110": "StyleFaceConfig",
   "111": "settings_characters.rs",
   "112": "spin_row",
-  "113": "build_membership_sql",
-  "115": "settings_faces.rs"
+  "113": "characters.rs",
+  "114": ".show_duplicates",
+  "115": "settings_faces.rs",
+  "116": "LevelPreset"
 }
