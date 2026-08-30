@@ -412,12 +412,13 @@ impl Library {
         Ok(v)
     }
 
-    /// All photos that contain a face in the given cluster, newest first.
+    /// All photos that contain an unassigned face in the given cluster, newest
+    /// first.
     pub fn photos_in_cluster(&self, cluster_id: i64) -> Result<Vec<Photo>> {
         let conn = self.lock();
         let sql = format!(
             "SELECT {PHOTO_COLS} FROM photos WHERE id IN \
-                (SELECT DISTINCT photo_id FROM faces WHERE cluster_id = ?1) \
+                (SELECT DISTINCT photo_id FROM faces WHERE cluster_id = ?1 AND person_id IS NULL) \
              ORDER BY taken_at DESC, filename"
         );
         let mut stmt = conn.prepare(&sql)?;
@@ -661,6 +662,41 @@ mod tests {
         let photos = lib.photos_of_person(alice).unwrap();
         assert_eq!(photos.len(), 1);
         assert_eq!(photos[0].id, p1);
+    }
+
+    #[test]
+    fn photos_in_cluster_excludes_already_named_faces() {
+        // Two faces share one cluster id: one gets named, one stays pending.
+        // Opening the cluster (e.g. from the "Unnamed" tile) must show only
+        // the still-unassigned face's photo, not the named one's.
+        let lib = temp_lib();
+        let p_named = add_photo(&lib, "g");
+        let p_pending = add_photo(&lib, "h");
+        let f_named = lib
+            .insert_face(&Face {
+                photo_id: p_named,
+                cluster_id: 42,
+                embedding: vec![1.0],
+                ..Default::default()
+            })
+            .unwrap();
+        lib.insert_face(&Face {
+            photo_id: p_pending,
+            cluster_id: 42,
+            embedding: vec![0.99],
+            ..Default::default()
+        })
+        .unwrap();
+        let alice = lib.create_person("Alice").unwrap();
+        lib.set_face_person(f_named, alice).unwrap();
+
+        let photos = lib.photos_in_cluster(42).unwrap();
+        assert_eq!(photos.len(), 1);
+        assert_eq!(photos[0].id, p_pending);
+
+        let unassigned = lib.unassigned_faces_in_cluster(42).unwrap();
+        assert_eq!(unassigned.len(), 1);
+        assert_eq!(unassigned[0].photo_id, p_pending);
     }
 
     #[test]
