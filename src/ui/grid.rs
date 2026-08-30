@@ -13,8 +13,8 @@ use gtk4::gio;
 use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{
-    Align, Button, GridView, Image, Label, ListItem, MultiSelection, Overlay, PolicyType,
-    ScrolledWindow, SignalListItemFactory,
+    Align, Button, DrawingArea, GridView, Image, Label, ListItem, MultiSelection, Overlay,
+    PolicyType, ScrolledWindow, SignalListItemFactory,
 };
 
 use crate::db::Library;
@@ -114,6 +114,19 @@ pub struct Grid {
     sort_order: std::cell::Cell<SortOrder>,
     /// Whether each cell shows a filename caption under its thumbnail.
     show_filenames: std::cell::Cell<bool>,
+    /// Whether each cell overlays its detected face box(es) on the thumbnail.
+    /// Local, transient state (not persisted), only meaningful while
+    /// `is_face_source()` is true.
+    show_faces: std::cell::Cell<bool>,
+    /// Photo id -> `(bbox_x, bbox_y, bbox_w, bbox_h, assigned)` per-mille rects
+    /// for every face detected in that photo, for the face-box overlay.
+    /// `assigned` is true when the face already has a person/character, so the
+    /// overlay can draw it green (assigned) or yellow (unassigned), matching
+    /// `Viewer`'s convention. Populated once per `show_*` call (one bulk
+    /// query), not per-cell.
+    face_boxes: RefCell<HashMap<i64, Vec<(i32, i32, i32, i32, bool)>>>,
+    /// The "show face boxes" toggle button, visible only for a face source.
+    faces_btn: Button,
     /// The header dropdown that selects the sort order.
     sort_dropdown: gtk4::DropDown,
     /// Called with (photos, index) when a cell is activated (double-clicked).
@@ -318,6 +331,15 @@ impl Grid {
         sort_label.set_margin_start(6);
         header_box.append(&sort_label);
         header_box.append(&sort_dropdown);
+
+        // The "show face boxes" toggle, visible only for a face source
+        // (person/cluster/character/style-cluster). Wired in `into_rc`, once
+        // an `Rc<Grid>` exists to call back into.
+        let faces_btn = Button::from_icon_name("avatar-default-symbolic");
+        faces_btn.add_css_class("flat");
+        faces_btn.set_visible(false);
+        faces_btn.set_tooltip_text(Some("Show face boxes"));
+        header_box.append(&faces_btn);
 
         // The duplicate-results action bar. Hidden unless a duplicate view is
         // shown. It holds a hint label and a "Delete marked" button.
@@ -531,6 +553,9 @@ impl Grid {
             source: RefCell::new(Source::None),
             sort_order: std::cell::Cell::new(sort_order),
             show_filenames: std::cell::Cell::new(show_filenames),
+            show_faces: std::cell::Cell::new(false),
+            face_boxes: RefCell::new(HashMap::new()),
+            faces_btn,
             sort_dropdown,
             on_activate: RefCell::new(None),
             on_select: RefCell::new(None),
@@ -568,6 +593,21 @@ impl Grid {
             rc.sort_dropdown.connect_selected_notify(move |dd| {
                 let order = SortOrder::from_dropdown_index(dd.selected());
                 rc2.set_sort_order(order);
+            });
+        }
+        // The face-box toggle: flips `show_faces` and repaints the grid so
+        // every realised cell's `DrawingArea` re-runs its draw func.
+        {
+            let rc2 = rc.clone();
+            rc.faces_btn.connect_clicked(move |btn| {
+                let on = !rc2.show_faces.get();
+                rc2.show_faces.set(on);
+                if on {
+                    btn.add_css_class("suggested-action");
+                } else {
+                    btn.remove_css_class("suggested-action");
+                }
+                rc2.grid_view.queue_draw();
             });
         }
         // Activation (double-click / Enter) opens the viewer.
@@ -1107,6 +1147,48 @@ impl Grid {
         )
     }
 
+    /// True when the current source has per-photo face data to overlay: a
+    /// named person, an unnamed human cluster, a named character, or an
+    /// unnamed style cluster. Gates the "show face boxes" toggle's
+    /// visibility.
+    pub fn is_face_source(&self) -> bool {
+        matches!(
+            *self.source.borrow(),
+            Source::Person(..) | Source::Cluster(..) | Source::Character(..) | Source::StyleCluster(..)
+        )
+    }
+
+    /// Bulk-load every face detected in `photos` (any person/character, not
+    /// just the one this view is scoped to) into `face_boxes`, keyed by photo
+    /// id, for the face-box overlay. `style` selects the stylised vs. human
+    /// face table.
+    fn load_face_boxes(&self, photos: &[Photo], style: bool) {
+        let ids: Vec<i64> = photos.iter().map(|p| p.id).collect();
+        let mut map: HashMap<i64, Vec<(i32, i32, i32, i32, bool)>> = HashMap::new();
+        if style {
+            for f in self.lib.style_faces_for_photos(&ids).unwrap_or_default() {
+                map.entry(f.photo_id).or_default().push((
+                    f.bbox_x,
+                    f.bbox_y,
+                    f.bbox_w,
+                    f.bbox_h,
+                    f.character_id != 0,
+                ));
+            }
+        } else {
+            for f in self.lib.faces_for_photos(&ids).unwrap_or_default() {
+                map.entry(f.photo_id).or_default().push((
+                    f.bbox_x,
+                    f.bbox_y,
+                    f.bbox_w,
+                    f.bbox_h,
+                    f.person_id != 0,
+                ));
+            }
+        }
+        *self.face_boxes.borrow_mut() = map;
+    }
+
     /// Show a scanned library folder, remembering it as the source so the grid
     /// can re-query the database later (e.g. after a scan or rotation).
     pub fn show_folder(&self, folder_id: i64, name: &str) {
@@ -1138,6 +1220,7 @@ impl Grid {
     pub fn show_person(&self, person_id: i64, name: &str) {
         *self.source.borrow_mut() = Source::Person(person_id, name.to_string());
         let photos = self.lib.photos_of_person(person_id).unwrap_or_default();
+        self.load_face_boxes(&photos, false);
         self.set_photos(name, photos);
     }
 
@@ -1146,6 +1229,7 @@ impl Grid {
     pub fn show_cluster(&self, cluster_id: i64, name: &str) {
         *self.source.borrow_mut() = Source::Cluster(cluster_id, name.to_string());
         let photos = self.lib.photos_in_cluster(cluster_id).unwrap_or_default();
+        self.load_face_boxes(&photos, false);
         self.set_photos(name, photos);
     }
 
@@ -1153,6 +1237,7 @@ impl Grid {
     pub fn show_character(&self, character_id: i64, name: &str) {
         *self.source.borrow_mut() = Source::Character(character_id, name.to_string());
         let photos = self.lib.photos_of_character(character_id).unwrap_or_default();
+        self.load_face_boxes(&photos, true);
         self.set_photos(name, photos);
     }
 
@@ -1163,6 +1248,7 @@ impl Grid {
             .lib
             .photos_in_style_cluster(cluster_id)
             .unwrap_or_default();
+        self.load_face_boxes(&photos, true);
         self.set_photos(name, photos);
     }
 
@@ -1363,6 +1449,15 @@ impl Grid {
         // right after, via `set_back`.
         self.hide_back();
         self.exit_dup_mode();
+        // The face-box toggle only makes sense for a face source; leaving one
+        // clears its state so a later face view doesn't inherit a stray
+        // "on"-looking button or stale boxes.
+        self.faces_btn.set_visible(self.is_face_source());
+        if !self.is_face_source() {
+            self.show_faces.set(false);
+            self.faces_btn.remove_css_class("suggested-action");
+            self.face_boxes.borrow_mut().clear();
+        }
         let mut photos = photos;
         self.sort_photos(&mut photos);
         *self.all_photos.borrow_mut() = photos;
@@ -1748,6 +1843,7 @@ fn cell_key(p: &Photo, size: i32, edit: &crate::model::PhotoEdit) -> String {
 fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFactory {
     let factory = SignalListItemFactory::new();
     let grid_unbind = grid.clone();
+    let grid_setup = grid.clone();
     factory.connect_setup(move |_, item| {
         let item = item.downcast_ref::<ListItem>().unwrap();
         let overlay = Overlay::new();
@@ -1766,6 +1862,52 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
         let image = Image::new();
         image.set_pixel_size(thumb_size);
         overlay.add_overlay(&image);
+
+        // The face-box overlay: a transparent DrawingArea stacked on top of the
+        // image. Purely visual (no click handling), drawn only when
+        // `show_faces` is on. Reads the bound photo's boxes from the cell's
+        // "photo-id" data (set in `connect_bind`) via the grid's `face_boxes`
+        // map, so no per-cell signal wiring is needed.
+        let face_area = DrawingArea::new();
+        face_area.set_size_request(thumb_size, thumb_size);
+        face_area.set_can_target(false);
+        overlay.add_overlay(&face_area);
+        let image_weak = image.downgrade();
+        let grid_for_draw = grid_setup.clone();
+        face_area.set_draw_func(move |area, cr, w, h| {
+            let Some(grid) = grid_for_draw.upgrade() else {
+                return;
+            };
+            if !grid.show_faces.get() {
+                return;
+            }
+            let Some(image) = image_weak.upgrade() else {
+                return;
+            };
+            let photo_id: i64 =
+                unsafe { area.data::<i64>("photo-id").map(|p| *p.as_ref()).unwrap_or(0) };
+            let boxes = grid.face_boxes.borrow();
+            let Some(rects) = boxes.get(&photo_id) else {
+                return;
+            };
+            let Some((ix, iy, iw, ih)) = image_rect(&image, w, h) else {
+                return;
+            };
+            cr.set_line_width(2.0);
+            for (bx, by, bw, bh, assigned) in rects {
+                if *assigned {
+                    cr.set_source_rgba(0.3, 0.9, 0.4, 0.95);
+                } else {
+                    cr.set_source_rgba(1.0, 0.85, 0.2, 0.95);
+                }
+                let rx = ix + iw * *bx as f64 / 1000.0;
+                let ry = iy + ih * *by as f64 / 1000.0;
+                let rw = iw * *bw as f64 / 1000.0;
+                let rh = ih * *bh as f64 / 1000.0;
+                let _ = cr.rectangle(rx, ry, rw, rh);
+                let _ = cr.stroke();
+            }
+        });
 
         // A vertical cell: the thumbnail overlay on top and an optional filename
         // caption below. The caption is hidden unless "Show filenames" is on.
@@ -1800,6 +1942,17 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
             .and_downcast::<Label>();
         let (image, label) = overlay_parts(&overlay);
         label.set_text(&photo.filename());
+
+        // The face-box overlay (third overlay child, added after the image in
+        // `connect_setup`): tag it with this cell's photo id and repaint, so a
+        // rebind (recycled cell scrolled to a new photo) never shows the
+        // previous photo's boxes.
+        if let Some(face_area) = image.next_sibling().and_downcast::<DrawingArea>() {
+            unsafe {
+                face_area.set_data("photo-id", photo.id());
+            }
+            face_area.queue_draw();
+        }
 
         // Filename caption (shown only when the setting is on) and a filename
         // tooltip on every cell.
@@ -1912,6 +2065,22 @@ fn overlay_parts(overlay: &Overlay) -> (Image, Label) {
         .and_downcast::<Image>()
         .unwrap();
     (image, label)
+}
+
+/// The displayed rect of `image`'s texture inside a `(w, h)` area, honouring
+/// aspect-preserving centering (mirrors `Viewer::image_rect`). Used to map a
+/// face box's per-mille coordinates onto the letterboxed thumbnail.
+fn image_rect(image: &Image, w: i32, h: i32) -> Option<(f64, f64, f64, f64)> {
+    let paintable = image.paintable()?;
+    let iw = paintable.intrinsic_width() as f64;
+    let ih = paintable.intrinsic_height() as f64;
+    if iw <= 0.0 || ih <= 0.0 {
+        return None;
+    }
+    let (aw, ah) = (w as f64, h as f64);
+    let scale = (aw / iw).min(ah / ih);
+    let (dw, dh) = (iw * scale, ih * scale);
+    Some(((aw - dw) / 2.0, (ah - dh) / 2.0, dw, dh))
 }
 
 /// Decode an image blob into a `gdk::Texture`.

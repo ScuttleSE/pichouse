@@ -118,6 +118,26 @@ impl Library {
         Ok(v)
     }
 
+    /// All faces detected in any of the given photos (bulk form of
+    /// `faces_for_photo`, for populating a grid's face-box overlay in one
+    /// query instead of one per photo).
+    pub fn faces_for_photos(&self, photo_ids: &[i64]) -> Result<Vec<Face>> {
+        if photo_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let conn = self.lock();
+        let placeholders = photo_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!("SELECT {FACE_COLS} FROM faces WHERE photo_id IN ({placeholders})");
+        let mut stmt = conn.prepare(&sql)?;
+        let ps: Vec<&dyn rusqlite::ToSql> = photo_ids.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+        let rows = stmt.query_map(ps.as_slice(), map_face)?;
+        let mut v = Vec::new();
+        for row in rows {
+            v.push(row?);
+        }
+        Ok(v)
+    }
+
     /// One face by id, or `None`.
     pub fn face_by_id(&self, face_id: i64) -> Result<Option<Face>> {
         let conn = self.lock();
