@@ -237,8 +237,11 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
         group.add_action(&act);
     }
 
-    // Assign selected photos' unassigned faces in the current style cluster
-    // to a new or existing character, moving them out of the unnamed group.
+    // Assign selected photos to a new or existing character. In an unnamed
+    // style-cluster group this moves the selection's unassigned faces in that
+    // cluster out of the group. In a named character's own group this moves
+    // the selection's faces that belong to the current character over to a
+    // different one, for correcting a mis-scanned photo.
     {
         let act = gio::SimpleAction::new("assign-to-character", None);
         let state = state.clone();
@@ -247,36 +250,62 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
         let pop = pop.clone();
         act.connect_activate(move |_, _| {
             dismiss(&pop);
-            let Some(cluster_id) = grid.current_style_cluster() else {
-                return;
-            };
             let ids = local_photo_ids(&grid);
             if ids.is_empty() {
                 return;
             }
             let id_set: std::collections::HashSet<i64> = ids.iter().copied().collect();
-            let faces = match state.lib.unassigned_style_faces_in_cluster(cluster_id) {
-                Ok(f) => f,
-                Err(e) => {
-                    show_error(&state, &e.to_string());
+            let (face_ids, exclude_character_id): (Vec<i64>, Option<i64>) =
+                if let Some(cluster_id) = grid.current_style_cluster() {
+                    let faces = match state.lib.unassigned_style_faces_in_cluster(cluster_id) {
+                        Ok(f) => f,
+                        Err(e) => {
+                            show_error(&state, &e.to_string());
+                            return;
+                        }
+                    };
+                    let fids = faces
+                        .into_iter()
+                        .filter(|f| id_set.contains(&f.photo_id))
+                        .map(|f| f.id)
+                        .collect();
+                    (fids, None)
+                } else if let Some(character_id) = grid.current_character() {
+                    let mut fids = Vec::new();
+                    for &pid in &ids {
+                        match state.lib.style_faces_for_photo(pid) {
+                            Ok(faces) => fids.extend(
+                                faces
+                                    .into_iter()
+                                    .filter(|f| f.character_id == character_id)
+                                    .map(|f| f.id),
+                            ),
+                            Err(e) => {
+                                show_error(&state, &e.to_string());
+                                return;
+                            }
+                        }
+                    }
+                    (fids, Some(character_id))
+                } else {
                     return;
-                }
-            };
-            let face_ids: Vec<i64> = faces
-                .into_iter()
-                .filter(|f| id_set.contains(&f.photo_id))
-                .map(|f| f.id)
-                .collect();
+                };
             if face_ids.is_empty() {
                 return;
             }
             let photo_count = ids.len();
             let grid2 = grid.clone();
             let sidebar2 = sidebar.clone();
-            characters::assign_photos_to_character_dialog(&state, face_ids, photo_count, move || {
-                grid2.reload_from_source();
-                sidebar2.reload_deferred();
-            });
+            characters::assign_photos_to_character_dialog(
+                &state,
+                face_ids,
+                photo_count,
+                exclude_character_id,
+                move || {
+                    grid2.reload_from_source();
+                    sidebar2.reload_deferred();
+                },
+            );
         });
         group.add_action(&act);
     }
@@ -478,6 +507,10 @@ fn build_menu(state: &Rc<AppState>, grid: &Rc<Grid>) -> gio::Menu {
             );
         }
         if grid.current_character().is_some() {
+            group_tools.append(
+                Some("Move to another character…"),
+                Some("grid.assign-to-character"),
+            );
             group_tools.append(
                 Some("Remove from this character"),
                 Some("grid.remove-from-character"),

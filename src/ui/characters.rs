@@ -227,15 +227,19 @@ pub fn assign_style_face_dialog<F: Fn() + 'static>(
 }
 
 /// A dialog to name a set of individually-selected stylised faces (e.g. from
-/// photos picked out of a mixed "Unnamed character" group) as one new
-/// character, or assign them to an existing character. Runs `on_done` on
-/// success. `photo_count` is the number of distinct photos the faces came
-/// from, used only for the label text — a photo can contribute more than one
-/// face (e.g. two instances of the same character in one image).
+/// photos picked out of a mixed "Unnamed character" group, or misplaced
+/// photos picked out of a named character's own group) as one new character,
+/// or assign them to an existing character. Runs `on_done` on success.
+/// `photo_count` is the number of distinct photos the faces came from, used
+/// only for the label text — a photo can contribute more than one face (e.g.
+/// two instances of the same character in one image). `exclude_character_id`
+/// hides one character from the "existing character" list — the character
+/// the faces are currently assigned to, when reassigning away from it.
 pub fn assign_photos_to_character_dialog<F: Fn() + 'static>(
     state: &Rc<AppState>,
     face_ids: Vec<i64>,
     photo_count: usize,
+    exclude_character_id: Option<i64>,
     on_done: F,
 ) {
     if face_ids.is_empty() {
@@ -261,6 +265,7 @@ pub fn assign_photos_to_character_dialog<F: Fn() + 'static>(
         .unwrap_or_default()
         .into_iter()
         .map(|(c, _)| c)
+        .filter(|c| Some(c.id) != exclude_character_id)
         .collect();
 
     let on_done = Rc::new(on_done);
