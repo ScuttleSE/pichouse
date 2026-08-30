@@ -316,6 +316,7 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
                             grid.clone(),
                             sidebar.clone(),
                             std::collections::VecDeque::from(groups),
+                            Vec::new(),
                         );
                         return;
                     }
@@ -523,12 +524,15 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
 /// until `groups` is empty. Each element of `groups` is one photo's
 /// unassigned face ids. Chains through `assign_style_faces_per_face_dialog`'s
 /// `on_closed` hook, so the next photo's dialog opens only after the current
-/// one closes — never several at once.
+/// one closes — never several at once. `preselect` carries forward the
+/// characters the previous photo's faces were resolved to (by position), so
+/// a run of photos with the same people needs no re-picking each time.
 fn open_per_face_dialogs_sequentially(
     state: Rc<AppState>,
     grid: Rc<Grid>,
     sidebar: Rc<Sidebar>,
     mut groups: std::collections::VecDeque<Vec<i64>>,
+    preselect: Vec<Option<i64>>,
 ) {
     let Some(face_ids) = groups.pop_front() else {
         return;
@@ -538,16 +542,18 @@ fn open_per_face_dialogs_sequentially(
     characters::assign_style_faces_per_face_dialog(
         &state,
         face_ids,
+        preselect,
         move || {
             grid_a.reload_from_source();
             sidebar_a.reload_deferred();
         },
-        move || {
+        move |resolved| {
             open_per_face_dialogs_sequentially(
                 state_n.clone(),
                 grid_n.clone(),
                 sidebar_n.clone(),
                 groups.clone(),
+                resolved,
             );
         },
     );

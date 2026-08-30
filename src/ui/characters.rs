@@ -1,6 +1,7 @@
 //! Character dialogs: name a stylised face cluster or merge it into an existing
 //! character. The Characters view (`charactersview.rs`) drives these.
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
@@ -373,10 +374,21 @@ pub fn assign_photos_to_character_dialog<F: Fn() + 'static>(
 /// `on_closed` runs exactly once, when the dialog window closes (via "Done"
 /// or the window's own close control) regardless of how many faces were
 /// actually resolved, so a caller showing one of these per photo can chain to
-/// the next photo's dialog.
-pub fn assign_style_faces_per_face_dialog<F: Fn() + 'static, G: Fn() + 'static>(
+/// the next photo's dialog. It receives the character each face ended up
+/// assigned to (`None` for a face left unresolved), in the same order as
+/// `face_ids`, so the caller can carry it forward as the next call's
+/// `preselect`.
+///
+/// `preselect` pre-selects each face's existing-character dropdown, by
+/// position (same order as `face_ids`) — typically the characters the
+/// previous photo in a batch was resolved to, so assigning the same people
+/// across a run of photos needs no re-picking each time. A position past the
+/// end of `face_ids`, or naming a character no longer in the list, is
+/// ignored. Pass an empty `Vec` for none.
+pub fn assign_style_faces_per_face_dialog<F: Fn() + 'static, G: Fn(Vec<Option<i64>>) + 'static>(
     state: &Rc<AppState>,
     face_ids: Vec<i64>,
+    preselect: Vec<Option<i64>>,
     on_assigned: F,
     on_closed: G,
 ) {
@@ -425,7 +437,14 @@ pub fn assign_style_faces_per_face_dialog<F: Fn() + 'static, G: Fn() + 'static>(
         .build();
     root.append(&scroller);
 
-    for &face_id in &face_ids {
+    // Per-card state the "Done" and "Swap" buttons need after the loop: each
+    // face's dropdown (`None` when there are no characters to pick from) and
+    // its resolved character, so both can drive an assignment the same way
+    // the per-card "Assign" button does.
+    let mut drops: Vec<Option<DropDown>> = Vec::with_capacity(n);
+    let mut resolved: Vec<Rc<RefCell<Option<i64>>>> = Vec::with_capacity(n);
+
+    for (i, &face_id) in face_ids.iter().enumerate() {
         let frame = Frame::new(None);
         frame.add_css_class("dup-group-frame");
         let card = GtkBox::new(Orientation::Vertical, 6);
@@ -480,11 +499,18 @@ pub fn assign_style_faces_per_face_dialog<F: Fn() + 'static, G: Fn() + 'static>(
         confirm.set_visible(false);
         card.append(&confirm);
 
+        let card_resolved: Rc<RefCell<Option<i64>>> = Rc::new(RefCell::new(None));
+
         if !characters.is_empty() {
             let labels: Vec<String> = characters.iter().map(|c| c.name.clone()).collect();
             let label_refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
             let sl = StringList::new(&label_refs);
             let drop = DropDown::new(Some(sl), gtk4::Expression::NONE);
+            if let Some(Some(cid)) = preselect.get(i) {
+                if let Some(pos) = characters.iter().position(|c| c.id == *cid) {
+                    drop.set_selected(pos as u32);
+                }
+            }
             controls.append(&drop);
             let assign = Button::with_label("Assign");
             assign.add_css_class("suggested-action");
@@ -495,8 +521,10 @@ pub fn assign_style_faces_per_face_dialog<F: Fn() + 'static, G: Fn() + 'static>(
             let controls2 = controls.clone();
             let confirm2 = confirm.clone();
             let on_assigned2 = on_assigned.clone();
+            let drop2 = drop.clone();
+            let resolved2 = card_resolved.clone();
             assign.connect_clicked(move |_| {
-                let idx = drop.selected() as usize;
+                let idx = drop2.selected() as usize;
                 let Some(c) = characters2.get(idx) else {
                     return;
                 };
@@ -510,8 +538,13 @@ pub fn assign_style_faces_per_face_dialog<F: Fn() + 'static, G: Fn() + 'static>(
                 controls2.set_visible(false);
                 confirm2.set_text(&format!("Assigned to {}", c.name));
                 confirm2.set_visible(true);
+                *resolved2.borrow_mut() = Some(c.id);
                 on_assigned2();
             });
+
+            drops.push(Some(drop));
+        } else {
+            drops.push(None);
         }
 
         let new_btn = Button::with_label("New character…");
@@ -521,11 +554,13 @@ pub fn assign_style_faces_per_face_dialog<F: Fn() + 'static, G: Fn() + 'static>(
         let controls2 = controls.clone();
         let confirm2 = confirm.clone();
         let on_assigned2 = on_assigned.clone();
+        let resolved2 = card_resolved.clone();
         new_btn.connect_clicked(move |_| {
             let state3 = state2.clone();
             let controls3 = controls2.clone();
             let confirm3 = confirm2.clone();
             let on_assigned3 = on_assigned2.clone();
+            let resolved3 = resolved2.clone();
             prompt_text(
                 &state2,
                 Some(&win2),
@@ -554,10 +589,30 @@ pub fn assign_style_faces_per_face_dialog<F: Fn() + 'static, G: Fn() + 'static>(
                     controls3.set_visible(false);
                     confirm3.set_text(&format!("Assigned to {name}"));
                     confirm3.set_visible(true);
+                    *resolved3.borrow_mut() = Some(cid);
                     on_assigned3();
                 },
             );
         });
+
+        resolved.push(card_resolved);
+    }
+
+    // "Swap" trades the two faces' currently-selected characters — handy for
+    // a batch of photos with the same two people, sometimes on the left and
+    // sometimes on the right, so a mis-ordered preselect can be fixed in one
+    // click instead of re-picking both dropdowns.
+    if n == 2 {
+        if let (Some(d0), Some(d1)) = (drops[0].clone(), drops[1].clone()) {
+            let swap = Button::with_label("Swap");
+            root.append(&swap);
+            swap.connect_clicked(move |_| {
+                let a = d0.selected();
+                let b = d1.selected();
+                d0.set_selected(b);
+                d1.set_selected(a);
+            });
+        }
     }
 
     let done = Button::with_label("Done");
@@ -565,14 +620,45 @@ pub fn assign_style_faces_per_face_dialog<F: Fn() + 'static, G: Fn() + 'static>(
     root.append(&done);
     {
         let win = win.clone();
-        done.connect_clicked(move |_| win.close());
+        let state = state.clone();
+        let characters = characters.clone();
+        let on_assigned = on_assigned.clone();
+        let face_ids = face_ids.clone();
+        let drops = drops.clone();
+        let resolved = resolved.clone();
+        done.connect_clicked(move |_| {
+            // Clicking "Done" with a character still selected in a card's
+            // dropdown assigns it first, so the user doesn't have to click
+            // "Assign" then "Done" for every face.
+            for i in 0..face_ids.len() {
+                if resolved[i].borrow().is_some() {
+                    continue;
+                }
+                let Some(drop) = &drops[i] else { continue };
+                let idx = drop.selected() as usize;
+                let Some(c) = characters.get(idx) else { continue };
+                let face_id = face_ids[i];
+                if let Err(e) = state.lib.set_style_face_character(face_id, c.id) {
+                    show_error(&state, &e.to_string());
+                    continue;
+                }
+                if let Some(sb) = state.sidebar.borrow().as_ref() {
+                    sb.reload_deferred();
+                }
+                *resolved[i].borrow_mut() = Some(c.id);
+                on_assigned();
+            }
+            win.close();
+        });
     }
 
     // Fires exactly once, however the window closes (the "Done" button just
     // calls `win.close()` above, which triggers this on its own), so a caller
-    // driving one of these dialogs per photo can chain to the next.
+    // driving one of these dialogs per photo can chain to the next, carrying
+    // forward the character each face ended up assigned to.
     win.connect_close_request(move |_| {
-        on_closed();
+        let final_selection: Vec<Option<i64>> = resolved.iter().map(|r| *r.borrow()).collect();
+        on_closed(final_selection);
         gtk4::glib::Propagation::Proceed
     });
 
