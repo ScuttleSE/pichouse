@@ -362,6 +362,55 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
         group.add_action(&act);
     }
 
+    // Use the face found in the single selected photo as the currently-viewed
+    // person's/character's own representative face (their "thumbnail"),
+    // matching whichever face in that photo is actually assigned to them —
+    // not just any face that happens to also be in the shot.
+    {
+        let act = gio::SimpleAction::new("set-face-thumbnail", None);
+        let state = state.clone();
+        let grid = grid.clone();
+        let pop = pop.clone();
+        act.connect_activate(move |_, _| {
+            dismiss(&pop);
+            let Some(photo) = grid.selected_photos().into_iter().find(|p| p.id != 0) else {
+                return;
+            };
+            if let Some(person_id) = grid.current_person() {
+                let face_id = state
+                    .lib
+                    .faces_for_photo(photo.id)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .find(|f| f.person_id == person_id)
+                    .map(|f| f.id)
+                    .unwrap_or(0);
+                if face_id == 0 {
+                    return;
+                }
+                if let Err(e) = state.lib.set_person_cover(person_id, face_id) {
+                    show_error(&state, &e.to_string());
+                }
+            } else if let Some(character_id) = grid.current_character() {
+                let face_id = state
+                    .lib
+                    .style_faces_for_photo(photo.id)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .find(|f| f.character_id == character_id)
+                    .map(|f| f.id)
+                    .unwrap_or(0);
+                if face_id == 0 {
+                    return;
+                }
+                if let Err(e) = state.lib.set_character_cover(character_id, face_id) {
+                    show_error(&state, &e.to_string());
+                }
+            }
+        });
+        group.add_action(&act);
+    }
+
     // Mark selected photos unimportant. A skipped photo is excluded from every
     // future face scan and leaves every face group at once.
     {
@@ -584,6 +633,12 @@ fn build_menu(state: &Rc<AppState>, grid: &Rc<Grid>) -> gio::Menu {
     // Group actions apply to local photos in a face-group view. "Do not scan"
     // applies in any view.
     let group_tools = gio::Menu::new();
+    if selected_local == 1 && (grid.current_person().is_some() || grid.current_character().is_some()) {
+        group_tools.append(
+            Some("Set face as thumbnail"),
+            Some("grid.set-face-thumbnail"),
+        );
+    }
     if selected_local >= 1 {
         if grid.current_person().is_some() {
             group_tools.append(
