@@ -55,11 +55,11 @@
   "53": "db/config.rs",
   "54": "actions.rs",
   "55": "CLAUDE.md",
-  "56": "faces.rs",
+  "56": "FacesView",
   "57": "name_cluster_dialog",
-  "58": "LevelPreset",
+  "58": "Folder",
   "59": "parse_log_level",
-  "60": ".group_photo_ids",
+  "60": "Result",
   "61": "inference_test.rs",
   "62": "FolderTree",
   "63": "HANDOFF.md",
@@ -111,5 +111,8 @@
   "109": "FaceConfig",
   "110": "StyleFaceConfig",
   "111": "settings_characters.rs",
-  "112": "format_sizes"
+  "112": "library.rs",
+  "113": "albumtree.rs",
+  "114": ".open_at",
+  "115": "settings_faces.rs"
 }
