@@ -6,8 +6,15 @@
 //! unnamed tile opens the name/assign dialog. The scan refreshes this view as
 //! groups appear. A tile whose group gained photos in the most recent scan
 //! shows a "+N new" badge; the badge clears at the start of the next scan.
+//!
+//! The view is also scoped by a person group (e.g. "Disney"): selecting a
+//! group in the sidebar opens this same view narrowed to that group's direct
+//! sub-groups (folder tiles) and member persons (face tiles), the same way
+//! opening an Album shows its folders rather than a merged photo grid. A
+//! group tile drills further in; the back button returns to the parent scope.
 
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
@@ -22,9 +29,15 @@ use super::util::texture_from_bytes;
 /// The Faces view widget and its rebuild logic.
 pub struct FacesView {
     root: GtkBox,
+    title: Label,
+    back_btn: Button,
     flow: FlowBox,
     empty: Label,
     state: RefCell<Option<Rc<AppState>>>,
+    /// The person group currently browsed, or `0` for the top-level People
+    /// page (every top-level group, every ungrouped person, and unnamed
+    /// clusters).
+    scope: RefCell<i64>,
 }
 
 impl FacesView {
@@ -32,12 +45,16 @@ impl FacesView {
     pub fn new() -> Rc<FacesView> {
         let root = GtkBox::new(Orientation::Vertical, 0);
 
-        // A small header bar with a manage action.
+        // A small header bar with a back button (for a group scope) and title.
         let bar = GtkBox::new(Orientation::Horizontal, 6);
         bar.set_margin_top(8);
         bar.set_margin_bottom(4);
         bar.set_margin_start(8);
         bar.set_margin_end(8);
+        let back_btn = Button::from_icon_name("go-previous-symbolic");
+        back_btn.add_css_class("flat");
+        back_btn.set_visible(false);
+        bar.append(&back_btn);
         let title = Label::new(Some("People"));
         title.set_xalign(0.0);
         title.set_hexpand(true);
@@ -75,12 +92,20 @@ impl FacesView {
         scroll.set_child(Some(&inner));
         root.append(&scroll);
 
-        Rc::new(FacesView {
+        let view = Rc::new(FacesView {
             root,
+            title,
+            back_btn: back_btn.clone(),
             flow,
             empty,
             state: RefCell::new(None),
-        })
+            scope: RefCell::new(0),
+        });
+        {
+            let this = view.clone();
+            back_btn.connect_clicked(move |_| this.go_back());
+        }
+        view
     }
 
     pub fn bind_state(self: &Rc<Self>, state: Rc<AppState>) {
@@ -92,8 +117,43 @@ impl FacesView {
         &self.root
     }
 
-    /// Rebuild the group tiles from the database. Safe to call repeatedly, so
-    /// the scan can refresh this view as new groups appear.
+    /// Show the top-level People page: top-level groups, every ungrouped
+    /// person, and unnamed clusters.
+    pub fn show_top(self: &Rc<Self>) {
+        *self.scope.borrow_mut() = 0;
+        self.reload();
+    }
+
+    /// Show one group's page: its direct sub-groups and direct member
+    /// persons, the same way opening an Album shows its folders.
+    pub fn show_group(self: &Rc<Self>, group_id: i64) {
+        *self.scope.borrow_mut() = group_id;
+        self.reload();
+    }
+
+    /// Return to the current group's parent scope (or the top-level page).
+    fn go_back(self: &Rc<Self>) {
+        let scope = *self.scope.borrow();
+        if scope == 0 {
+            return;
+        }
+        let Some(state) = self.state.borrow().clone() else {
+            return;
+        };
+        let parent = state
+            .lib
+            .person_groups()
+            .unwrap_or_default()
+            .into_iter()
+            .find(|g| g.id == scope)
+            .map(|g| g.parent_id)
+            .unwrap_or(0);
+        self.show_group(parent);
+    }
+
+    /// Rebuild the group tiles from the database, at the current scope. Safe
+    /// to call repeatedly, so the scan can refresh this view as new groups
+    /// appear.
     pub fn reload(self: &Rc<Self>) {
         let Some(state) = self.state.borrow().clone() else {
             return;
@@ -107,10 +167,41 @@ impl FacesView {
         // face crops.
         let tile = state.prefs.borrow().active_size().clamp(72, 320);
 
-        let people = state.lib.persons().unwrap_or_default();
-        let clusters = state.lib.unnamed_clusters().unwrap_or_default();
+        let scope = *self.scope.borrow();
+        let all_groups = state.lib.person_groups().unwrap_or_default();
+        self.title.set_text(
+            &all_groups
+                .iter()
+                .find(|g| g.id == scope)
+                .map(|g| g.name.clone())
+                .unwrap_or_else(|| "People".to_string()),
+        );
+        self.back_btn.set_visible(scope != 0);
 
-        if people.is_empty() && clusters.is_empty() {
+        let subgroups: Vec<crate::model::PersonGroup> = all_groups
+            .iter()
+            .filter(|g| g.parent_id == scope)
+            .cloned()
+            .collect();
+        let members = state.lib.person_group_members().unwrap_or_default();
+        let all_people = state.lib.persons().unwrap_or_default();
+        let (people, clusters) = if scope == 0 {
+            let grouped: HashSet<i64> = members.values().flatten().copied().collect();
+            let people: Vec<_> = all_people
+                .into_iter()
+                .filter(|(p, _)| !grouped.contains(&p.id))
+                .collect();
+            (people, state.lib.unnamed_clusters().unwrap_or_default())
+        } else {
+            let member_ids = members.get(&scope).cloned().unwrap_or_default();
+            let people: Vec<_> = all_people
+                .into_iter()
+                .filter(|(p, _)| member_ids.contains(&p.id))
+                .collect();
+            (people, Vec::new())
+        };
+
+        if subgroups.is_empty() && people.is_empty() && clusters.is_empty() {
             self.empty.set_visible(true);
             self.flow.set_visible(false);
             return;
@@ -118,7 +209,14 @@ impl FacesView {
         self.empty.set_visible(false);
         self.flow.set_visible(true);
 
-        // Named people first.
+        // Sub-groups first, like folders in a file browser.
+        for g in &subgroups {
+            let count = members.get(&g.id).map(|m| m.len() as i64).unwrap_or(0);
+            let t = self.build_group_tile(&g.name, count, g.id, tile);
+            self.flow.append(&t);
+        }
+
+        // Named people next.
         for (person, count) in people {
             let face_id = state
                 .lib
@@ -157,6 +255,44 @@ impl FacesView {
             );
             self.flow.append(&t);
         }
+    }
+
+    /// Build one sub-group ("folder") tile. Clicking either the icon or the
+    /// label drills into that group's own scope.
+    fn build_group_tile(self: &Rc<Self>, name: &str, count: i64, group_id: i64, tile_px: i32) -> GtkBox {
+        let tile = GtkBox::new(Orientation::Vertical, 4);
+        tile.set_width_request(tile_px + 12);
+
+        let image = Image::new();
+        image.set_pixel_size(tile_px);
+        image.set_size_request(tile_px, tile_px);
+        image.set_icon_name(Some("folder-new-symbolic"));
+
+        let img_btn = Button::new();
+        img_btn.set_child(Some(&image));
+        img_btn.add_css_class("flat");
+        {
+            let this = self.clone();
+            img_btn.connect_clicked(move |_| this.show_group(group_id));
+        }
+
+        let lbl_btn = Button::with_label(&format!("{name} ({count})"));
+        lbl_btn.add_css_class("flat");
+        if let Some(child) = lbl_btn.child() {
+            if let Ok(l) = child.downcast::<Label>() {
+                l.set_wrap(true);
+                l.set_max_width_chars(16);
+                l.set_justify(gtk4::Justification::Center);
+            }
+        }
+        {
+            let this = self.clone();
+            lbl_btn.connect_clicked(move |_| this.show_group(group_id));
+        }
+
+        tile.append(&img_btn);
+        tile.append(&lbl_btn);
+        tile
     }
 
     /// Build one group tile: a clickable face crop over a clickable label.

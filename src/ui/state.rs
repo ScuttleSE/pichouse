@@ -399,9 +399,20 @@ impl AppState {
             .set_message(&format!("Banned Matches — {n} pairs will not group again"));
     }
 
-    /// Show the Faces view in the center, rebuilding its group tiles.
+    /// Show the top-level Faces view in the center, rebuilding its group tiles.
     pub fn show_faces(self: &Rc<Self>) {
         *self.current_folder.borrow_mut() = 0;
+        self.faces_view().show_top();
+        if let Some(stack) = self.center_stack.borrow().as_ref() {
+            stack.set_visible_child_name("faces");
+        }
+        self.status().set_message("People");
+    }
+
+    /// Return to the Faces view without resetting its scope, so leaving a
+    /// person's photos lands back on the group page (if any) they were opened
+    /// from, not always the top-level People page.
+    fn back_to_faces(self: &Rc<Self>) {
         self.faces_view().reload();
         if let Some(stack) = self.center_stack.borrow().as_ref() {
             stack.set_visible_child_name("faces");
@@ -448,25 +459,23 @@ impl AppState {
         let count = self.lib.person_face_count(person_id).unwrap_or(0);
         {
             let this = self.clone();
-            self.grid().set_back(move || this.show_faces());
+            self.grid().set_back(move || this.back_to_faces());
         }
         self.show_grid();
         self.status()
             .set_message(&format!("{name} — {count} faces"));
     }
 
-    /// Show every photo of every person transitively in a group.
+    /// Show a person group's page in the Faces view: its sub-groups and
+    /// member persons, the same way opening an Album shows its folders rather
+    /// than a merged photo grid.
     pub fn show_person_group(self: &Rc<Self>, group_id: i64, name: &str) {
         *self.current_folder.borrow_mut() = 0;
-        self.grid().show_person_group(group_id, name);
-        let count = self.lib.person_group_face_count(group_id).unwrap_or(0);
-        {
-            let this = self.clone();
-            self.grid().set_back(move || this.show_faces());
+        self.faces_view().show_group(group_id);
+        if let Some(stack) = self.center_stack.borrow().as_ref() {
+            stack.set_visible_child_name("faces");
         }
-        self.show_grid();
-        self.status()
-            .set_message(&format!("{name} — {count} faces"));
+        self.status().set_message(name);
     }
 
     /// Show every photo in an unnamed face cluster, with a back button to the
@@ -476,7 +485,7 @@ impl AppState {
         self.grid().show_cluster(cluster_id, name);
         {
             let this = self.clone();
-            self.grid().set_back(move || this.show_faces());
+            self.grid().set_back(move || this.back_to_faces());
         }
         self.show_grid();
         self.status().set_message(name);
@@ -485,7 +494,18 @@ impl AppState {
     /// Show the Characters view in the center, rebuilding its group tiles.
     pub fn show_characters(self: &Rc<Self>) {
         *self.current_folder.borrow_mut() = 0;
-        self.characters_view().reload();
+        self.characters_view().show_top();
+        if let Some(stack) = self.center_stack.borrow().as_ref() {
+            stack.set_visible_child_name("characters");
+        }
+        self.status().set_message("Characters");
+    }
+
+    /// Return to the Characters view without resetting its scope, so leaving
+    /// a character's photos lands back on the group page (if any) they were
+    /// opened from, not always the top-level Characters page.
+    fn back_to_characters(self: &Rc<Self>) {
+        self.characters_view().refresh();
         if let Some(stack) = self.center_stack.borrow().as_ref() {
             stack.set_visible_child_name("characters");
         }
@@ -513,25 +533,23 @@ impl AppState {
         let count = self.lib.character_face_count(character_id).unwrap_or(0);
         {
             let this = self.clone();
-            self.grid().set_back(move || this.show_characters());
+            self.grid().set_back(move || this.back_to_characters());
         }
         self.show_grid();
         self.status()
             .set_message(&format!("{name} — {count} faces"));
     }
 
-    /// Show every photo of every character transitively in a group.
+    /// Show a character group's page in the Characters view: its sub-groups
+    /// and member characters, the same way opening an Album shows its
+    /// folders rather than a merged photo grid.
     pub fn show_character_group(self: &Rc<Self>, group_id: i64, name: &str) {
         *self.current_folder.borrow_mut() = 0;
-        self.grid().show_character_group(group_id, name);
-        let count = self.lib.character_group_face_count(group_id).unwrap_or(0);
-        {
-            let this = self.clone();
-            self.grid().set_back(move || this.show_characters());
+        self.characters_view().show_group(group_id);
+        if let Some(stack) = self.center_stack.borrow().as_ref() {
+            stack.set_visible_child_name("characters");
         }
-        self.show_grid();
-        self.status()
-            .set_message(&format!("{name} — {count} faces"));
+        self.status().set_message(name);
     }
 
     /// Show every photo in an unnamed stylised cluster, with a back button.
@@ -540,7 +558,7 @@ impl AppState {
         self.grid().show_style_cluster(cluster_id, name);
         {
             let this = self.clone();
-            self.grid().set_back(move || this.show_characters());
+            self.grid().set_back(move || this.back_to_characters());
         }
         self.show_grid();
         self.status().set_message(name);

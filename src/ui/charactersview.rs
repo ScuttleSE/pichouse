@@ -5,8 +5,15 @@
 //! the largest unnamed clusters. The HDBSCAN noise group (cluster -1) shows as
 //! "Unclear". A named tile opens that character's photos. An unnamed tile opens
 //! the name/merge dialog. The scan refreshes this view as groups appear.
+//!
+//! The view is also scoped by a character group (e.g. "Disney"): selecting a
+//! group in the sidebar opens this same view narrowed to that group's direct
+//! sub-groups (folder tiles) and member characters, the same way opening an
+//! Album shows its folders rather than a merged photo grid. A group tile
+//! drills further in; the back button returns to the parent scope.
 
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use gtk4::glib;
@@ -29,6 +36,8 @@ const NOISE_CLUSTER_ID: i64 = -1;
 enum TileKey {
     Named(i64),
     Cluster(i64),
+    /// A sub-group ("folder") tile, drilling into that group's own scope.
+    Group(i64),
 }
 
 /// One rendered tile and the data needed to update it in place.
@@ -42,9 +51,14 @@ struct TileEntry {
 /// The Characters view widget and its rebuild logic.
 pub struct CharactersView {
     root: GtkBox,
+    title: Label,
+    back_btn: Button,
     flow: FlowBox,
     empty: Label,
     state: RefCell<Option<Rc<AppState>>>,
+    /// The character group currently browsed, or `0` for the top-level
+    /// Characters page.
+    scope: RefCell<i64>,
     tiles: RefCell<Vec<TileEntry>>,
     /// The currently selected groups. Empty when nothing is selected.
     selected: RefCell<Vec<TileKey>>,
@@ -66,6 +80,10 @@ impl CharactersView {
         bar.set_margin_bottom(4);
         bar.set_margin_start(8);
         bar.set_margin_end(8);
+        let back_btn = Button::from_icon_name("go-previous-symbolic");
+        back_btn.add_css_class("flat");
+        back_btn.set_visible(false);
+        bar.append(&back_btn);
         let title = Label::new(Some("Characters"));
         title.set_xalign(0.0);
         title.set_hexpand(true);
@@ -123,9 +141,12 @@ impl CharactersView {
 
         let view = Rc::new(CharactersView {
             root,
+            title,
+            back_btn: back_btn.clone(),
             flow,
             empty,
             state: RefCell::new(None),
+            scope: RefCell::new(0),
             tiles: RefCell::new(Vec::new()),
             selected: RefCell::new(Vec::new()),
             anchor: RefCell::new(None),
@@ -141,8 +162,46 @@ impl CharactersView {
             let this = view.clone();
             clear_btn.connect_clicked(move |_| this.clear_selection());
         }
+        {
+            let this = view.clone();
+            back_btn.connect_clicked(move |_| this.go_back());
+        }
 
         view
+    }
+
+    /// Show the top-level Characters page: top-level groups, every ungrouped
+    /// character, and unnamed clusters.
+    pub fn show_top(self: &Rc<Self>) {
+        *self.scope.borrow_mut() = 0;
+        self.reload();
+    }
+
+    /// Show one group's page: its direct sub-groups and direct member
+    /// characters.
+    pub fn show_group(self: &Rc<Self>, group_id: i64) {
+        *self.scope.borrow_mut() = group_id;
+        self.reload();
+    }
+
+    /// Return to the current group's parent scope (or the top-level page).
+    fn go_back(self: &Rc<Self>) {
+        let scope = *self.scope.borrow();
+        if scope == 0 {
+            return;
+        }
+        let Some(state) = self.state.borrow().clone() else {
+            return;
+        };
+        let parent = state
+            .lib
+            .character_groups()
+            .unwrap_or_default()
+            .into_iter()
+            .find(|g| g.id == scope)
+            .map(|g| g.parent_id)
+            .unwrap_or(0);
+        self.show_group(parent);
     }
 
     pub fn bind_state(self: &Rc<Self>, state: Rc<AppState>) {
@@ -175,10 +234,44 @@ impl CharactersView {
 
         let tile_px = state.prefs.borrow().active_size().clamp(72, 320);
 
-        let characters = state.lib.characters().unwrap_or_default();
-        let clusters = state.lib.unnamed_style_clusters().unwrap_or_default();
+        let scope = *self.scope.borrow();
+        let all_groups = state.lib.character_groups().unwrap_or_default();
+        self.title.set_text(
+            &all_groups
+                .iter()
+                .find(|g| g.id == scope)
+                .map(|g| g.name.clone())
+                .unwrap_or_else(|| "Characters".to_string()),
+        );
+        self.back_btn.set_visible(scope != 0);
 
-        if characters.is_empty() && clusters.is_empty() {
+        let subgroups: Vec<crate::model::CharacterGroup> = all_groups
+            .iter()
+            .filter(|g| g.parent_id == scope)
+            .cloned()
+            .collect();
+        let members = state.lib.character_group_members().unwrap_or_default();
+        let all_characters = state.lib.characters().unwrap_or_default();
+        let (characters, clusters) = if scope == 0 {
+            let grouped: HashSet<i64> = members.values().flatten().copied().collect();
+            let characters: Vec<_> = all_characters
+                .into_iter()
+                .filter(|(c, _)| !grouped.contains(&c.id))
+                .collect();
+            (
+                characters,
+                state.lib.unnamed_style_clusters().unwrap_or_default(),
+            )
+        } else {
+            let member_ids = members.get(&scope).cloned().unwrap_or_default();
+            let characters: Vec<_> = all_characters
+                .into_iter()
+                .filter(|(c, _)| member_ids.contains(&c.id))
+                .collect();
+            (characters, Vec::new())
+        };
+
+        if subgroups.is_empty() && characters.is_empty() && clusters.is_empty() {
             while let Some(child) = self.flow.first_child() {
                 self.flow.remove(&child);
             }
@@ -190,9 +283,14 @@ impl CharactersView {
         self.empty.set_visible(false);
         self.flow.set_visible(true);
 
-        // The wanted set, in stable display order: named characters first, then
-        // unnamed clusters by id.
+        // The wanted set, in stable display order: sub-groups first (like
+        // folders in a file browser), then named characters, then unnamed
+        // clusters by id.
         let mut wanted: Vec<(TileKey, String, i64)> = Vec::new();
+        for g in &subgroups {
+            let count = members.get(&g.id).map(|m| m.len() as i64).unwrap_or(0);
+            wanted.push((TileKey::Group(g.id), g.name.clone(), count));
+        }
         for (character, count) in &characters {
             wanted.push((TileKey::Named(character.id), character.name.clone(), *count));
         }
@@ -238,30 +336,17 @@ impl CharactersView {
                     .count_label
                     .set_text(&format!("{name} ({count})"));
             } else {
-                let (face_id, named, character_id, cluster_id) = match key {
-                    TileKey::Named(cid) => (
-                        state.lib.character_representative_face(cid).unwrap_or(0),
-                        true,
-                        cid,
-                        0,
-                    ),
-                    TileKey::Cluster(clid) => (
-                        state.lib.cluster_representative_face(clid).unwrap_or(0),
-                        false,
-                        0,
-                        clid,
-                    ),
+                let (tile_root, count_label) = match key {
+                    TileKey::Group(gid) => self.build_group_tile(&name, count, gid, tile_px),
+                    TileKey::Named(cid) => {
+                        let face_id = state.lib.character_representative_face(cid).unwrap_or(0);
+                        self.build_tile(&state, face_id, &name, count, true, cid, 0, tile_px)
+                    }
+                    TileKey::Cluster(clid) => {
+                        let face_id = state.lib.cluster_representative_face(clid).unwrap_or(0);
+                        self.build_tile(&state, face_id, &name, count, false, 0, clid, tile_px)
+                    }
                 };
-                let (tile_root, count_label) = self.build_tile(
-                    &state,
-                    face_id,
-                    &name,
-                    count,
-                    named,
-                    character_id,
-                    cluster_id,
-                    tile_px,
-                );
                 self.flow.append(&tile_root);
                 self.tiles.borrow_mut().push(TileEntry {
                     key,
@@ -435,6 +520,39 @@ impl CharactersView {
         (tile, count_label)
     }
 
+    /// Build one sub-group ("folder") tile. A single click drills into that
+    /// group's own scope; unlike a character/cluster tile it is never
+    /// selectable and has no right-click menu (group management lives in the
+    /// sidebar).
+    fn build_group_tile(self: &Rc<Self>, name: &str, count: i64, group_id: i64, tile_px: i32) -> (GtkBox, Label) {
+        let tile = GtkBox::new(Orientation::Vertical, 4);
+        tile.set_width_request(tile_px + 12);
+        tile.add_css_class("character-tile");
+
+        let image = Image::new();
+        image.set_pixel_size(tile_px);
+        image.set_size_request(tile_px, tile_px);
+        image.set_icon_name(Some("folder-new-symbolic"));
+
+        let label_text = format!("{name} ({count})");
+        let count_label = Label::new(Some(&label_text));
+        count_label.set_wrap(true);
+        count_label.set_max_width_chars(16);
+        count_label.set_justify(gtk4::Justification::Center);
+
+        let click = GestureClick::new();
+        click.set_button(gtk4::gdk::BUTTON_PRIMARY);
+        {
+            let this = self.clone();
+            click.connect_pressed(move |_, _, _, _| this.show_group(group_id));
+        }
+        tile.add_controller(click);
+
+        tile.append(&image);
+        tile.append(&count_label);
+        (tile, count_label)
+    }
+
     /// Toggle whether a group is in the selection. Updates the highlight and
     /// the action bar. Sets the anchor for a later shift-click range.
     fn toggle_selection(self: &Rc<Self>, key: TileKey) {
@@ -537,6 +655,9 @@ impl CharactersView {
             let group_ids = match key {
                 TileKey::Named(cid) => state.lib.photo_ids_of_character(*cid),
                 TileKey::Cluster(clid) => state.lib.photo_ids_in_style_cluster(*clid),
+                // A sub-group tile is a navigation folder, never selectable
+                // for a skip action.
+                TileKey::Group(_) => Ok(Vec::new()),
             }
             .unwrap_or_default();
             ids.extend(group_ids);
@@ -671,7 +792,7 @@ impl CharactersView {
                         .iter()
                         .filter_map(|k| match k {
                             TileKey::Cluster(c) => Some(*c),
-                            TileKey::Named(_) => None,
+                            TileKey::Named(_) | TileKey::Group(_) => None,
                         })
                         .collect();
                     if !cluster_ids.contains(&cluster_id) {

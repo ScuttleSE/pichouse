@@ -8,11 +8,7 @@ use rusqlite::{params, OptionalExtension};
 
 use crate::model::CharacterGroup;
 
-use super::{library::map_photo, Library, Result};
-
-/// The `photos` columns in `map_photo` order.
-const PHOTO_COLS: &str = "id, folder_id, path, filename, size, mod_time, taken_at, \
-     width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing, added_at, phash, skip_face_scan";
+use super::{Library, Result};
 
 impl Library {
     /// Insert a new character group. `parent_id` of 0 creates a top-level group.
@@ -195,44 +191,6 @@ impl Library {
         Ok(characters)
     }
 
-    /// Every photo containing a stylised face of any character transitively
-    /// in this group (its own members plus every sub-group's members),
-    /// de-duplicated, newest first.
-    pub fn photos_of_character_group(&self, group_id: i64) -> Result<Vec<crate::model::Photo>> {
-        let character_ids = self.characters_under_group(group_id)?;
-        if character_ids.is_empty() {
-            return Ok(Vec::new());
-        }
-        let conn = self.lock();
-        let placeholders = character_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        let sql = format!(
-            "SELECT {PHOTO_COLS} FROM photos WHERE id IN \
-                (SELECT DISTINCT photo_id FROM style_faces WHERE character_id IN ({placeholders})) \
-             ORDER BY taken_at DESC, filename"
-        );
-        let mut stmt = conn.prepare(&sql)?;
-        let ps: Vec<&dyn rusqlite::ToSql> =
-            character_ids.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
-        let rows = stmt.query_map(ps.as_slice(), map_photo)?;
-        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
-    }
-
-    /// The number of stylised faces assigned to any character transitively in
-    /// this group.
-    pub fn character_group_face_count(&self, group_id: i64) -> Result<i64> {
-        let character_ids = self.characters_under_group(group_id)?;
-        if character_ids.is_empty() {
-            return Ok(0);
-        }
-        let conn = self.lock();
-        let placeholders = character_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        let sql = format!("SELECT COUNT(*) FROM style_faces WHERE character_id IN ({placeholders})");
-        let mut stmt = conn.prepare(&sql)?;
-        let ps: Vec<&dyn rusqlite::ToSql> =
-            character_ids.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
-        let n: i64 = stmt.query_row(ps.as_slice(), |r| r.get(0))?;
-        Ok(n)
-    }
 }
 
 #[cfg(test)]
