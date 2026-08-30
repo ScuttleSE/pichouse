@@ -1,8 +1,8 @@
 {
   "Cargo.toml": {
-    "mtime": 1788074277.4248867,
-    "seen": 1788075081.0350378,
-    "ast_hash": "d195961f657c6a7bc4c9bfe9e851aaf5",
+    "mtime": 1788075092.4244385,
+    "seen": 1788077095.2752771,
+    "ast_hash": "5a8afcc989a4124f8bd6a991480a6bb4",
     "semantic_hash": ""
   },
   "src/ai/client.rs": {
@@ -312,16 +312,16 @@
     "semantic_hash": ""
   },
   "src/ui/characters.rs": {
-    "mtime": 1788072862.249677,
-    "seen": 1788074248.26017,
-    "ast_hash": "f7e3d3852cdfc603bf87ab123e5ecf49",
+    "mtime": 1788076859.467282,
+    "seen": 1788077095.2768428,
+    "ast_hash": "2b829925e6b3e8ceb42e9cfdf926ade6",
     "semantic_hash": ""
   },
   "src/ui/charactersview.rs": {
-    "mtime": 1787984260.7130637,
-    "seen": 1787995271.4017975,
-    "ast_hash": "0841659bba7ed6ba63eeb1a0471bfbc5",
-    "semantic_hash": "0841659bba7ed6ba63eeb1a0471bfbc5"
+    "mtime": 1788076790.4993286,
+    "seen": 1788077095.276844,
+    "ast_hash": "07df6b3f915cb5e9d48727ccd108b180",
+    "semantic_hash": ""
   },
   "src/ui/controller.rs": {
     "mtime": 1787758931.4585533,
@@ -384,8 +384,8 @@
     "semantic_hash": ""
   },
   "src/ui/grid.rs": {
-    "mtime": 1788075041.452467,
-    "seen": 1788075081.0369792,
+    "mtime": 1788075092.4404385,
+    "seen": 1788077095.2771642,
     "ast_hash": "2a2c703e8d70d0453a9ac3b2eda09d22",
     "semantic_hash": ""
   },
@@ -474,9 +474,9 @@
     "semantic_hash": ""
   },
   "src/ui/state.rs": {
-    "mtime": 1788010294.7663128,
-    "seen": 1788010494.7231562,
-    "ast_hash": "3e31003dd3d665ae8d20bf778320ac80",
+    "mtime": 1788076811.4353144,
+    "seen": 1788077095.2776043,
+    "ast_hash": "d1b5e481e1209978d4271783a60164fd",
     "semantic_hash": ""
   },
   "src/ui/status.rs": {
@@ -522,9 +522,9 @@
     "semantic_hash": "875db18aecfdefb0151f7e1f286a1255"
   },
   "src/ui/vmenu.rs": {
-    "mtime": 1788072862.249677,
-    "seen": 1788074248.2612748,
-    "ast_hash": "88c11979fd9c1cca1229f21d31b48697",
+    "mtime": 1788076893.3432593,
+    "seen": 1788077095.2778265,
+    "ast_hash": "9e189522004c3ab2d923f5b356dc809c",
     "semantic_hash": ""
   },
   "src/ui/vrules.rs": {
