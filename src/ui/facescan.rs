@@ -5,13 +5,14 @@
 //! faces. A final step clusters the new embeddings. Progress posts to the GTK
 //! main thread through a channel.
 
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use gtk4::glib;
 
-use crate::db::Library;
+use crate::db::{FaceGroup, Library};
 use crate::face::cluster::{self, ClusterItem};
 use crate::face::{models, runtime, FacePipeline};
 use crate::model::Face;
@@ -26,6 +27,9 @@ enum Msg {
     Error(String),
     /// New faces were clustered; refresh the People UI now.
     Refresh,
+    /// How many new photos this scan added to each existing group, keyed the
+    /// way the People view identifies a group.
+    Counts(HashMap<FaceGroup, i64>),
     Done,
 }
 
@@ -107,6 +111,12 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::face::FaceConfi
     status.set_message("Preparing face models…");
     status.set_progress(0.0);
 
+    // Reset the "new photos" badge from any previous scan, then snapshot each
+    // existing group's photos so the finished scan can tell how many photos
+    // it added to them.
+    state.face_group_new_counts.borrow_mut().clear();
+    let before_groups = state.lib.group_photo_ids().unwrap_or_default();
+
     let (tx, rx) = glib::MainContext::channel::<Msg>(glib::Priority::DEFAULT);
     {
         let state = state.clone();
@@ -122,6 +132,9 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::face::FaceConfi
                         sb.reload_deferred();
                     }
                     state.refresh_faces_if_active();
+                }
+                Msg::Counts(c) => {
+                    *state.face_group_new_counts.borrow_mut() = c;
                 }
                 Msg::Done => {
                     state.face_job.finish();
@@ -232,6 +245,11 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::face::FaceConfi
             log::warn!("clustering: {e}");
         }
 
+        // Diff against the pre-scan snapshot so each existing group that
+        // gained photos can show how many are new.
+        let after_groups = lib.group_photo_ids().unwrap_or_default();
+        let _ = tx.send(Msg::Counts(new_photo_counts(&before_groups, &after_groups)));
+
         let (d, e) = *done.lock().unwrap();
         let _ = tx.send(Msg::Scanning(false));
         let _ = tx.send(Msg::Progress(-1.0));
@@ -245,6 +263,26 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::face::FaceConfi
         let _ = tx.send(Msg::Message(final_msg));
         let _ = tx.send(Msg::Done);
     });
+}
+
+/// For each group present before the scan, count the photos in it now that
+/// were not in it before. Groups the scan did not touch, and groups that did
+/// not exist before the scan, are left out.
+fn new_photo_counts(
+    before: &HashMap<FaceGroup, HashSet<i64>>,
+    after: &HashMap<FaceGroup, HashSet<i64>>,
+) -> HashMap<FaceGroup, i64> {
+    let mut out = HashMap::new();
+    for (group, before_photos) in before {
+        let added = match after.get(group) {
+            Some(after_photos) => after_photos.difference(before_photos).count(),
+            None => 0,
+        };
+        if added > 0 {
+            out.insert(*group, added as i64);
+        }
+    }
+    out
 }
 
 /// Send the failure sequence to the UI thread.
@@ -385,6 +423,7 @@ pub fn download_models(state: &Rc<AppState>, detector_id: String, embedding_id: 
                 }
                 Msg::Progress(p) => status.set_progress(p),
                 Msg::Refresh => {}
+                Msg::Counts(_) => {}
             }
             glib::ControlFlow::Continue
         });
@@ -446,4 +485,41 @@ pub fn download_models(state: &Rc<AppState>, detector_id: String, embedding_id: 
         let _ = tx.send(Msg::Message("Face models ready.".into()));
         let _ = tx.send(Msg::Done);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn counts_only_photos_added_to_a_pre_existing_group() {
+        let mut before = HashMap::new();
+        before.insert(FaceGroup::Person(1), HashSet::from([10, 11]));
+        before.insert(FaceGroup::Cluster(2), HashSet::from([20]));
+
+        let mut after = HashMap::new();
+        // Person 1 gained one new photo.
+        after.insert(FaceGroup::Person(1), HashSet::from([10, 11, 12]));
+        // Cluster 2 gained none.
+        after.insert(FaceGroup::Cluster(2), HashSet::from([20]));
+        // A brand new group is not "existing", so it is left out even though
+        // it has photos.
+        after.insert(FaceGroup::Cluster(3), HashSet::from([30]));
+
+        let counts = new_photo_counts(&before, &after);
+        assert_eq!(counts.get(&FaceGroup::Person(1)), Some(&1));
+        assert_eq!(counts.get(&FaceGroup::Cluster(2)), None);
+        assert_eq!(counts.get(&FaceGroup::Cluster(3)), None);
+        assert_eq!(counts.len(), 1);
+    }
+
+    #[test]
+    fn a_group_that_lost_its_photos_counts_zero_new() {
+        let mut before = HashMap::new();
+        before.insert(FaceGroup::Cluster(1), HashSet::from([10]));
+        let after = HashMap::new();
+
+        let counts = new_photo_counts(&before, &after);
+        assert!(counts.is_empty());
+    }
 }

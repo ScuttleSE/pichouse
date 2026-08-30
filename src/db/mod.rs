@@ -21,6 +21,7 @@ mod virtual_albums;
 
 pub use config::{data_dir, write_configured_data_dir};
 pub use face_thumbs::{remove_face_thumbs_database, FaceThumbs};
+pub use faces::FaceGroup;
 pub use immich_thumbs::{
     remove_all_immich_thumb_databases, remove_immich_thumbs_for_server, ImmichThumbs,
 };

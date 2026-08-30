@@ -4,7 +4,8 @@
 //! Library sidebar. It shows one tile per group: named people first, then the
 //! largest unnamed clusters. A named tile opens that person's photos. An
 //! unnamed tile opens the name/assign dialog. The scan refreshes this view as
-//! groups appear.
+//! groups appear. A tile whose group gained photos in the most recent scan
+//! shows a "+N new" badge; the badge clears at the start of the next scan.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -209,7 +210,22 @@ impl FacesView {
 
         // The label. For an unnamed group it opens the name dialog; for a named
         // group it opens the photos.
-        let label_text = format!("{name} ({count})");
+        let group_key = if named {
+            crate::db::FaceGroup::Person(person_id)
+        } else {
+            crate::db::FaceGroup::Cluster(cluster_id)
+        };
+        let new_count = state
+            .face_group_new_counts
+            .borrow()
+            .get(&group_key)
+            .copied()
+            .unwrap_or(0);
+        let label_text = if new_count > 0 {
+            format!("{name} ({count}) +{new_count} new")
+        } else {
+            format!("{name} ({count})")
+        };
         let lbl_btn = Button::with_label(&label_text);
         lbl_btn.add_css_class("flat");
         if let Some(child) = lbl_btn.child() {

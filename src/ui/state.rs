@@ -101,6 +101,10 @@ pub struct AppState {
     /// The character id chosen in the last merge. Used to pre-select the merge
     /// dropdown next time. None until the first merge. Resets on restart.
     pub last_merged_character: RefCell<Option<i64>>,
+    /// How many new photos the most recent face scan added to each existing
+    /// People group. Cleared at the start of every scan, then filled in once
+    /// clustering finishes, so the People view can show a "+N new" badge.
+    pub face_group_new_counts: RefCell<std::collections::HashMap<crate::db::FaceGroup, i64>>,
 }
 
 /// One crop-render job. A worker renders the crop, writes it to the cache, and

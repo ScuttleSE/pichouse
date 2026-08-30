@@ -4,11 +4,22 @@
 //! person is a named group of faces. Clustering groups similar faces before the
 //! user names them. See `src/db/schema.sql` for the coordinate convention.
 
+use std::collections::{HashMap, HashSet};
+
 use rusqlite::{params, OptionalExtension, Row};
 
 use crate::model::{Face, Person, Photo};
 
 use super::{library::map_photo, library::now, Library, Result};
+
+/// A named person or an unnamed cluster, the two kinds of group the People
+/// view shows. Used to key a group across a face-scan snapshot, since person
+/// ids and cluster ids are separate id spaces that can otherwise collide.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FaceGroup {
+    Person(i64),
+    Cluster(i64),
+}
 
 /// The `photos` columns in `map_photo` order, for person photo queries.
 const PHOTO_COLS: &str = "id, folder_id, path, filename, size, mod_time, taken_at, \
@@ -269,6 +280,35 @@ impl Library {
             v.push(row?);
         }
         Ok(v)
+    }
+
+    /// The photo ids currently in each named or unnamed face group, for
+    /// diffing a before/after face-scan snapshot to find how many new photos
+    /// a scan added to an existing group.
+    pub fn group_photo_ids(&self) -> Result<HashMap<FaceGroup, HashSet<i64>>> {
+        let conn = self.read_lock();
+        let mut stmt = conn.prepare(
+            "SELECT person_id, cluster_id, photo_id FROM faces \
+             WHERE person_id IS NOT NULL OR cluster_id IS NOT NULL",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, Option<i64>>(0)?,
+                r.get::<_, Option<i64>>(1)?,
+                r.get::<_, i64>(2)?,
+            ))
+        })?;
+        let mut map: HashMap<FaceGroup, HashSet<i64>> = HashMap::new();
+        for row in rows {
+            let (person_id, cluster_id, photo_id) = row?;
+            let key = match (person_id, cluster_id) {
+                (Some(pid), _) => FaceGroup::Person(pid),
+                (None, Some(cid)) => FaceGroup::Cluster(cid),
+                (None, None) => continue,
+            };
+            map.entry(key).or_default().insert(photo_id);
+        }
+        Ok(map)
     }
 
     // --- Persons ---
