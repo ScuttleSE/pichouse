@@ -125,6 +125,14 @@ pub struct Grid {
     /// `Viewer`'s convention. Populated once per `show_*` call (one bulk
     /// query), not per-cell.
     face_boxes: RefCell<HashMap<i64, Vec<(i32, i32, i32, i32, bool)>>>,
+    /// Every face-box `DrawingArea` created so far (one per recycled grid
+    /// cell, registered once in `connect_setup`), so toggling `show_faces` can
+    /// queue a redraw on each directly. GTK4 caches a widget's own render node
+    /// independently of its ancestors: `grid_view.queue_draw()` alone does not
+    /// force an already-bound cell's `DrawingArea` to re-run its draw func —
+    /// only queuing that specific widget does. Held weakly since these
+    /// widgets are owned by the list view, not the grid.
+    face_areas: RefCell<Vec<glib::WeakRef<DrawingArea>>>,
     /// The "show face boxes" toggle button, visible only for a face source.
     faces_btn: Button,
     /// The header dropdown that selects the sort order.
@@ -555,6 +563,7 @@ impl Grid {
             show_filenames: std::cell::Cell::new(show_filenames),
             show_faces: std::cell::Cell::new(false),
             face_boxes: RefCell::new(HashMap::new()),
+            face_areas: RefCell::new(Vec::new()),
             faces_btn,
             sort_dropdown,
             on_activate: RefCell::new(None),
@@ -607,7 +616,18 @@ impl Grid {
                 } else {
                     btn.remove_css_class("suggested-action");
                 }
-                rc2.grid_view.queue_draw();
+                // Queue a redraw on every live face-box DrawingArea directly:
+                // GTK4 caches each widget's own render node, so queuing the
+                // grid_view alone would not re-run an already-bound cell's
+                // draw func (only a cell that gets rebound, e.g. by
+                // scrolling, would pick up the new state).
+                rc2.face_areas.borrow_mut().retain(|w| match w.upgrade() {
+                    Some(area) => {
+                        area.queue_draw();
+                        true
+                    }
+                    None => false,
+                });
             });
         }
         // Activation (double-click / Enter) opens the viewer.
@@ -1872,6 +1892,11 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
         face_area.set_size_request(thumb_size, thumb_size);
         face_area.set_can_target(false);
         overlay.add_overlay(&face_area);
+        // Register this cell's DrawingArea so a later toggle can queue a
+        // redraw on it directly (see `face_areas`'s doc comment).
+        if let Some(grid) = grid_setup.upgrade() {
+            grid.face_areas.borrow_mut().push(face_area.downgrade());
+        }
         let image_weak = image.downgrade();
         let grid_for_draw = grid_setup.clone();
         face_area.set_draw_func(move |area, cr, w, h| {
