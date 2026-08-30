@@ -269,20 +269,47 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
                     if matching.is_empty() {
                         return;
                     }
-                    // Group this cluster's matching faces by photo. If every
-                    // photo contributes exactly one, this is the plain
-                    // multi-photo bulk-assign case below (unchanged). If any
-                    // photo is ambiguous (2+ unidentified faces), walk every
-                    // photo in the selection through the new per-photo
-                    // dialog in sequence instead, so the whole click
-                    // resolves through one consistent flow.
+                    // Ambiguity is a per-photo property, not a per-cluster
+                    // one: two different unidentified faces in one photo
+                    // almost always land in two different HDBSCAN clusters
+                    // (different embeddings), so checking only this
+                    // cluster's slice of faces would rarely see 2+ for the
+                    // same photo even though the photo visibly has 2+
+                    // unassigned faces (as the face-box overlay already
+                    // shows, in yellow, regardless of cluster). So for each
+                    // photo this cluster's faces led us to, pull *every*
+                    // unassigned style face it has, in any cluster.
+                    let relevant_photo_ids: std::collections::HashSet<i64> =
+                        matching.iter().map(|f| f.photo_id).collect();
                     let mut by_photo: std::collections::HashMap<i64, Vec<i64>> =
                         std::collections::HashMap::new();
-                    for f in &matching {
-                        by_photo.entry(f.photo_id).or_default().push(f.id);
+                    for &pid in &relevant_photo_ids {
+                        let faces = match state.lib.style_faces_for_photo(pid) {
+                            Ok(f) => f,
+                            Err(e) => {
+                                show_error(&state, &e.to_string());
+                                return;
+                            }
+                        };
+                        by_photo.insert(
+                            pid,
+                            faces
+                                .into_iter()
+                                .filter(|f| f.character_id == 0)
+                                .map(|f| f.id)
+                                .collect(),
+                        );
                     }
+                    // If every photo has exactly one unassigned face (total,
+                    // not just in this cluster), this is the plain
+                    // multi-photo bulk-assign case below (unchanged). If any
+                    // photo is ambiguous (2+ unidentified faces anywhere),
+                    // walk every photo in the selection through the new
+                    // per-photo dialog in sequence instead, so the whole
+                    // click resolves through one consistent flow.
                     if by_photo.values().any(|v| v.len() >= 2) {
-                        let mut groups: Vec<Vec<i64>> = by_photo.into_values().collect();
+                        let mut groups: Vec<Vec<i64>> =
+                            by_photo.into_values().filter(|v| !v.is_empty()).collect();
                         groups.sort_by_key(|g| g[0]);
                         open_per_face_dialogs_sequentially(
                             state.clone(),
