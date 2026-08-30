@@ -12684,7 +12684,7 @@
       "file_type": "code",
       "norm_label": "album_depth()",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L642"
+      "source_location": "L669"
     },
     {
       "id": "src_ui_vmenu_bake_source",
@@ -12695,7 +12695,7 @@
       "file_type": "code",
       "norm_label": "bake_source()",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L751"
+      "source_location": "L778"
     },
     {
       "id": "src_ui_vmenu_build_menu",
@@ -12706,7 +12706,7 @@
       "file_type": "code",
       "norm_label": "build_menu()",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L529"
+      "source_location": "L556"
     },
     {
       "id": "src_ui_vmenu_copy_photo_to_clipboard",
@@ -12717,7 +12717,7 @@
       "file_type": "code",
       "norm_label": "copy_photo_to_clipboard()",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L689"
+      "source_location": "L716"
     },
     {
       "id": "src_ui_vmenu_copysource",
@@ -12728,7 +12728,7 @@
       "file_type": "code",
       "norm_label": "copysource",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L679"
+      "source_location": "L706"
     },
     {
       "id": "src_ui_vmenu_dismiss",
@@ -12739,7 +12739,7 @@
       "file_type": "code",
       "norm_label": "dismiss()",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L668"
+      "source_location": "L695"
     },
     {
       "id": "src_ui_vmenu_install_grid_context_menu",
@@ -12761,7 +12761,7 @@
       "file_type": "code",
       "norm_label": "local_photo_ids()",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L660"
+      "source_location": "L687"
     },
     {
       "id": "src_ui_vmenu_open_per_face_dialogs_sequentially",
@@ -12772,7 +12772,7 @@
       "file_type": "code",
       "norm_label": "open_per_face_dialogs_sequentially()",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L500"
+      "source_location": "L527"
     },
     {
       "id": "src_ui_vmenu_rs_menu",
@@ -19498,7 +19498,7 @@
       "source_file": "Cargo.toml",
       "source_location": "L1",
       "type": "package",
-      "version": "0.1.20"
+      "version": "0.1.21"
     },
     {
       "id": "readme_baked_export",
@@ -32723,7 +32723,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L619",
+      "source_location": "L646",
       "weight": 1.0
     },
     {
@@ -32735,7 +32735,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L719",
+      "source_location": "L746",
       "weight": 1.0
     },
     {
@@ -32747,7 +32747,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L287",
+      "source_location": "L314",
       "weight": 1.0
     },
     {
@@ -32783,7 +32783,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L439",
+      "source_location": "L466",
       "weight": 1.0
     },
     {
@@ -32795,7 +32795,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L464",
+      "source_location": "L491",
       "weight": 1.0
     },
     {
@@ -35111,7 +35111,7 @@
       "confidence_score": 1.0,
       "context": "field",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L683",
+      "source_location": "L710",
       "weight": 1.0
     },
     {
@@ -44027,7 +44027,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L751",
+      "source_location": "L778",
       "weight": 1.0
     },
     {
@@ -44039,7 +44039,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L529",
+      "source_location": "L556",
       "weight": 1.0
     },
     {
@@ -44051,7 +44051,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L529",
+      "source_location": "L556",
       "weight": 1.0
     },
     {
@@ -44063,7 +44063,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L689",
+      "source_location": "L716",
       "weight": 1.0
     },
     {
@@ -44075,7 +44075,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L689",
+      "source_location": "L716",
       "weight": 1.0
     },
     {
@@ -44087,7 +44087,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L668",
+      "source_location": "L695",
       "weight": 1.0
     },
     {
@@ -44099,7 +44099,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L668",
+      "source_location": "L695",
       "weight": 1.0
     },
     {
@@ -44111,7 +44111,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L668",
+      "source_location": "L695",
       "weight": 1.0
     },
     {
@@ -44159,7 +44159,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L660",
+      "source_location": "L687",
       "weight": 1.0
     },
     {
@@ -44171,7 +44171,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L500",
+      "source_location": "L527",
       "weight": 1.0
     },
     {
@@ -44183,7 +44183,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L500",
+      "source_location": "L527",
       "weight": 1.0
     },
     {
@@ -44195,7 +44195,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L500",
+      "source_location": "L527",
       "weight": 1.0
     },
     {
@@ -44207,7 +44207,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L500",
+      "source_location": "L527",
       "weight": 1.0
     },
     {
@@ -53447,7 +53447,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L642",
+      "source_location": "L669",
       "weight": 1.0
     },
     {
@@ -53459,7 +53459,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L751",
+      "source_location": "L778",
       "weight": 1.0
     },
     {
@@ -53471,7 +53471,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L751",
+      "source_location": "L778",
       "weight": 1.0
     },
     {
@@ -53483,7 +53483,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L529",
+      "source_location": "L556",
       "weight": 1.0
     },
     {
@@ -53495,7 +53495,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L689",
+      "source_location": "L716",
       "weight": 1.0
     },
     {
@@ -53507,7 +53507,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L689",
+      "source_location": "L716",
       "weight": 1.0
     },
     {
@@ -53519,7 +53519,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L668",
+      "source_location": "L695",
       "weight": 1.0
     },
     {
@@ -53543,7 +53543,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L660",
+      "source_location": "L687",
       "weight": 1.0
     },
     {
@@ -53555,7 +53555,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L500",
+      "source_location": "L527",
       "weight": 1.0
     },
     {
@@ -53567,7 +53567,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L500",
+      "source_location": "L527",
       "weight": 1.0
     },
     {
@@ -59855,7 +59855,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L751",
+      "source_location": "L778",
       "weight": 1.0
     },
     {
@@ -59867,7 +59867,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L529",
+      "source_location": "L556",
       "weight": 1.0
     },
     {
@@ -59879,7 +59879,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L660",
+      "source_location": "L687",
       "weight": 1.0
     },
     {
@@ -65956,7 +65956,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L500",
+      "source_location": "L527",
       "weight": 1.0
     },
     {
@@ -65967,7 +65967,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L529",
+      "source_location": "L556",
       "weight": 1.0
     },
     {
@@ -65978,7 +65978,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L642",
+      "source_location": "L669",
       "weight": 1.0
     },
     {
@@ -65989,7 +65989,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L660",
+      "source_location": "L687",
       "weight": 1.0
     },
     {
@@ -66000,7 +66000,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L668",
+      "source_location": "L695",
       "weight": 1.0
     },
     {
@@ -66011,7 +66011,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L679",
+      "source_location": "L706",
       "weight": 1.0
     },
     {
@@ -66022,7 +66022,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L689",
+      "source_location": "L716",
       "weight": 1.0
     },
     {
@@ -66033,7 +66033,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/ui/vmenu.rs",
-      "source_location": "L751",
+      "source_location": "L778",
       "weight": 1.0
     },
     {
@@ -74607,5 +74607,5 @@
       "source_file": "HANDOFF.md"
     }
   ],
-  "built_at_commit": "8165645f9df47ead06dba8f199c1988b2bdec46a"
+  "built_at_commit": "424333ead77e10aff6bd974820f0a0e6b8988ff6"
 }
