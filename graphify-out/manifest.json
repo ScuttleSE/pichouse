@@ -1,8 +1,8 @@
 {
   "Cargo.toml": {
-    "mtime": 1788070877.9587805,
-    "seen": 1788072174.6282732,
-    "ast_hash": "ac1e4caf140826e72e08c2cf2132861c",
+    "mtime": 1788072204.982025,
+    "seen": 1788072842.8947573,
+    "ast_hash": "66792d1b02f6d52df3f2963bcafdda35",
     "semantic_hash": ""
   },
   "src/ai/client.rs": {
@@ -312,9 +312,9 @@
     "semantic_hash": ""
   },
   "src/ui/characters.rs": {
-    "mtime": 1788072132.7980602,
-    "seen": 1788072174.6297631,
-    "ast_hash": "af9a9509628bb5eebc7e178e85a3fd4e",
+    "mtime": 1788072799.1177118,
+    "seen": 1788072842.8963492,
+    "ast_hash": "f7e3d3852cdfc603bf87ab123e5ecf49",
     "semantic_hash": ""
   },
   "src/ui/charactersview.rs": {
@@ -522,9 +522,9 @@
     "semantic_hash": "875db18aecfdefb0151f7e1f286a1255"
   },
   "src/ui/vmenu.rs": {
-    "mtime": 1788072146.2700536,
-    "seen": 1788072174.630791,
-    "ast_hash": "c43b3908010ed94af057d946cc63c772",
+    "mtime": 1788072834.4496922,
+    "seen": 1788072842.8975189,
+    "ast_hash": "88c11979fd9c1cca1229f21d31b48697",
     "semantic_hash": ""
   },
   "src/ui/vrules.rs": {
