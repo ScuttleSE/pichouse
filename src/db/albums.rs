@@ -154,6 +154,27 @@ impl Library {
         self.album_effective_kind(aid)
     }
 
+    /// The effective face kind for a folder: the effective kind of the album
+    /// it belongs to (Inherit resolved up the chain), or Photo (1) if the
+    /// folder is in no album. Routes a folder-scoped face scan to the right
+    /// pipeline when the folder isn't reached through an album's own scan
+    /// action.
+    pub fn folder_effective_face_kind(&self, folder_id: i64) -> Result<i64> {
+        let aid: Option<i64> = {
+            let conn = self.lock();
+            conn.query_row(
+                "SELECT album_id FROM album_folders WHERE folder_id = ?1",
+                params![folder_id],
+                |r| r.get(0),
+            )
+            .optional()?
+        };
+        match aid {
+            Some(aid) => self.album_effective_kind(aid),
+            None => Ok(1),
+        }
+    }
+
     /// All folder ids under an album and its sub-albums (the album subtree).
     pub fn folders_under_album(&self, album_id: i64) -> Result<Vec<i64>> {
         let conn = self.lock();
@@ -332,6 +353,39 @@ mod tests {
         assert_eq!(lib.album_effective_kind(leaf).unwrap(), 1);
         // root is still Art.
         assert_eq!(lib.album_effective_kind(root).unwrap(), 2);
+
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("db-wal"));
+        let _ = std::fs::remove_file(path.with_extension("db-shm"));
+    }
+
+    #[test]
+    fn folder_effective_face_kind_follows_its_album_or_defaults_to_photo() {
+        let (lib, path) = temp_lib();
+        let rootdir = "/tmp/pichouse-folder-kind-root";
+        lib.add_library_folder(rootdir).unwrap();
+        let mk = |name: &str| -> i64 {
+            lib.upsert_folder(&Folder {
+                path: format!("{rootdir}/{name}"),
+                name: name.into(),
+                mtime: 0,
+                year: 2020,
+                ..Default::default()
+            })
+            .unwrap()
+        };
+        let f_art = mk("art");
+        let f_unassigned = mk("unassigned");
+
+        // A folder in no album defaults to Photo (1).
+        assert_eq!(lib.folder_effective_face_kind(f_unassigned).unwrap(), 1);
+
+        let album = lib.create_album("characters", 0).unwrap();
+        lib.set_album_kind(album, 2).unwrap();
+        lib.add_folder_to_album(f_art, album).unwrap();
+        assert_eq!(lib.folder_effective_face_kind(f_art).unwrap(), 2);
+        // Unrelated folders are unaffected.
+        assert_eq!(lib.folder_effective_face_kind(f_unassigned).unwrap(), 1);
 
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(path.with_extension("db-wal"));

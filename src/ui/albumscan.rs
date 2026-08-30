@@ -7,11 +7,17 @@
 //! the correct pipeline.
 
 use std::rc::Rc;
+use std::time::Duration;
+
+use gtk4::glib;
 
 use super::state::{show_message, AppState};
 
 /// The scan batch cap, matching the whole-library scans.
 const SCAN_BATCH: i64 = 100_000;
+
+/// How often to poll for enrichment completion before starting a face scan.
+const ENRICH_POLL_INTERVAL: Duration = Duration::from_millis(300);
 
 /// Scan (or rescan) faces for one album and its sub-albums, routed by the
 /// album's effective Face type. When `rescan` is true, prior scan state and
@@ -38,20 +44,37 @@ pub fn scan_album_faces(state: &Rc<AppState>, album_id: i64, rescan: bool) {
 
     let kind = state.lib.album_effective_kind(album_id).unwrap_or(1);
     match kind {
-        2 => scan_art(state, &folders, rescan),
-        _ => scan_photo(state, &folders, rescan),
+        2 => scan_art(state, &folders, rescan, "album"),
+        _ => scan_photo(state, &folders, rescan, "album"),
     }
 }
 
-/// Route the human face pipeline over the album's folders.
-fn scan_photo(state: &Rc<AppState>, folders: &[i64], rescan: bool) {
+/// Scan (or rescan) faces for one folder, routed by its effective Face type
+/// (the album it belongs to, or Photo if it is in no album). Works the same
+/// way as the album-scoped scan: un-enriched photos are enriched (generating
+/// their thumbnails) first, then scanned.
+pub fn scan_folder_faces(state: &Rc<AppState>, folder_id: i64, rescan: bool) {
+    if folder_id == 0 {
+        return;
+    }
+    let kind = state.lib.folder_effective_face_kind(folder_id).unwrap_or(1);
+    match kind {
+        2 => scan_art(state, &[folder_id], rescan, "folder"),
+        _ => scan_photo(state, &[folder_id], rescan, "folder"),
+    }
+}
+
+/// Route the human face pipeline over the given folders.
+fn scan_photo(state: &Rc<AppState>, folders: &[i64], rescan: bool, label: &'static str) {
     let cfg = state.face_config.borrow().clone();
     if !cfg.enabled {
         show_message(
             state,
             "Face detection",
-            "This album is marked Photo, but face detection is off. Turn it on in \
-             Settings → Faces.",
+            &format!(
+                "This {label} is marked Photo, but face detection is off. Turn it on \
+                 in Settings → Faces."
+            ),
         );
         return;
     }
@@ -74,26 +97,35 @@ fn scan_photo(state: &Rc<AppState>, folders: &[i64], rescan: bool) {
             return;
         }
     }
-    let ids = state
-        .lib
-        .photos_needing_face_scan_in(folders, SCAN_BATCH)
-        .unwrap_or_default();
-    if ids.is_empty() {
-        show_message(state, "Face detection", "No photos in this album need a scan.");
-        return;
-    }
-    super::facescan::run_scan(state, ids, cfg);
+    let folders = folders.to_vec();
+    ensure_enriched_then(state, folders.clone(), move |state| {
+        let ids = state
+            .lib
+            .photos_needing_face_scan_in(&folders, SCAN_BATCH)
+            .unwrap_or_default();
+        if ids.is_empty() {
+            show_message(
+                state,
+                "Face detection",
+                &format!("No photos in this {label} need a scan."),
+            );
+            return;
+        }
+        super::facescan::run_scan(state, ids, cfg);
+    });
 }
 
-/// Route the stylised face pipeline over the album's folders.
-fn scan_art(state: &Rc<AppState>, folders: &[i64], rescan: bool) {
+/// Route the stylised face pipeline over the given folders.
+fn scan_art(state: &Rc<AppState>, folders: &[i64], rescan: bool, label: &'static str) {
     let cfg = state.style_face_config.borrow().clone();
     if !cfg.enabled {
         show_message(
             state,
             "Stylised face detection",
-            "This album is marked Art, but stylised face detection is off. Turn it \
-             on in Settings → Characters.",
+            &format!(
+                "This {label} is marked Art, but stylised face detection is off. Turn \
+                 it on in Settings → Characters."
+            ),
         );
         return;
     }
@@ -120,19 +152,63 @@ fn scan_art(state: &Rc<AppState>, folders: &[i64], rescan: bool) {
             return;
         }
     }
-    let ids = state
+    let folders = folders.to_vec();
+    ensure_enriched_then(state, folders.clone(), move |state| {
+        let ids = state
+            .lib
+            .photos_needing_style_face_scan_in(&folders, SCAN_BATCH)
+            .unwrap_or_default();
+        if ids.is_empty() {
+            show_message(
+                state,
+                "Stylised face detection",
+                &format!("No photos in this {label} need a scan."),
+            );
+            return;
+        }
+        super::stylefacescan::run_scan(state, ids, cfg);
+    });
+}
+
+/// Enrich every un-enriched photo in the given folders, then invoke `then`.
+/// Enrichment (thumbnails, hash, EXIF) only ever runs on request in this app,
+/// so a face scan over folders nobody has browsed into would otherwise find
+/// nothing to do; this makes the face-scan actions request it explicitly.
+/// Runs `then` immediately when nothing needs enrichment. Otherwise queues the
+/// missing photos on the shared enrichment worker and polls until they are
+/// all done (or the app can no longer tell, on a DB error) before proceeding.
+fn ensure_enriched_then<F>(state: &Rc<AppState>, folders: Vec<i64>, then: F)
+where
+    F: FnOnce(&Rc<AppState>) + 'static,
+{
+    let needs = state
         .lib
-        .photos_needing_style_face_scan_in(folders, SCAN_BATCH)
+        .photos_needing_enrichment_in(&folders)
         .unwrap_or_default();
-    if ids.is_empty() {
-        show_message(
-            state,
-            "Stylised face detection",
-            "No photos in this album need a scan.",
-        );
+    if needs.is_empty() {
+        then(state);
         return;
     }
-    super::stylefacescan::run_scan(state, ids, cfg);
+    let total = needs.len();
+    super::enrich::enqueue_ids(state, needs);
+    show_message(
+        state,
+        "Face detection",
+        &format!("Generating thumbnails for {total} photo(s) before scanning for faces…"),
+    );
+    let state = state.clone();
+    let mut then = Some(then);
+    glib::source::timeout_add_local(ENRICH_POLL_INTERVAL, move || {
+        match state.lib.photos_needing_enrichment_in(&folders) {
+            Ok(remaining) if !remaining.is_empty() => glib::ControlFlow::Continue,
+            _ => {
+                if let Some(f) = then.take() {
+                    f(&state);
+                }
+                glib::ControlFlow::Break
+            }
+        }
+    });
 }
 
 /// Autoscan routed by album kind. Splits every photo that needs a scan into a

@@ -1235,6 +1235,16 @@ impl Sidebar {
         super::albumscan::scan_album_faces(&state, id, rescan);
     }
 
+    /// Scan (or rescan) faces for a single folder, routed by its effective
+    /// Face type.
+    fn scan_folder_faces(self: &Rc<Self>, id: i64, rescan: bool) {
+        if id == 0 {
+            return;
+        }
+        let Some(state) = self.state() else { return };
+        super::albumscan::scan_folder_faces(&state, id, rescan);
+    }
+
     fn move_folders_to_album(self: &Rc<Self>, fids: &[i64], target: i64) {
         if fids.is_empty() {
             return;
@@ -1746,6 +1756,22 @@ impl Sidebar {
                 "rescan-album-faces",
                 &group,
                 Rc::new(move |t| this.scan_album_faces(album_id_of(t).unwrap_or(0), true)),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "scan-folder-faces",
+                &group,
+                Rc::new(move |t| this.scan_folder_faces(folder_id_of(t).unwrap_or(0), false)),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "rescan-folder-faces",
+                &group,
+                Rc::new(move |t| this.scan_folder_faces(folder_id_of(t).unwrap_or(0), true)),
             );
         }
         {
@@ -2304,6 +2330,14 @@ impl Sidebar {
             menu.append(
                 Some("Rescan all thumbnails (all)"),
                 Some(&detailed("rescan-folder-thumbs", id)),
+            );
+            menu.append(
+                Some("Scan faces in folder"),
+                Some(&detailed("scan-folder-faces", id)),
+            );
+            menu.append(
+                Some("Rescan faces in folder"),
+                Some(&detailed("rescan-folder-faces", id)),
             );
             // Offer upload only when a server exists and the folder has photos.
             if let Some(fid) = folder_id_of(id) {

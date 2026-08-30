@@ -139,6 +139,17 @@ pub fn rescan_folder(state: &Rc<AppState>, folder_id: i64) {
     start_if_idle(state);
 }
 
+/// Queue explicit photo ids for enrichment and start the pool if idle. Used by
+/// face-scan actions that must enrich specific photos (so their thumbnails
+/// and hashes exist) before scanning them for faces.
+pub fn enqueue_ids(state: &Rc<AppState>, ids: Vec<i64>) {
+    if ids.is_empty() {
+        return;
+    }
+    append_ids(state, ids);
+    start_if_idle(state);
+}
+
 /// Append ids to the back of the shared worklist, skipping ids already queued.
 fn append_ids(state: &Rc<AppState>, ids: Vec<i64>) {
     if ids.is_empty() {

@@ -786,6 +786,33 @@ impl Library {
         Ok(out)
     }
 
+    /// Ids of photos still needing Phase 2 enrichment, scoped to a folder set.
+    /// An empty folder set returns an empty list. Backs face-scan actions that
+    /// must enrich a scan's target photos (and so generate their thumbnails)
+    /// before detecting faces in them.
+    pub fn photos_needing_enrichment_in(&self, folder_ids: &[i64]) -> Result<Vec<i64>> {
+        if folder_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let conn = self.lock();
+        let placeholders = folder_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT id FROM photos WHERE scan_state <> 2 AND missing = 0 AND folder_id IN ({placeholders})
+             ORDER BY folder_id ASC, filename ASC"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let ps: Vec<&dyn rusqlite::ToSql> = folder_ids
+            .iter()
+            .map(|f| f as &dyn rusqlite::ToSql)
+            .collect();
+        let rows = stmt.query_map(ps.as_slice(), |r| r.get::<_, i64>(0))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
     /// Record the Phase 2 enrichment result for a photo: EXIF taken date,
     /// pixel dimensions, and content hash, and mark it done.
     pub fn enrich_photo(
@@ -1290,6 +1317,59 @@ mod tests {
         // Enriching a's photo removes it from the pending list.
         lib.enrich_photo(a1, 0, 1, 1, "hash", 0).unwrap();
         assert!(lib.photos_needing_enrichment_under(root_a).unwrap().is_empty());
+
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("db-wal"));
+        let _ = std::fs::remove_file(path.with_extension("db-shm"));
+    }
+
+    #[test]
+    fn enrichment_in_is_scoped_to_folder_set() {
+        let (lib, path) = temp_lib();
+        let root = "/tmp/pichouse-enrich-in-root";
+        lib.add_library_folder(root).unwrap();
+
+        let mk_folder = |name: &str| -> i64 {
+            lib.upsert_folder(&Folder {
+                path: format!("{root}/{name}"),
+                name: name.into(),
+                mtime: 0,
+                year: 2020,
+                ..Default::default()
+            })
+            .unwrap()
+        };
+        let f1 = mk_folder("a");
+        let f2 = mk_folder("b");
+        let f3 = mk_folder("c");
+
+        let mk_photo = |folder_id: i64, name: &str| -> i64 {
+            lib.upsert_photo_structure(&Photo {
+                folder_id,
+                path: format!("{root}/{name}"),
+                filename: name.into(),
+                ..Default::default()
+            })
+            .unwrap()
+        };
+        let p1 = mk_photo(f1, "a1.jpg");
+        let p2 = mk_photo(f2, "b1.jpg");
+        let _p3 = mk_photo(f3, "c1.jpg");
+
+        // An empty folder set never needs enrichment.
+        assert!(lib.photos_needing_enrichment_in(&[]).unwrap().is_empty());
+
+        // Only photos in the requested folders come back, not f3's.
+        let mut got = lib.photos_needing_enrichment_in(&[f1, f2]).unwrap();
+        got.sort();
+        let mut want = vec![p1, p2];
+        want.sort();
+        assert_eq!(got, want);
+
+        // Enriching p1 drops it from the pending set scoped to its folder.
+        lib.enrich_photo(p1, 0, 1, 1, "hash", 0).unwrap();
+        assert_eq!(lib.photos_needing_enrichment_in(&[f1]).unwrap(), Vec::<i64>::new());
+        assert_eq!(lib.photos_needing_enrichment_in(&[f1, f2]).unwrap(), vec![p2]);
 
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(path.with_extension("db-wal"));
