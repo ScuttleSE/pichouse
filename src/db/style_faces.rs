@@ -417,12 +417,13 @@ impl Library {
         Ok(v)
     }
 
-    /// All photos that contain a face in the given style cluster, newest first.
+    /// All photos that contain an unassigned face in the given style cluster,
+    /// newest first.
     pub fn photos_in_style_cluster(&self, cluster_id: i64) -> Result<Vec<Photo>> {
         let conn = self.lock();
         let sql = format!(
             "SELECT {PHOTO_COLS} FROM photos WHERE id IN \
-                (SELECT DISTINCT photo_id FROM style_faces WHERE cluster_id = ?1) \
+                (SELECT DISTINCT photo_id FROM style_faces WHERE cluster_id = ?1 AND character_id IS NULL) \
              ORDER BY taken_at DESC, filename"
         );
         let mut stmt = conn.prepare(&sql)?;
@@ -666,16 +667,94 @@ impl Library {
         Ok(v)
     }
 
-    /// Photo ids that have a face in the given style cluster.
+    /// Photo ids that have an unassigned face in the given style cluster.
     pub fn photo_ids_in_style_cluster(&self, cluster_id: i64) -> Result<Vec<i64>> {
         let conn = self.lock();
-        let mut stmt =
-            conn.prepare("SELECT DISTINCT photo_id FROM style_faces WHERE cluster_id = ?1")?;
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT photo_id FROM style_faces WHERE cluster_id = ?1 AND character_id IS NULL",
+        )?;
         let rows = stmt.query_map(params![cluster_id], |r| r.get::<_, i64>(0))?;
         let mut v = Vec::new();
         for row in rows {
             v.push(row?);
         }
         Ok(v)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::Folder;
+
+    fn temp_lib() -> Library {
+        let mut p = std::env::temp_dir();
+        p.push(format!(
+            "pichouse-style-faces-{}-{:?}.db",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_file(&p);
+        Library::open_at(&p).unwrap()
+    }
+
+    fn add_photo(lib: &Library, name: &str) -> i64 {
+        let fid = lib
+            .upsert_folder(&Folder {
+                path: format!("/tmp/pichouse-style-faces/{name}dir"),
+                name: "d".into(),
+                mtime: 0,
+                year: 2020,
+                ..Default::default()
+            })
+            .unwrap();
+        lib.upsert_photo_structure(&Photo {
+            folder_id: fid,
+            path: format!("/tmp/pichouse-style-faces/{name}.jpg"),
+            filename: format!("{name}.jpg"),
+            ..Default::default()
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn photos_in_style_cluster_excludes_already_named_faces() {
+        // Two style faces share one cluster id: one gets named as a character,
+        // one stays pending. Opening the cluster (e.g. from an "Unnamed" tile)
+        // must show only the still-unassigned face's photo, not the named one's.
+        let lib = temp_lib();
+        let p_named = add_photo(&lib, "g");
+        let p_pending = add_photo(&lib, "h");
+        let f_named = lib
+            .insert_style_face(&StyleFace {
+                photo_id: p_named,
+                cluster_id: 42,
+                embedding: vec![1.0],
+                ..Default::default()
+            })
+            .unwrap();
+        lib.insert_style_face(&StyleFace {
+            photo_id: p_pending,
+            cluster_id: 42,
+            embedding: vec![0.99],
+            ..Default::default()
+        })
+        .unwrap();
+        let alice = lib.create_character("Alice").unwrap();
+        lib.set_style_face_character(f_named, alice).unwrap();
+
+        let photos = lib.photos_in_style_cluster(42).unwrap();
+        assert_eq!(photos.len(), 1);
+        assert_eq!(photos[0].id, p_pending);
+
+        let unassigned = lib.unassigned_style_faces_in_cluster(42).unwrap();
+        assert_eq!(unassigned.len(), 1);
+        assert_eq!(unassigned[0].photo_id, p_pending);
+
+        let ids = lib.photo_ids_in_style_cluster(42).unwrap();
+        assert_eq!(ids, vec![p_pending]);
     }
 }
