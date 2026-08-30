@@ -559,6 +559,9 @@ pub struct PersonGroup {
     /// `0` means top-level.
     pub parent_id: i64,
     pub position: i32,
+    /// A representative face id for the group's tile icon. `0` means none
+    /// chosen, so the tile falls back to a folder icon.
+    pub cover_face_id: i64,
 }
 
 /// One detected face in one photo.
@@ -608,6 +611,9 @@ pub struct CharacterGroup {
     /// `0` means top-level.
     pub parent_id: i64,
     pub position: i32,
+    /// A representative face id for the group's tile icon. `0` means none
+    /// chosen, so the tile falls back to a folder icon.
+    pub cover_face_id: i64,
 }
 
 /// One detected stylised face in one photo. The box is in per-mille (0..1000)

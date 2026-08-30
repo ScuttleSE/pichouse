@@ -337,7 +337,14 @@ impl CharactersView {
                     .set_text(&format!("{name} ({count})"));
             } else {
                 let (tile_root, count_label) = match key {
-                    TileKey::Group(gid) => self.build_group_tile(&name, count, gid, tile_px),
+                    TileKey::Group(gid) => {
+                        let cover = all_groups
+                            .iter()
+                            .find(|g| g.id == gid)
+                            .map(|g| g.cover_face_id)
+                            .unwrap_or(0);
+                        self.build_group_tile(&state, &name, count, gid, cover, tile_px)
+                    }
                     TileKey::Named(cid) => {
                         let face_id = state.lib.character_representative_face(cid).unwrap_or(0);
                         self.build_tile(&state, face_id, &name, count, true, cid, 0, tile_px)
@@ -510,7 +517,9 @@ impl CharactersView {
             let tile_ref = tile.clone();
             gesture.connect_pressed(move |g, _, x, y| {
                 g.set_state(gtk4::EventSequenceState::Claimed);
-                this.show_tile_menu(&state, &tile_ref, named, character_id, cluster_id, &name, x, y);
+                this.show_tile_menu(
+                    &state, &tile_ref, named, character_id, cluster_id, face_id, &name, x, y,
+                );
             });
         }
         tile.add_controller(gesture);
@@ -523,8 +532,17 @@ impl CharactersView {
     /// Build one sub-group ("folder") tile. A single click drills into that
     /// group's own scope; unlike a character/cluster tile it is never
     /// selectable and has no right-click menu (group management lives in the
-    /// sidebar).
-    fn build_group_tile(self: &Rc<Self>, name: &str, count: i64, group_id: i64, tile_px: i32) -> (GtkBox, Label) {
+    /// sidebar). Shows the group's chosen cover face when set (via "Set face
+    /// as thumbnail" on a member's tile), else a plain folder icon.
+    fn build_group_tile(
+        self: &Rc<Self>,
+        state: &Rc<AppState>,
+        name: &str,
+        count: i64,
+        group_id: i64,
+        cover_face_id: i64,
+        tile_px: i32,
+    ) -> (GtkBox, Label) {
         let tile = GtkBox::new(Orientation::Vertical, 4);
         tile.set_width_request(tile_px + 12);
         tile.add_css_class("character-tile");
@@ -532,7 +550,16 @@ impl CharactersView {
         let image = Image::new();
         image.set_pixel_size(tile_px);
         image.set_size_request(tile_px, tile_px);
-        image.set_icon_name(Some("folder-new-symbolic"));
+        if cover_face_id != 0 {
+            if let Some(jpeg) = state.style_face_crop_cached(cover_face_id) {
+                if let Some(tex) = texture_from_bytes(&jpeg) {
+                    image.set_paintable(Some(&tex));
+                }
+            }
+        }
+        if image.paintable().is_none() {
+            image.set_icon_name(Some("folder-new-symbolic"));
+        }
 
         let label_text = format!("{name} ({count})");
         let count_label = Label::new(Some(&label_text));
@@ -679,7 +706,8 @@ impl CharactersView {
 
     /// Show the right-click menu for one tile. Named tiles offer rename, clear
     /// name, delete, and "do not scan this group". Unnamed tiles offer name and
-    /// "do not scan this group".
+    /// "do not scan this group". While browsing inside a character group, a
+    /// tile with a face also offers "Set face as thumbnail" for that group.
     #[allow(clippy::too_many_arguments)]
     fn show_tile_menu(
         self: &Rc<Self>,
@@ -688,6 +716,7 @@ impl CharactersView {
         named: bool,
         character_id: i64,
         cluster_id: i64,
+        face_id: i64,
         name: &str,
         x: f64,
         y: f64,
@@ -702,6 +731,10 @@ impl CharactersView {
         } else {
             menu.append(Some("Name this group…"), Some("char.name"));
         }
+        let scope = *self.scope.borrow();
+        if scope != 0 && face_id != 0 {
+            menu.append(Some("Set face as thumbnail"), Some("char.set-thumb"));
+        }
         menu.append(Some("Do not scan selected"), Some("char.skip"));
 
         let add = |act_name: &str, cb: Box<dyn Fn()>| {
@@ -709,6 +742,21 @@ impl CharactersView {
             a.connect_activate(move |_, _| cb());
             group.add_action(&a);
         };
+
+        if scope != 0 && face_id != 0 {
+            let this = self.clone();
+            let state = state.clone();
+            add(
+                "set-thumb",
+                Box::new(move || {
+                    if let Err(e) = state.lib.set_character_group_cover(scope, face_id) {
+                        super::state::show_error(&state, &e.to_string());
+                        return;
+                    }
+                    this.reload();
+                }),
+            );
+        }
 
         if named {
             {

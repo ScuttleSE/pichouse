@@ -197,6 +197,39 @@ fn migrate(conn: &Connection) -> Result<()> {
             )?;
         }
     }
+    // person_groups.cover_face_id / character_groups.cover_face_id: a
+    // representative face for the group's tile, chosen via "Set face as
+    // thumbnail". Added after the tables' initial release.
+    {
+        let mut pg: std::collections::HashSet<String> = std::collections::HashSet::new();
+        {
+            let mut stmt = conn.prepare("PRAGMA table_info(person_groups)")?;
+            let rows = stmt.query_map([], |r| r.get::<_, String>(1))?;
+            for name in rows {
+                pg.insert(name?);
+            }
+        }
+        if !pg.contains("cover_face_id") {
+            conn.execute_batch(
+                "ALTER TABLE person_groups ADD COLUMN cover_face_id INTEGER;",
+            )?;
+        }
+    }
+    {
+        let mut cg: std::collections::HashSet<String> = std::collections::HashSet::new();
+        {
+            let mut stmt = conn.prepare("PRAGMA table_info(character_groups)")?;
+            let rows = stmt.query_map([], |r| r.get::<_, String>(1))?;
+            for name in rows {
+                cg.insert(name?);
+            }
+        }
+        if !cg.contains("cover_face_id") {
+            conn.execute_batch(
+                "ALTER TABLE character_groups ADD COLUMN cover_face_id INTEGER;",
+            )?;
+        }
+    }
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_photos_scan_state ON photos(scan_state);",
     )?;

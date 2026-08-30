@@ -374,10 +374,14 @@ CREATE INDEX IF NOT EXISTS idx_style_face_rejections_face ON style_face_rejectio
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS person_groups (
-    id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    name      TEXT NOT NULL,
-    parent_id INTEGER REFERENCES person_groups(id) ON DELETE CASCADE,
-    position  INTEGER NOT NULL DEFAULT 0
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT NOT NULL,
+    parent_id     INTEGER REFERENCES person_groups(id) ON DELETE CASCADE,
+    position      INTEGER NOT NULL DEFAULT 0,
+    -- A representative face for the group's tile/icon, chosen by the user via
+    -- "Set face as thumbnail" on a member's tile. NULL until chosen. Not a
+    -- foreign key, matching persons.cover_face_id/characters.cover_face_id.
+    cover_face_id INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS person_group_members (
@@ -391,10 +395,11 @@ CREATE INDEX IF NOT EXISTS idx_person_group_members_person ON person_group_membe
 
 -- Parallel group tree for stylised characters. Mirrors person_groups exactly.
 CREATE TABLE IF NOT EXISTS character_groups (
-    id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    name      TEXT NOT NULL,
-    parent_id INTEGER REFERENCES character_groups(id) ON DELETE CASCADE,
-    position  INTEGER NOT NULL DEFAULT 0
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT NOT NULL,
+    parent_id     INTEGER REFERENCES character_groups(id) ON DELETE CASCADE,
+    position      INTEGER NOT NULL DEFAULT 0,
+    cover_face_id INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS character_group_members (

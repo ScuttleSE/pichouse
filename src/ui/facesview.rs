@@ -17,13 +17,14 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
 
+use gtk4::gio;
 use gtk4::prelude::*;
 use gtk4::{
-    Align, Box as GtkBox, Button, FlowBox, Image, Label, Orientation, PolicyType, ScrolledWindow,
-    SelectionMode,
+    Align, Box as GtkBox, Button, FlowBox, GestureClick, Image, Label, Orientation, PolicyType,
+    PopoverMenu, ScrolledWindow, SelectionMode,
 };
 
-use super::state::AppState;
+use super::state::{show_error, AppState};
 use super::util::texture_from_bytes;
 
 /// The Faces view widget and its rebuild logic.
@@ -212,7 +213,7 @@ impl FacesView {
         // Sub-groups first, like folders in a file browser.
         for g in &subgroups {
             let count = members.get(&g.id).map(|m| m.len() as i64).unwrap_or(0);
-            let t = self.build_group_tile(&g.name, count, g.id, tile);
+            let t = self.build_group_tile(&state, &g.name, count, g.id, g.cover_face_id, tile);
             self.flow.append(&t);
         }
 
@@ -258,15 +259,34 @@ impl FacesView {
     }
 
     /// Build one sub-group ("folder") tile. Clicking either the icon or the
-    /// label drills into that group's own scope.
-    fn build_group_tile(self: &Rc<Self>, name: &str, count: i64, group_id: i64, tile_px: i32) -> GtkBox {
+    /// label drills into that group's own scope. Shows the group's chosen
+    /// cover face when set (via "Set face as thumbnail" on a member's tile),
+    /// else a plain folder icon.
+    fn build_group_tile(
+        self: &Rc<Self>,
+        state: &Rc<AppState>,
+        name: &str,
+        count: i64,
+        group_id: i64,
+        cover_face_id: i64,
+        tile_px: i32,
+    ) -> GtkBox {
         let tile = GtkBox::new(Orientation::Vertical, 4);
         tile.set_width_request(tile_px + 12);
 
         let image = Image::new();
         image.set_pixel_size(tile_px);
         image.set_size_request(tile_px, tile_px);
-        image.set_icon_name(Some("folder-new-symbolic"));
+        if cover_face_id != 0 {
+            if let Some(jpeg) = state.face_crop_jpeg(cover_face_id) {
+                if let Some(tex) = texture_from_bytes(&jpeg) {
+                    image.set_paintable(Some(&tex));
+                }
+            }
+        }
+        if image.paintable().is_none() {
+            image.set_icon_name(Some("folder-new-symbolic"));
+        }
 
         let img_btn = Button::new();
         img_btn.set_child(Some(&image));
@@ -394,8 +414,55 @@ impl FacesView {
             });
         }
 
+        // Right-click a named person's tile, while browsing inside a group, to
+        // use their face as that group's own tile icon.
+        if named {
+            let scope = *self.scope.borrow();
+            if scope != 0 && face_id != 0 {
+                let gesture = GestureClick::new();
+                gesture.set_button(gtk4::gdk::BUTTON_SECONDARY);
+                let this = self.clone();
+                let tile_ref = tile.clone();
+                gesture.connect_pressed(move |g, _, x, y| {
+                    g.set_state(gtk4::EventSequenceState::Claimed);
+                    this.show_face_tile_menu(&tile_ref, face_id, scope, x, y);
+                });
+                tile.add_controller(gesture);
+            }
+        }
+
         tile.append(&img_btn);
         tile.append(&lbl_btn);
         tile
+    }
+
+    /// Right-click menu for a named person's tile inside a group's page:
+    /// "Set face as thumbnail" makes that face the enclosing group's cover.
+    fn show_face_tile_menu(self: &Rc<Self>, tile: &GtkBox, face_id: i64, group_id: i64, x: f64, y: f64) {
+        let Some(state) = self.state.borrow().clone() else {
+            return;
+        };
+        let group = gio::SimpleActionGroup::new();
+        let menu = gio::Menu::new();
+        menu.append(Some("Set face as thumbnail"), Some("facetile.set-thumb"));
+
+        let action = gio::SimpleAction::new("set-thumb", None);
+        let this = self.clone();
+        action.connect_activate(move |_, _| {
+            if let Err(e) = state.lib.set_person_group_cover(group_id, face_id) {
+                show_error(&state, &e.to_string());
+                return;
+            }
+            this.reload();
+        });
+        group.add_action(&action);
+
+        let popover = PopoverMenu::from_model(Some(&menu));
+        popover.set_has_arrow(false);
+        popover.set_parent(tile);
+        popover.insert_action_group("facetile", Some(&group));
+        let rect = gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1);
+        popover.set_pointing_to(Some(&rect));
+        popover.popup();
     }
 }

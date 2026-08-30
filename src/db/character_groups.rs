@@ -88,7 +88,7 @@ impl Library {
     pub fn character_groups(&self) -> Result<Vec<CharacterGroup>> {
         let conn = self.read_lock();
         let mut stmt = conn.prepare(
-            "SELECT id, name, COALESCE(parent_id, 0), position \
+            "SELECT id, name, COALESCE(parent_id, 0), position, COALESCE(cover_face_id, 0) \
              FROM character_groups ORDER BY position ASC, name ASC",
         )?;
         let rows = stmt.query_map([], |r| {
@@ -97,9 +97,21 @@ impl Library {
                 name: r.get(1)?,
                 parent_id: r.get(2)?,
                 position: r.get(3)?,
+                cover_face_id: r.get(4)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Set the representative face shown as a group's tile icon (0 clears it).
+    pub fn set_character_group_cover(&self, id: i64, face_id: i64) -> Result<()> {
+        let conn = self.lock();
+        let cover = if face_id == 0 { None } else { Some(face_id) };
+        conn.execute(
+            "UPDATE character_groups SET cover_face_id = ?2 WHERE id = ?1",
+            params![id, cover],
+        )?;
+        Ok(())
     }
 
     /// Add a character to a group. Does NOT remove the character from any
@@ -275,6 +287,18 @@ mod tests {
         let mut want = vec![c1, c2];
         want.sort();
         assert_eq!(got, want);
+        cleanup(&path);
+    }
+
+    #[test]
+    fn set_character_group_cover_roundtrip() {
+        let (lib, path) = temp_lib();
+        let gid = lib.create_character_group("Disney", 0).unwrap();
+        assert_eq!(lib.character_groups().unwrap()[0].cover_face_id, 0);
+        lib.set_character_group_cover(gid, 42).unwrap();
+        assert_eq!(lib.character_groups().unwrap()[0].cover_face_id, 42);
+        lib.set_character_group_cover(gid, 0).unwrap();
+        assert_eq!(lib.character_groups().unwrap()[0].cover_face_id, 0);
         cleanup(&path);
     }
 
