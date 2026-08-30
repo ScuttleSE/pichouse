@@ -103,6 +103,65 @@ pub struct AppState {
     pub last_merged_character: RefCell<Option<i64>>,
 }
 
+/// One crop-render job. A worker renders the crop, writes it to the cache, and
+/// sends the JPEG to the main thread through the job's sender. Shared by every
+/// UI spot that shows a stylised face crop as a small image (the Characters
+/// view's tiles, and the per-face "Assign to Character" dialog's cards).
+pub struct CropJob {
+    pub face_id: i64,
+    pub path: std::path::PathBuf,
+    pub orientation: i32,
+    pub bbox: (i32, i32, i32, i32),
+    pub thumbs: Option<Arc<crate::db::FaceThumbs>>,
+    pub reply: gtk4::glib::Sender<Option<Vec<u8>>>,
+}
+
+/// A bounded worker pool for crop rendering. Opening a view with many
+/// uncached crops (the Characters view during a scan, or a multi-face "Assign
+/// to Character" dialog) can request several at once. A fixed pool of workers
+/// reads a shared queue, so callers never spawn one thread per crop.
+struct CropPool {
+    queue: Mutex<std::collections::VecDeque<CropJob>>,
+    cv: std::sync::Condvar,
+}
+
+static CROP_POOL: std::sync::OnceLock<Arc<CropPool>> = std::sync::OnceLock::new();
+
+fn crop_pool() -> &'static Arc<CropPool> {
+    CROP_POOL.get_or_init(|| {
+        let pool = Arc::new(CropPool {
+            queue: Mutex::new(std::collections::VecDeque::new()),
+            cv: std::sync::Condvar::new(),
+        });
+        for _ in 0..4 {
+            let pool = pool.clone();
+            std::thread::spawn(move || loop {
+                let job = {
+                    let mut q = pool.queue.lock().unwrap();
+                    while q.is_empty() {
+                        q = pool.cv.wait(q).unwrap();
+                    }
+                    q.pop_front().unwrap()
+                };
+                let jpeg =
+                    crate::thumb::render_face_crop(&job.path, job.orientation, job.bbox, 320).ok();
+                if let (Some(ft), Some(j)) = (job.thumbs.as_ref(), jpeg.as_ref()) {
+                    let _ = ft.put(job.face_id, j);
+                }
+                let _ = job.reply.send(jpeg);
+            });
+        }
+        pool
+    })
+}
+
+/// Queue a crop-render job on the shared pool.
+pub fn queue_crop_job(job: CropJob) {
+    let pool = crop_pool();
+    pool.queue.lock().unwrap().push_back(job);
+    pool.cv.notify_one();
+}
+
 impl AppState {
     pub fn window(&self) -> Option<ApplicationWindow> {
         self.window.borrow().clone()

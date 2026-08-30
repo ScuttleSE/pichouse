@@ -17,64 +17,8 @@ use gtk4::{
 };
 use gtk4::gio;
 
-use super::state::AppState;
+use super::state::{AppState, CropJob, queue_crop_job};
 use super::util::texture_from_bytes;
-
-/// One crop-render job. A worker renders the crop, writes it to the cache, and
-/// sends the JPEG to the main thread through the job's sender.
-struct CropJob {
-    face_id: i64,
-    path: std::path::PathBuf,
-    orientation: i32,
-    bbox: (i32, i32, i32, i32),
-    thumbs: Option<std::sync::Arc<crate::db::FaceThumbs>>,
-    reply: glib::Sender<Option<Vec<u8>>>,
-}
-
-/// A bounded worker pool for crop rendering. Opening the Characters view during
-/// a scan can request many uncached crops. A fixed pool of workers reads a
-/// shared queue, so the view never spawns one thread per tile.
-struct CropPool {
-    queue: std::sync::Mutex<std::collections::VecDeque<CropJob>>,
-    cv: std::sync::Condvar,
-}
-
-static CROP_POOL: std::sync::OnceLock<std::sync::Arc<CropPool>> = std::sync::OnceLock::new();
-
-fn crop_pool() -> &'static std::sync::Arc<CropPool> {
-    CROP_POOL.get_or_init(|| {
-        let pool = std::sync::Arc::new(CropPool {
-            queue: std::sync::Mutex::new(std::collections::VecDeque::new()),
-            cv: std::sync::Condvar::new(),
-        });
-        for _ in 0..4 {
-            let pool = pool.clone();
-            std::thread::spawn(move || loop {
-                let job = {
-                    let mut q = pool.queue.lock().unwrap();
-                    while q.is_empty() {
-                        q = pool.cv.wait(q).unwrap();
-                    }
-                    q.pop_front().unwrap()
-                };
-                let jpeg =
-                    crate::thumb::render_face_crop(&job.path, job.orientation, job.bbox, 320).ok();
-                if let (Some(ft), Some(j)) = (job.thumbs.as_ref(), jpeg.as_ref()) {
-                    let _ = ft.put(job.face_id, j);
-                }
-                let _ = job.reply.send(jpeg);
-            });
-        }
-        pool
-    })
-}
-
-/// Queue a crop-render job on the shared pool.
-fn queue_crop_job(job: CropJob) {
-    let pool = crop_pool();
-    pool.queue.lock().unwrap().push_back(job);
-    pool.cv.notify_one();
-}
 
 /// The noise cluster id from HDBSCAN. Shown to the user, not hidden.
 const NOISE_CLUSTER_ID: i64 = -1;

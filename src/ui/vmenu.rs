@@ -264,11 +264,35 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
                             return;
                         }
                     };
-                    let fids = faces
-                        .into_iter()
-                        .filter(|f| id_set.contains(&f.photo_id))
-                        .map(|f| f.id)
-                        .collect();
+                    let matching: Vec<_> =
+                        faces.into_iter().filter(|f| id_set.contains(&f.photo_id)).collect();
+                    if matching.is_empty() {
+                        return;
+                    }
+                    // Group this cluster's matching faces by photo. If every
+                    // photo contributes exactly one, this is the plain
+                    // multi-photo bulk-assign case below (unchanged). If any
+                    // photo is ambiguous (2+ unidentified faces), walk every
+                    // photo in the selection through the new per-photo
+                    // dialog in sequence instead, so the whole click
+                    // resolves through one consistent flow.
+                    let mut by_photo: std::collections::HashMap<i64, Vec<i64>> =
+                        std::collections::HashMap::new();
+                    for f in &matching {
+                        by_photo.entry(f.photo_id).or_default().push(f.id);
+                    }
+                    if by_photo.values().any(|v| v.len() >= 2) {
+                        let mut groups: Vec<Vec<i64>> = by_photo.into_values().collect();
+                        groups.sort_by_key(|g| g[0]);
+                        open_per_face_dialogs_sequentially(
+                            state.clone(),
+                            grid.clone(),
+                            sidebar.clone(),
+                            std::collections::VecDeque::from(groups),
+                        );
+                        return;
+                    }
+                    let fids = matching.into_iter().map(|f| f.id).collect();
                     (fids, None)
                 } else if let Some(character_id) = grid.current_character() {
                     let mut fids = Vec::new();
@@ -468,6 +492,40 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
 
 /// Build the context menu: a submenu of virtual albums plus "New … from
 /// selection".
+/// Show one photo's per-face "Assign to Character" dialog, then the next,
+/// until `groups` is empty. Each element of `groups` is one photo's
+/// unassigned face ids. Chains through `assign_style_faces_per_face_dialog`'s
+/// `on_closed` hook, so the next photo's dialog opens only after the current
+/// one closes — never several at once.
+fn open_per_face_dialogs_sequentially(
+    state: Rc<AppState>,
+    grid: Rc<Grid>,
+    sidebar: Rc<Sidebar>,
+    mut groups: std::collections::VecDeque<Vec<i64>>,
+) {
+    let Some(face_ids) = groups.pop_front() else {
+        return;
+    };
+    let (grid_a, sidebar_a) = (grid.clone(), sidebar.clone());
+    let (state_n, grid_n, sidebar_n) = (state.clone(), grid.clone(), sidebar.clone());
+    characters::assign_style_faces_per_face_dialog(
+        &state,
+        face_ids,
+        move || {
+            grid_a.reload_from_source();
+            sidebar_a.reload_deferred();
+        },
+        move || {
+            open_per_face_dialogs_sequentially(
+                state_n.clone(),
+                grid_n.clone(),
+                sidebar_n.clone(),
+                groups.clone(),
+            );
+        },
+    );
+}
+
 fn build_menu(state: &Rc<AppState>, grid: &Rc<Grid>) -> gio::Menu {
     let menu = gio::Menu::new();
     let albums = state.lib.virtual_albums().unwrap_or_default();

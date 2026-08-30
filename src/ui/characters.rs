@@ -4,10 +4,14 @@
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use gtk4::{Box as GtkBox, Button, DropDown, Label, Orientation, Separator, StringList, Window};
+use gtk4::{
+    Box as GtkBox, Button, DropDown, Frame, Image, Label, Orientation, PolicyType,
+    ScrolledWindow, Separator, StringList, Window,
+};
 
 use super::dialogs::prompt_text;
-use super::state::{show_error, AppState};
+use super::state::{show_error, queue_crop_job, AppState, CropJob};
+use super::util::texture_from_bytes;
 
 /// Create a character and assign every face in every given cluster to it.
 fn name_style_clusters(
@@ -353,6 +357,224 @@ pub fn assign_photos_to_character_dialog<F: Fn() + 'static>(
         cancel.connect_clicked(move |_| win.close());
     }
     root.append(&cancel);
+
+    win.set_child(Some(&root));
+    win.present();
+}
+
+/// A dialog to resolve every unidentified stylised face in one photo at once:
+/// one card per face (its crop as the title image, its own
+/// assign-to-existing/new-character controls below), laid out side by side.
+/// Each card resolves independently — assigning one face does not close the
+/// dialog or affect the others, so a photo with several different unnamed
+/// faces can be fully resolved in one sitting. `on_assigned` runs after each
+/// successful per-face assignment (not once for the whole dialog), so the
+/// caller's view/sidebar stays live as faces are resolved one at a time.
+/// `on_closed` runs exactly once, when the dialog window closes (via "Done"
+/// or the window's own close control) regardless of how many faces were
+/// actually resolved, so a caller showing one of these per photo can chain to
+/// the next photo's dialog.
+pub fn assign_style_faces_per_face_dialog<F: Fn() + 'static, G: Fn() + 'static>(
+    state: &Rc<AppState>,
+    face_ids: Vec<i64>,
+    on_assigned: F,
+    on_closed: G,
+) {
+    if face_ids.is_empty() {
+        return;
+    }
+    let win = Window::builder()
+        .title("Assign to Character")
+        .modal(true)
+        .default_width(420)
+        .build();
+    if let Some(w) = state.window() {
+        win.set_transient_for(Some(&w));
+    }
+    let root = GtkBox::new(Orientation::Vertical, 8);
+    root.set_margin_top(12);
+    root.set_margin_bottom(12);
+    root.set_margin_start(12);
+    root.set_margin_end(12);
+
+    let n = face_ids.len();
+    let label_text = if n > 1 {
+        format!("{n} unidentified faces in this photo — assign each:")
+    } else {
+        "1 unidentified face in this photo:".to_string()
+    };
+    root.append(&Label::new(Some(&label_text)));
+
+    let characters: Rc<Vec<crate::model::Character>> = Rc::new(
+        state
+            .lib
+            .characters()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(c, _)| c)
+            .collect(),
+    );
+
+    let on_assigned = Rc::new(on_assigned);
+
+    let cards = GtkBox::new(Orientation::Horizontal, 10);
+    let scroller = ScrolledWindow::builder()
+        .hscrollbar_policy(PolicyType::Automatic)
+        .vscrollbar_policy(PolicyType::Never)
+        .child(&cards)
+        .build();
+    root.append(&scroller);
+
+    for &face_id in &face_ids {
+        let frame = Frame::new(None);
+        frame.add_css_class("dup-group-frame");
+        let card = GtkBox::new(Orientation::Vertical, 6);
+        card.set_margin_top(8);
+        card.set_margin_bottom(8);
+        card.set_margin_start(8);
+        card.set_margin_end(8);
+        card.set_width_request(150);
+        frame.set_child(Some(&card));
+        cards.append(&frame);
+
+        // The face crop, rendered the same way as a Characters-view tile.
+        let image = Image::new();
+        image.set_pixel_size(110);
+        image.set_size_request(110, 110);
+        image.set_icon_name(Some("avatar-default-symbolic"));
+        card.append(&image);
+        if let Some(jpeg) = state.style_face_crop_cached(face_id) {
+            if let Some(tex) = texture_from_bytes(&jpeg) {
+                image.set_paintable(Some(&tex));
+            }
+        } else if let Some((path, orientation, bbox)) = state.style_face_crop_inputs(face_id) {
+            let thumbs = state.style_face_thumbs();
+            let (tx, rx) =
+                gtk4::glib::MainContext::channel::<Option<Vec<u8>>>(gtk4::glib::Priority::DEFAULT);
+            queue_crop_job(CropJob {
+                face_id,
+                path,
+                orientation,
+                bbox,
+                thumbs,
+                reply: tx,
+            });
+            let image_weak = image.downgrade();
+            rx.attach(None, move |jpeg| {
+                if let (Some(image), Some(jpeg)) = (image_weak.upgrade(), jpeg) {
+                    if let Some(tex) = texture_from_bytes(&jpeg) {
+                        image.set_paintable(Some(&tex));
+                    }
+                }
+                gtk4::glib::ControlFlow::Break
+            });
+        }
+
+        // The controls: existing-character picker + "New character…". Both
+        // are replaced by the confirmation label below once this face is
+        // resolved.
+        let controls = GtkBox::new(Orientation::Vertical, 6);
+        card.append(&controls);
+        let confirm = Label::new(None);
+        confirm.set_wrap(true);
+        confirm.set_visible(false);
+        card.append(&confirm);
+
+        if !characters.is_empty() {
+            let labels: Vec<String> = characters.iter().map(|c| c.name.clone()).collect();
+            let label_refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
+            let sl = StringList::new(&label_refs);
+            let drop = DropDown::new(Some(sl), gtk4::Expression::NONE);
+            controls.append(&drop);
+            let assign = Button::with_label("Assign");
+            assign.add_css_class("suggested-action");
+            controls.append(&assign);
+
+            let state2 = state.clone();
+            let characters2 = characters.clone();
+            let controls2 = controls.clone();
+            let confirm2 = confirm.clone();
+            let on_assigned2 = on_assigned.clone();
+            assign.connect_clicked(move |_| {
+                let idx = drop.selected() as usize;
+                let Some(c) = characters2.get(idx) else {
+                    return;
+                };
+                if let Err(e) = state2.lib.set_style_face_character(face_id, c.id) {
+                    show_error(&state2, &e.to_string());
+                    return;
+                }
+                if let Some(sb) = state2.sidebar.borrow().as_ref() {
+                    sb.reload_deferred();
+                }
+                controls2.set_visible(false);
+                confirm2.set_text(&format!("Assigned to {}", c.name));
+                confirm2.set_visible(true);
+                on_assigned2();
+            });
+        }
+
+        let new_btn = Button::with_label("New character…");
+        controls.append(&new_btn);
+        let state2 = state.clone();
+        let win2 = win.clone();
+        let controls2 = controls.clone();
+        let confirm2 = confirm.clone();
+        let on_assigned2 = on_assigned.clone();
+        new_btn.connect_clicked(move |_| {
+            let state3 = state2.clone();
+            let controls3 = controls2.clone();
+            let confirm3 = confirm2.clone();
+            let on_assigned3 = on_assigned2.clone();
+            prompt_text(
+                &state2,
+                Some(&win2),
+                "New Character",
+                "Character name:",
+                "",
+                move |name| {
+                    if name.trim().is_empty() {
+                        return;
+                    }
+                    let cid = match state3.lib.create_character(&name) {
+                        Ok(cid) => cid,
+                        Err(e) => {
+                            show_error(&state3, &e.to_string());
+                            return;
+                        }
+                    };
+                    if let Err(e) = state3.lib.set_style_face_character(face_id, cid) {
+                        show_error(&state3, &e.to_string());
+                        return;
+                    }
+                    let _ = state3.lib.set_character_cover(cid, face_id);
+                    if let Some(sb) = state3.sidebar.borrow().as_ref() {
+                        sb.reload_deferred();
+                    }
+                    controls3.set_visible(false);
+                    confirm3.set_text(&format!("Assigned to {name}"));
+                    confirm3.set_visible(true);
+                    on_assigned3();
+                },
+            );
+        });
+    }
+
+    let done = Button::with_label("Done");
+    root.append(&Separator::new(Orientation::Horizontal));
+    root.append(&done);
+    {
+        let win = win.clone();
+        done.connect_clicked(move |_| win.close());
+    }
+
+    // Fires exactly once, however the window closes (the "Done" button just
+    // calls `win.close()` above, which triggers this on its own), so a caller
+    // driving one of these dialogs per photo can chain to the next.
+    win.connect_close_request(move |_| {
+        on_closed();
+        gtk4::glib::Propagation::Proceed
+    });
 
     win.set_child(Some(&root));
     win.present();
