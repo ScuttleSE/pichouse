@@ -9,6 +9,7 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::PopoverMenu;
 
+use super::characters;
 use super::dialogs::prompt_text;
 use super::grid::Grid;
 use super::sidebar::Sidebar;
@@ -236,6 +237,50 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
         group.add_action(&act);
     }
 
+    // Assign selected photos' unassigned faces in the current style cluster
+    // to a new or existing character, moving them out of the unnamed group.
+    {
+        let act = gio::SimpleAction::new("assign-to-character", None);
+        let state = state.clone();
+        let grid = grid.clone();
+        let sidebar = sidebar.clone();
+        let pop = pop.clone();
+        act.connect_activate(move |_, _| {
+            dismiss(&pop);
+            let Some(cluster_id) = grid.current_style_cluster() else {
+                return;
+            };
+            let ids = local_photo_ids(&grid);
+            if ids.is_empty() {
+                return;
+            }
+            let id_set: std::collections::HashSet<i64> = ids.iter().copied().collect();
+            let faces = match state.lib.unassigned_style_faces_in_cluster(cluster_id) {
+                Ok(f) => f,
+                Err(e) => {
+                    show_error(&state, &e.to_string());
+                    return;
+                }
+            };
+            let face_ids: Vec<i64> = faces
+                .into_iter()
+                .filter(|f| id_set.contains(&f.photo_id))
+                .map(|f| f.id)
+                .collect();
+            if face_ids.is_empty() {
+                return;
+            }
+            let photo_count = ids.len();
+            let grid2 = grid.clone();
+            let sidebar2 = sidebar.clone();
+            characters::assign_photos_to_character_dialog(&state, face_ids, photo_count, move || {
+                grid2.reload_from_source();
+                sidebar2.reload_deferred();
+            });
+        });
+        group.add_action(&act);
+    }
+
     // Mark selected photos unimportant. A skipped photo is excluded from every
     // future face scan and leaves every face group at once.
     {
@@ -446,6 +491,10 @@ fn build_menu(state: &Rc<AppState>, grid: &Rc<Grid>) -> gio::Menu {
             group_tools.append(
                 Some("Remove from this group"),
                 Some("grid.remove-from-style-cluster"),
+            );
+            group_tools.append(
+                Some("Assign to character…"),
+                Some("grid.assign-to-character"),
             );
         }
         group_tools.append(
