@@ -118,13 +118,9 @@ pub struct Grid {
     /// Local, transient state (not persisted), only meaningful while
     /// `is_face_source()` is true.
     show_faces: std::cell::Cell<bool>,
-    /// Photo id -> `(bbox_x, bbox_y, bbox_w, bbox_h, assigned)` per-mille rects
-    /// for every face detected in that photo, for the face-box overlay.
-    /// `assigned` is true when the face already has a person/character, so the
-    /// overlay can draw it green (assigned) or yellow (unassigned), matching
-    /// `Viewer`'s convention. Populated once per `show_*` call (one bulk
-    /// query), not per-cell.
-    face_boxes: RefCell<HashMap<i64, Vec<(i32, i32, i32, i32, bool)>>>,
+    /// Photo id -> every detected face's rect, for the face-box overlay.
+    /// Populated once per `show_*` call (one bulk query), not per-cell.
+    face_boxes: RefCell<HashMap<i64, Vec<FaceBoxRect>>>,
     /// Every face-box `DrawingArea` created so far (one per recycled grid
     /// cell, registered once in `connect_setup`), so toggling `show_faces` can
     /// queue a redraw on each directly. GTK4 caches a widget's own render node
@@ -286,6 +282,23 @@ enum Source {
     /// from the local database; a reload refetches over HTTP through the caller.
     #[allow(dead_code)] // Fields document the album payload.
     Immich(i64, String, String),
+}
+
+/// One detected face's rect for the face-box overlay, in per-mille of the
+/// oriented image.
+struct FaceBoxRect {
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    /// True when the face already has a person/character, so the overlay can
+    /// draw it green (assigned) or yellow (unassigned), matching `Viewer`'s
+    /// convention.
+    assigned: bool,
+    /// The assigned person/character id, or `0` when unassigned.
+    person_id: i64,
+    /// The automatic cluster id, meaningful only when unassigned.
+    cluster_id: i64,
 }
 
 impl Grid {
@@ -1184,26 +1197,30 @@ impl Grid {
     /// face table.
     fn load_face_boxes(&self, photos: &[Photo], style: bool) {
         let ids: Vec<i64> = photos.iter().map(|p| p.id).collect();
-        let mut map: HashMap<i64, Vec<(i32, i32, i32, i32, bool)>> = HashMap::new();
+        let mut map: HashMap<i64, Vec<FaceBoxRect>> = HashMap::new();
         if style {
             for f in self.lib.style_faces_for_photos(&ids).unwrap_or_default() {
-                map.entry(f.photo_id).or_default().push((
-                    f.bbox_x,
-                    f.bbox_y,
-                    f.bbox_w,
-                    f.bbox_h,
-                    f.character_id != 0,
-                ));
+                map.entry(f.photo_id).or_default().push(FaceBoxRect {
+                    x: f.bbox_x,
+                    y: f.bbox_y,
+                    w: f.bbox_w,
+                    h: f.bbox_h,
+                    assigned: f.character_id != 0,
+                    person_id: f.character_id,
+                    cluster_id: f.cluster_id,
+                });
             }
         } else {
             for f in self.lib.faces_for_photos(&ids).unwrap_or_default() {
-                map.entry(f.photo_id).or_default().push((
-                    f.bbox_x,
-                    f.bbox_y,
-                    f.bbox_w,
-                    f.bbox_h,
-                    f.person_id != 0,
-                ));
+                map.entry(f.photo_id).or_default().push(FaceBoxRect {
+                    x: f.bbox_x,
+                    y: f.bbox_y,
+                    w: f.bbox_w,
+                    h: f.bbox_h,
+                    assigned: f.person_id != 0,
+                    person_id: f.person_id,
+                    cluster_id: f.cluster_id,
+                });
             }
         }
         *self.face_boxes.borrow_mut() = map;
@@ -1918,17 +1935,26 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
             let Some((ix, iy, iw, ih)) = image_rect(&image, w, h) else {
                 return;
             };
-            cr.set_line_width(2.0);
-            for (bx, by, bw, bh, assigned) in rects {
-                if *assigned {
+            // The face this view is scoped to (if any) draws thicker, so it
+            // stands out from any other, unrelated face also in the shot.
+            let (hl_person, hl_cluster) = if grid.is_style_source() {
+                (grid.current_character().unwrap_or(0), grid.current_style_cluster().unwrap_or(0))
+            } else {
+                (grid.current_person().unwrap_or(0), grid.current_cluster().unwrap_or(0))
+            };
+            for r in rects.iter() {
+                if r.assigned {
                     cr.set_source_rgba(0.3, 0.9, 0.4, 0.95);
                 } else {
                     cr.set_source_rgba(1.0, 0.85, 0.2, 0.95);
                 }
-                let rx = ix + iw * *bx as f64 / 1000.0;
-                let ry = iy + ih * *by as f64 / 1000.0;
-                let rw = iw * *bw as f64 / 1000.0;
-                let rh = ih * *bh as f64 / 1000.0;
+                let is_active = (hl_person != 0 && r.person_id == hl_person)
+                    || (hl_cluster != 0 && r.person_id == 0 && r.cluster_id == hl_cluster);
+                cr.set_line_width(if is_active { 4.0 } else { 2.0 });
+                let rx = ix + iw * r.x as f64 / 1000.0;
+                let ry = iy + ih * r.y as f64 / 1000.0;
+                let rw = iw * r.w as f64 / 1000.0;
+                let rh = ih * r.h as f64 / 1000.0;
                 let _ = cr.rectangle(rx, ry, rw, rh);
                 let _ = cr.stroke();
             }

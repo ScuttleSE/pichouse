@@ -48,6 +48,13 @@ pub struct Viewer {
     /// In this mode `faces` holds style faces mapped into `Face` (person_id
     /// carries the character id) and `person_names` maps character ids to names.
     style_mode: std::cell::Cell<bool>,
+    /// The named person/character id this photo is being viewed for (from the
+    /// grid's current source), or `0`. That face's box draws thicker, so it
+    /// stands out from any other, unrelated face also in the shot.
+    highlight_person_id: std::cell::Cell<i64>,
+    /// The unnamed cluster id this photo is being viewed for, or `0`. Only
+    /// meaningful for a face with no assigned person/character.
+    highlight_cluster_id: std::cell::Cell<i64>,
 
     photos: RefCell<Vec<Photo>>,
     index: RefCell<usize>,
@@ -154,6 +161,8 @@ impl Viewer {
             faces: RefCell::new(Vec::new()),
             person_names: RefCell::new(std::collections::HashMap::new()),
             style_mode: std::cell::Cell::new(false),
+            highlight_person_id: std::cell::Cell::new(0),
+            highlight_cluster_id: std::cell::Cell::new(0),
             photos: RefCell::new(Vec::new()),
             index: RefCell::new(0),
             state: RefCell::new(None),
@@ -412,6 +421,8 @@ impl Viewer {
             };
             let faces = this.faces.borrow();
             let names = this.person_names.borrow();
+            let hl_person = this.highlight_person_id.get();
+            let hl_cluster = this.highlight_cluster_id.get();
             for f in faces.iter() {
                 let rx = ix + iw * f.bbox_x as f64 / 1000.0;
                 let ry = iy + ih * f.bbox_y as f64 / 1000.0;
@@ -423,7 +434,12 @@ impl Viewer {
                 } else {
                     cr.set_source_rgba(1.0, 0.85, 0.2, 0.95);
                 }
-                cr.set_line_width(2.0);
+                // The face this photo is being viewed for (the group's own
+                // face) draws thicker, so it stands out from any other,
+                // unrelated face also caught in the same shot.
+                let is_active = (hl_person != 0 && f.person_id == hl_person)
+                    || (hl_cluster != 0 && f.person_id == 0 && f.cluster_id == hl_cluster);
+                cr.set_line_width(if is_active { 4.0 } else { 2.0 });
                 let _ = cr.rectangle(rx, ry, rw, rh);
                 let _ = cr.stroke();
                 // Draw the person name under the box, when known.
@@ -475,7 +491,13 @@ impl Viewer {
         };
         let style = state.grid().is_style_source();
         self.style_mode.set(style);
+        // Which face this photo is being viewed for (from the grid's current
+        // source), so its box can be drawn thicker than any other face also
+        // in the shot. Only one of the two is ever meaningful at once: a
+        // named person/character, or an unnamed cluster.
         if style {
+            self.highlight_person_id.set(state.grid().current_character().unwrap_or(0));
+            self.highlight_cluster_id.set(state.grid().current_style_cluster().unwrap_or(0));
             // Map each StyleFace into a Face so the draw code stays the same.
             // person_id carries the character id.
             let sfaces = state
@@ -506,6 +528,8 @@ impl Viewer {
             *self.faces.borrow_mut() = faces;
             *self.person_names.borrow_mut() = names;
         } else {
+            self.highlight_person_id.set(state.grid().current_person().unwrap_or(0));
+            self.highlight_cluster_id.set(state.grid().current_cluster().unwrap_or(0));
             let faces = state.lib.faces_for_photo(photo.id).unwrap_or_default();
             let mut names = std::collections::HashMap::new();
             for (p, _) in state.lib.persons().unwrap_or_default() {
