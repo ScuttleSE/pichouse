@@ -34,10 +34,15 @@ const VIRTUAL_HEADER_ID: &str = "virtualheader";
 const PEOPLE_HEADER_ID: &str = "peopleheader";
 /// A single person node: `person:<person_id>`.
 const PERSON_PREFIX: &str = "person:";
+/// A person group node (e.g. "Disney"): `persongroup:<group_id>`. Groups may
+/// nest and a person may belong to more than one group at once.
+const PERSON_GROUP_PREFIX: &str = "persongroup:";
 /// Header row that groups named stylised characters.
 const CHARACTERS_HEADER_ID: &str = "charactersheader";
 /// A single character node: `character:<character_id>`.
 const CHARACTER_PREFIX: &str = "character:";
+/// A character group node. Mirrors `PERSON_GROUP_PREFIX`.
+const CHARACTER_GROUP_PREFIX: &str = "charactergroup:";
 /// Header row that groups all Immich servers, shown below normal albums.
 const IMMICH_HEADER_ID: &str = "immichheader";
 /// A single Immich server node: `immichserver:<server_id>`.
@@ -74,11 +79,25 @@ struct TreeData {
     person_counts: HashMap<i64, i64>,
     /// Total detected faces, so the People header shows even before naming.
     total_faces: i64,
+    /// Person groups (e.g. "Disney"), plus parent->children adjacency and
+    /// direct group->member-person-ids membership.
+    person_groups: HashMap<i64, crate::model::PersonGroup>,
+    person_group_children: HashMap<i64, Vec<i64>>,
+    person_group_members: HashMap<i64, Vec<i64>>,
+    /// Reverse index: person id -> the group ids it directly belongs to. A
+    /// person with no entry (or an empty one) here is "ungrouped" and shows
+    /// at the People header's top level instead of under a group.
+    person_memberships: HashMap<i64, Vec<i64>>,
     /// Named stylised characters, plus per-character photo counts.
     characters: Vec<crate::model::Character>,
     character_counts: HashMap<i64, i64>,
     /// Total detected stylised faces, so the Characters header shows early.
     total_style_faces: i64,
+    /// Character groups. Mirrors the person_group_* fields.
+    character_groups: HashMap<i64, crate::model::CharacterGroup>,
+    character_group_children: HashMap<i64, Vec<i64>>,
+    character_group_members: HashMap<i64, Vec<i64>>,
+    character_memberships: HashMap<i64, Vec<i64>>,
     /// Immich servers, ordered as shown. Each is `(id, name)`.
     immich_servers: Vec<(i64, String)>,
     /// Cached albums per Immich server id, as `(album_uuid, name, count)`.
@@ -284,15 +303,71 @@ impl Sidebar {
                 .map(|vid| format!("{VALBUM_PREFIX}{vid}"))
                 .collect()
         } else if id == PEOPLE_HEADER_ID {
-            data.persons
-                .iter()
-                .map(|p| format!("{PERSON_PREFIX}{}", p.id))
-                .collect()
+            let mut out: Vec<String> = data
+                .person_group_children
+                .get(&0)
+                .into_iter()
+                .flatten()
+                .map(|gid| format!("{PERSON_GROUP_PREFIX}{gid}"))
+                .collect();
+            out.extend(data.persons.iter().filter_map(|p| {
+                let ungrouped = data
+                    .person_memberships
+                    .get(&p.id)
+                    .map(|g| g.is_empty())
+                    .unwrap_or(true);
+                ungrouped.then(|| format!("{PERSON_PREFIX}{}", p.id))
+            }));
+            out
+        } else if let Some(gid) = person_group_id_of(id) {
+            let mut out: Vec<String> = data
+                .person_group_children
+                .get(&gid)
+                .into_iter()
+                .flatten()
+                .map(|child| format!("{PERSON_GROUP_PREFIX}{child}"))
+                .collect();
+            out.extend(
+                data.person_group_members
+                    .get(&gid)
+                    .into_iter()
+                    .flatten()
+                    .map(|pid| format!("{PERSON_PREFIX}{pid}")),
+            );
+            out
         } else if id == CHARACTERS_HEADER_ID {
-            data.characters
-                .iter()
-                .map(|c| format!("{CHARACTER_PREFIX}{}", c.id))
-                .collect()
+            let mut out: Vec<String> = data
+                .character_group_children
+                .get(&0)
+                .into_iter()
+                .flatten()
+                .map(|gid| format!("{CHARACTER_GROUP_PREFIX}{gid}"))
+                .collect();
+            out.extend(data.characters.iter().filter_map(|c| {
+                let ungrouped = data
+                    .character_memberships
+                    .get(&c.id)
+                    .map(|g| g.is_empty())
+                    .unwrap_or(true);
+                ungrouped.then(|| format!("{CHARACTER_PREFIX}{}", c.id))
+            }));
+            out
+        } else if let Some(gid) = character_group_id_of(id) {
+            let mut out: Vec<String> = data
+                .character_group_children
+                .get(&gid)
+                .into_iter()
+                .flatten()
+                .map(|child| format!("{CHARACTER_GROUP_PREFIX}{child}"))
+                .collect();
+            out.extend(
+                data.character_group_members
+                    .get(&gid)
+                    .into_iter()
+                    .flatten()
+                    .map(|cid| format!("{CHARACTER_PREFIX}{cid}")),
+            );
+            out
         } else if id == IMMICH_HEADER_ID {
             data.immich_servers
                 .iter()
@@ -431,6 +506,14 @@ impl Sidebar {
                 format!("People ({})", data.persons.len()),
                 "avatar-default-symbolic",
             )
+        } else if let Some(gid) = person_group_id_of(id) {
+            let name = data
+                .person_groups
+                .get(&gid)
+                .map(|g| g.name.clone())
+                .unwrap_or_default();
+            let count = data.person_group_members.get(&gid).map(|m| m.len()).unwrap_or(0);
+            (format!("{name} ({count})"), "folder-new-symbolic")
         } else if let Some(pid) = person_id_of(id) {
             let name = data
                 .persons
@@ -445,6 +528,18 @@ impl Sidebar {
                 format!("Characters ({})", data.characters.len()),
                 "face-smile-symbolic",
             )
+        } else if let Some(gid) = character_group_id_of(id) {
+            let name = data
+                .character_groups
+                .get(&gid)
+                .map(|g| g.name.clone())
+                .unwrap_or_default();
+            let count = data
+                .character_group_members
+                .get(&gid)
+                .map(|m| m.len())
+                .unwrap_or(0);
+            (format!("{name} ({count})"), "folder-new-symbolic")
         } else if let Some(cid) = character_id_of(id) {
             let name = data
                 .characters
@@ -597,6 +692,19 @@ impl Sidebar {
                     return;
                 }
             }
+            if let Some(gid) = person_group_id_of(&id) {
+                let name = self
+                    .data
+                    .borrow()
+                    .person_groups
+                    .get(&gid)
+                    .map(|g| g.name.clone())
+                    .unwrap_or_default();
+                if let Some(state) = self.state() {
+                    state.show_person_group(gid, &name);
+                    return;
+                }
+            }
             if let Some(cid) = character_id_of(&id) {
                 let name = self
                     .data
@@ -608,6 +716,19 @@ impl Sidebar {
                     .unwrap_or_default();
                 if let Some(state) = self.state() {
                     state.show_character(cid, &name);
+                    return;
+                }
+            }
+            if let Some(gid) = character_group_id_of(&id) {
+                let name = self
+                    .data
+                    .borrow()
+                    .character_groups
+                    .get(&gid)
+                    .map(|g| g.name.clone())
+                    .unwrap_or_default();
+                if let Some(state) = self.state() {
+                    state.show_character_group(gid, &name);
                     return;
                 }
             }
@@ -722,6 +843,34 @@ impl Sidebar {
         self.selected_ids(&sel)
             .into_iter()
             .filter_map(|id| album_id_of(&id))
+            .collect()
+    }
+
+    fn selected_person_ids(&self) -> Vec<i64> {
+        let Some(sel) = self
+            .list_view
+            .model()
+            .and_downcast::<gtk4::MultiSelection>()
+        else {
+            return Vec::new();
+        };
+        self.selected_ids(&sel)
+            .into_iter()
+            .filter_map(|id| person_id_of(&id))
+            .collect()
+    }
+
+    fn selected_character_ids(&self) -> Vec<i64> {
+        let Some(sel) = self
+            .list_view
+            .model()
+            .and_downcast::<gtk4::MultiSelection>()
+        else {
+            return Vec::new();
+        };
+        self.selected_ids(&sel)
+            .into_iter()
+            .filter_map(|id| character_id_of(&id))
             .collect()
     }
 
@@ -863,12 +1012,42 @@ impl Sidebar {
             data.persons.push(person);
         }
         data.total_faces = state.lib.total_face_count().unwrap_or(0);
+        let mut person_groups = state.lib.person_groups().unwrap_or_default();
+        person_groups.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        for g in &person_groups {
+            data.person_group_children
+                .entry(g.parent_id)
+                .or_default()
+                .push(g.id);
+            data.person_groups.insert(g.id, g.clone());
+        }
+        data.person_group_members = state.lib.person_group_members().unwrap_or_default();
+        for (&gid, members) in &data.person_group_members {
+            for &pid in members {
+                data.person_memberships.entry(pid).or_default().push(gid);
+            }
+        }
         // Named stylised characters.
         for (character, count) in state.lib.characters().unwrap_or_default() {
             data.character_counts.insert(character.id, count);
             data.characters.push(character);
         }
         data.total_style_faces = state.lib.total_style_face_count().unwrap_or(0);
+        let mut character_groups = state.lib.character_groups().unwrap_or_default();
+        character_groups.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        for g in &character_groups {
+            data.character_group_children
+                .entry(g.parent_id)
+                .or_default()
+                .push(g.id);
+            data.character_groups.insert(g.id, g.clone());
+        }
+        data.character_group_members = state.lib.character_group_members().unwrap_or_default();
+        for (&gid, members) in &data.character_group_members {
+            for &cid in members {
+                data.character_memberships.entry(cid).or_default().push(gid);
+            }
+        }
         for f in &folders {
             data.folders.insert(f.id, f.clone());
             if let Some(&aid) = folder_album.get(&f.id) {
@@ -1423,6 +1602,255 @@ impl Sidebar {
                 this.reload_deferred();
             },
         );
+    }
+
+    // --- person group operations ---
+
+    fn prompt_create_person_group(self: &Rc<Self>, parent_id: i64) {
+        let Some(state) = self.state() else { return };
+        let title = if parent_id != 0 {
+            "New Sub-Group"
+        } else {
+            "New Group"
+        };
+        let this = self.clone();
+        let state2 = state.clone();
+        prompt_text(&state, None, title, "Group name:", "", move |name| {
+            if let Err(e) = state2.lib.create_person_group(&name, parent_id) {
+                show_error(&state2, &e.to_string());
+                return;
+            }
+            this.mark_expanded(PEOPLE_HEADER_ID);
+            if parent_id != 0 {
+                this.mark_expanded(&format!("{PERSON_GROUP_PREFIX}{parent_id}"));
+            }
+            this.reload_deferred();
+        });
+    }
+
+    fn prompt_rename_person_group(self: &Rc<Self>, id: i64) {
+        let Some(state) = self.state() else { return };
+        let current = self
+            .data
+            .borrow()
+            .person_groups
+            .get(&id)
+            .map(|g| g.name.clone())
+            .unwrap_or_default();
+        let this = self.clone();
+        let state2 = state.clone();
+        prompt_text(
+            &state,
+            None,
+            "Rename Group",
+            "Group name:",
+            &current,
+            move |name| {
+                if let Err(e) = state2.lib.rename_person_group(id, &name) {
+                    show_error(&state2, &e.to_string());
+                    return;
+                }
+                this.reload_deferred();
+            },
+        );
+    }
+
+    fn delete_person_group(self: &Rc<Self>, id: i64) {
+        let Some(state) = self.state() else { return };
+        let name = self
+            .data
+            .borrow()
+            .person_groups
+            .get(&id)
+            .map(|g| g.name.clone())
+            .unwrap_or_default();
+        let this = self.clone();
+        let state2 = state.clone();
+        confirm(
+            &state,
+            None,
+            "Delete Group",
+            &format!("Delete group \"{name}\"? People in it are not deleted; sub-groups are also deleted."),
+            move || {
+                if let Err(e) = state2.lib.delete_person_group(id) {
+                    show_error(&state2, &e.to_string());
+                    return;
+                }
+                this.reload_deferred();
+            },
+        );
+    }
+
+    /// Add one or more persons to a group. Additive: does not remove any
+    /// existing membership.
+    fn add_persons_to_group(self: &Rc<Self>, pids: &[i64], target: i64) {
+        if pids.is_empty() {
+            return;
+        }
+        let Some(state) = self.state() else { return };
+        for &pid in pids {
+            if let Err(e) = state.lib.add_person_to_group(pid, target) {
+                show_error(&state, &e.to_string());
+                return;
+            }
+        }
+        self.mark_expanded(&format!("{PERSON_GROUP_PREFIX}{target}"));
+        self.reload_deferred();
+    }
+
+    fn remove_person_from_group(self: &Rc<Self>, pid: i64, gid: i64) {
+        let Some(state) = self.state() else { return };
+        if let Err(e) = state.lib.remove_person_from_group(pid, gid) {
+            show_error(&state, &e.to_string());
+            return;
+        }
+        self.reload_deferred();
+    }
+
+    /// Re-parent one or more person groups under `target` (drag a group onto
+    /// another group).
+    fn reparent_person_groups(self: &Rc<Self>, src_groups: &[i64], target: i64) {
+        let Some(state) = self.state() else { return };
+        let mut changed = false;
+        for &src in src_groups {
+            if src == target {
+                continue;
+            }
+            if let Err(e) = state.lib.set_person_group_parent(src, target) {
+                show_error(&state, &e.to_string());
+                return;
+            }
+            changed = true;
+        }
+        if !changed {
+            return;
+        }
+        self.mark_expanded(&format!("{PERSON_GROUP_PREFIX}{target}"));
+        self.reload_deferred();
+    }
+
+    // --- character group operations ---
+
+    fn prompt_create_character_group(self: &Rc<Self>, parent_id: i64) {
+        let Some(state) = self.state() else { return };
+        let title = if parent_id != 0 {
+            "New Sub-Group"
+        } else {
+            "New Group"
+        };
+        let this = self.clone();
+        let state2 = state.clone();
+        prompt_text(&state, None, title, "Group name:", "", move |name| {
+            if let Err(e) = state2.lib.create_character_group(&name, parent_id) {
+                show_error(&state2, &e.to_string());
+                return;
+            }
+            this.mark_expanded(CHARACTERS_HEADER_ID);
+            if parent_id != 0 {
+                this.mark_expanded(&format!("{CHARACTER_GROUP_PREFIX}{parent_id}"));
+            }
+            this.reload_deferred();
+        });
+    }
+
+    fn prompt_rename_character_group(self: &Rc<Self>, id: i64) {
+        let Some(state) = self.state() else { return };
+        let current = self
+            .data
+            .borrow()
+            .character_groups
+            .get(&id)
+            .map(|g| g.name.clone())
+            .unwrap_or_default();
+        let this = self.clone();
+        let state2 = state.clone();
+        prompt_text(
+            &state,
+            None,
+            "Rename Group",
+            "Group name:",
+            &current,
+            move |name| {
+                if let Err(e) = state2.lib.rename_character_group(id, &name) {
+                    show_error(&state2, &e.to_string());
+                    return;
+                }
+                this.reload_deferred();
+            },
+        );
+    }
+
+    fn delete_character_group(self: &Rc<Self>, id: i64) {
+        let Some(state) = self.state() else { return };
+        let name = self
+            .data
+            .borrow()
+            .character_groups
+            .get(&id)
+            .map(|g| g.name.clone())
+            .unwrap_or_default();
+        let this = self.clone();
+        let state2 = state.clone();
+        confirm(
+            &state,
+            None,
+            "Delete Group",
+            &format!("Delete group \"{name}\"? Characters in it are not deleted; sub-groups are also deleted."),
+            move || {
+                if let Err(e) = state2.lib.delete_character_group(id) {
+                    show_error(&state2, &e.to_string());
+                    return;
+                }
+                this.reload_deferred();
+            },
+        );
+    }
+
+    /// Add one or more characters to a group. Additive: does not remove any
+    /// existing membership.
+    fn add_characters_to_group(self: &Rc<Self>, cids: &[i64], target: i64) {
+        if cids.is_empty() {
+            return;
+        }
+        let Some(state) = self.state() else { return };
+        for &cid in cids {
+            if let Err(e) = state.lib.add_character_to_group(cid, target) {
+                show_error(&state, &e.to_string());
+                return;
+            }
+        }
+        self.mark_expanded(&format!("{CHARACTER_GROUP_PREFIX}{target}"));
+        self.reload_deferred();
+    }
+
+    fn remove_character_from_group(self: &Rc<Self>, cid: i64, gid: i64) {
+        let Some(state) = self.state() else { return };
+        if let Err(e) = state.lib.remove_character_from_group(cid, gid) {
+            show_error(&state, &e.to_string());
+            return;
+        }
+        self.reload_deferred();
+    }
+
+    /// Re-parent one or more character groups under `target`.
+    fn reparent_character_groups(self: &Rc<Self>, src_groups: &[i64], target: i64) {
+        let Some(state) = self.state() else { return };
+        let mut changed = false;
+        for &src in src_groups {
+            if src == target {
+                continue;
+            }
+            if let Err(e) = state.lib.set_character_group_parent(src, target) {
+                show_error(&state, &e.to_string());
+                return;
+            }
+            changed = true;
+        }
+        if !changed {
+            return;
+        }
+        self.mark_expanded(&format!("{CHARACTER_GROUP_PREFIX}{target}"));
+        self.reload_deferred();
     }
 
     fn clear_banned_matches(self: &Rc<Self>) {
@@ -2023,6 +2451,74 @@ impl Sidebar {
         {
             let this = self.clone();
             add(
+                "new-person-group",
+                &group,
+                Rc::new(move |_| this.prompt_create_person_group(0)),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "new-person-subgroup",
+                &group,
+                Rc::new(move |t| this.prompt_create_person_group(person_group_id_of(t).unwrap_or(0))),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "rename-person-group",
+                &group,
+                Rc::new(move |t| this.prompt_rename_person_group(person_group_id_of(t).unwrap_or(0))),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "delete-person-group",
+                &group,
+                Rc::new(move |t| this.delete_person_group(person_group_id_of(t).unwrap_or(0))),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "add-selected-persons-to-group",
+                &group,
+                Rc::new(move |t| {
+                    let target = person_group_id_of(t).unwrap_or(0);
+                    let pids = this.selected_person_ids();
+                    this.add_persons_to_group(&pids, target);
+                }),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "add-person-to-group",
+                &group,
+                Rc::new(move |t| {
+                    if let Some((gid, pid)) = parse_id_pair(t) {
+                        this.add_persons_to_group(&[pid], gid);
+                    }
+                }),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "remove-person-from-group",
+                &group,
+                Rc::new(move |t| {
+                    if let Some((gid, pid)) = parse_id_pair(t) {
+                        this.remove_person_from_group(pid, gid);
+                    }
+                }),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
                 "clear-missing",
                 &group,
                 Rc::new(move |_| this.clear_missing_files()),
@@ -2060,6 +2556,78 @@ impl Sidebar {
                 Rc::new(move |t| this.delete_character_and_ban(character_id_of(t).unwrap_or(0))),
             );
         }
+        {
+            let this = self.clone();
+            add(
+                "new-character-group",
+                &group,
+                Rc::new(move |_| this.prompt_create_character_group(0)),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "new-character-subgroup",
+                &group,
+                Rc::new(move |t| {
+                    this.prompt_create_character_group(character_group_id_of(t).unwrap_or(0))
+                }),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "rename-character-group",
+                &group,
+                Rc::new(move |t| {
+                    this.prompt_rename_character_group(character_group_id_of(t).unwrap_or(0))
+                }),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "delete-character-group",
+                &group,
+                Rc::new(move |t| this.delete_character_group(character_group_id_of(t).unwrap_or(0))),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "add-selected-characters-to-group",
+                &group,
+                Rc::new(move |t| {
+                    let target = character_group_id_of(t).unwrap_or(0);
+                    let cids = this.selected_character_ids();
+                    this.add_characters_to_group(&cids, target);
+                }),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "add-character-to-group",
+                &group,
+                Rc::new(move |t| {
+                    if let Some((gid, cid)) = parse_id_pair(t) {
+                        this.add_characters_to_group(&[cid], gid);
+                    }
+                }),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "remove-character-from-group",
+                &group,
+                Rc::new(move |t| {
+                    if let Some((gid, cid)) = parse_id_pair(t) {
+                        this.remove_character_from_group(cid, gid);
+                    }
+                }),
+            );
+        }
 
         self.list_view.insert_action_group("sidebar", Some(&group));
     }
@@ -2077,6 +2645,10 @@ impl Sidebar {
             if album_id_of(&id).is_none()
                 && folder_id_of(&id).is_none()
                 && valbum_id_of(&id).is_none()
+                && person_id_of(&id).is_none()
+                && person_group_id_of(&id).is_none()
+                && character_id_of(&id).is_none()
+                && character_group_id_of(&id).is_none()
             {
                 return None;
             }
@@ -2114,6 +2686,40 @@ impl Sidebar {
             {
                 this.reparent_virtual_album(src_v, target_v);
                 return true;
+            }
+            // Dropping a person onto a person-group node adds membership
+            // (additive: does not evict other memberships). Dropping a
+            // person-group onto another re-parents it (subgroup nesting).
+            if let Some(target_group) = person_group_id_of(&target_id) {
+                if let Some(src_person) = person_id_of(&dragged) {
+                    let mut pids = this.selected_person_ids();
+                    if !pids.contains(&src_person) {
+                        pids.push(src_person);
+                    }
+                    this.add_persons_to_group(&pids, target_group);
+                    return true;
+                }
+                if let Some(src_group) = person_group_id_of(&dragged) {
+                    this.reparent_person_groups(&[src_group], target_group);
+                    return true;
+                }
+                return false;
+            }
+            // Mirrors the person-group handling above for characters.
+            if let Some(target_group) = character_group_id_of(&target_id) {
+                if let Some(src_character) = character_id_of(&dragged) {
+                    let mut cids = this.selected_character_ids();
+                    if !cids.contains(&src_character) {
+                        cids.push(src_character);
+                    }
+                    this.add_characters_to_group(&cids, target_group);
+                    return true;
+                }
+                if let Some(src_group) = character_group_id_of(&dragged) {
+                    this.reparent_character_groups(&[src_group], target_group);
+                    return true;
+                }
+                return false;
             }
             let Some(target_album) = album_id_of(&target_id) else {
                 return false;
@@ -2173,6 +2779,8 @@ impl Sidebar {
             // virtual header. Folders and leaf rows are ignored.
             let toggles = album_id_of(&id).is_some()
                 || valbum_id_of(&id).is_some()
+                || person_group_id_of(&id).is_some()
+                || character_group_id_of(&id).is_some()
                 || id == VIRTUAL_HEADER_ID
                 || id == PEOPLE_HEADER_ID
                 || id == CHARACTERS_HEADER_ID
@@ -2245,14 +2853,63 @@ impl Sidebar {
                 Some(&detailed("edit-valbum-rules", id)),
             );
             menu.append(Some("Delete Album"), Some(&detailed("delete-valbum", id)));
-        } else if person_id_of(id).is_some() {
+        } else if id == PEOPLE_HEADER_ID {
+            menu.append(Some("New Group…"), Some(&detailed("new-person-group", id)));
+        } else if id == CHARACTERS_HEADER_ID {
+            menu.append(
+                Some("New Group…"),
+                Some(&detailed("new-character-group", id)),
+            );
+        } else if person_group_id_of(id).is_some() {
+            menu.append(
+                Some("New Sub-Group…"),
+                Some(&detailed("new-person-subgroup", id)),
+            );
+            menu.append(
+                Some("Rename Group…"),
+                Some(&detailed("rename-person-group", id)),
+            );
+            menu.append(Some("Delete Group"), Some(&detailed("delete-person-group", id)));
+            if !self.selected_person_ids().is_empty() {
+                menu.append(
+                    Some("Add selected here"),
+                    Some(&detailed("add-selected-persons-to-group", id)),
+                );
+            }
+        } else if character_group_id_of(id).is_some() {
+            menu.append(
+                Some("New Sub-Group…"),
+                Some(&detailed("new-character-subgroup", id)),
+            );
+            menu.append(
+                Some("Rename Group…"),
+                Some(&detailed("rename-character-group", id)),
+            );
+            menu.append(
+                Some("Delete Group"),
+                Some(&detailed("delete-character-group", id)),
+            );
+            if !self.selected_character_ids().is_empty() {
+                menu.append(
+                    Some("Add selected here"),
+                    Some(&detailed("add-selected-characters-to-group", id)),
+                );
+            }
+        } else if let Some(pid) = person_id_of(id) {
             menu.append(Some("Rename Person…"), Some(&detailed("rename-person", id)));
             menu.append(Some("Delete Person"), Some(&detailed("delete-person", id)));
             menu.append(
                 Some("Delete and Ban Person"),
                 Some(&detailed("delete-person-ban", id)),
             );
-        } else if character_id_of(id).is_some() {
+            if !data.person_groups.is_empty() {
+                let submenu = self.build_add_to_person_group_submenu(&data, 0, pid);
+                menu.append_submenu(Some("Add to Group"), &submenu);
+            }
+            if let Some(remove_menu) = self.build_remove_from_person_group_menu(&data, pid) {
+                menu.append_submenu(Some("Remove from Group"), &remove_menu);
+            }
+        } else if let Some(cid) = character_id_of(id) {
             menu.append(
                 Some("Rename Character…"),
                 Some(&detailed("rename-character", id)),
@@ -2265,6 +2922,13 @@ impl Sidebar {
                 Some("Delete and Ban Character"),
                 Some(&detailed("delete-character-ban", id)),
             );
+            if !data.character_groups.is_empty() {
+                let submenu = self.build_add_to_character_group_submenu(&data, 0, cid);
+                menu.append_submenu(Some("Add to Group"), &submenu);
+            }
+            if let Some(remove_menu) = self.build_remove_from_character_group_menu(&data, cid) {
+                menu.append_submenu(Some("Remove from Group"), &remove_menu);
+            }
         } else if album_id_of(id).is_some() {
             menu.append(Some("New Sub-Album…"), Some(&detailed("new-subalbum", id)));
             menu.append(Some("Rename Album…"), Some(&detailed("rename-album", id)));
@@ -2422,6 +3086,151 @@ impl Sidebar {
         m
     }
 
+    /// Build a nested "Add to Group" menu for a person, listing every person
+    /// group under `parent_id`. Unlike `build_move_submenu`, adding is
+    /// additive (does not evict the person from any other group), so the
+    /// target encodes both the destination group and the specific person
+    /// (`"<group_id>:<person_id>"`) rather than relying on tree selection.
+    fn build_add_to_person_group_submenu(&self, data: &TreeData, parent_id: i64, pid: i64) -> gio::Menu {
+        let m = gio::Menu::new();
+        let mut children: Vec<i64> = data
+            .person_group_children
+            .get(&parent_id)
+            .cloned()
+            .unwrap_or_default();
+        children.sort_by(|a, b| {
+            let na = data.person_groups.get(a).map(|g| g.name.as_str()).unwrap_or("");
+            let nb = data.person_groups.get(b).map(|g| g.name.as_str()).unwrap_or("");
+            na.cmp(nb)
+        });
+        for gid in children {
+            let target = format!("{gid}:{pid}");
+            let name = data
+                .person_groups
+                .get(&gid)
+                .map(|g| g.name.clone())
+                .unwrap_or_default();
+            if data
+                .person_group_children
+                .get(&gid)
+                .map(|c| c.is_empty())
+                .unwrap_or(true)
+            {
+                m.append(Some(&name), Some(&detailed("add-person-to-group", &target)));
+            } else {
+                let sub = gio::Menu::new();
+                let here = gio::Menu::new();
+                here.append(Some("Add here"), Some(&detailed("add-person-to-group", &target)));
+                sub.append_section(None, &here);
+                sub.append_section(None, &self.build_add_to_person_group_submenu(data, gid, pid));
+                m.append_submenu(Some(&name), &sub);
+            }
+        }
+        m
+    }
+
+    /// The groups a person directly belongs to, as a flat "Remove from Group"
+    /// menu, or `None` when the person belongs to no group.
+    fn build_remove_from_person_group_menu(&self, data: &TreeData, pid: i64) -> Option<gio::Menu> {
+        let gids = data.person_memberships.get(&pid)?;
+        if gids.is_empty() {
+            return None;
+        }
+        let mut items: Vec<(i64, String)> = gids
+            .iter()
+            .map(|&gid| {
+                (
+                    gid,
+                    data.person_groups.get(&gid).map(|g| g.name.clone()).unwrap_or_default(),
+                )
+            })
+            .collect();
+        items.sort_by(|a, b| a.1.cmp(&b.1));
+        let m = gio::Menu::new();
+        for (gid, name) in items {
+            let target = format!("{gid}:{pid}");
+            m.append(Some(&name), Some(&detailed("remove-person-from-group", &target)));
+        }
+        Some(m)
+    }
+
+    /// Mirrors `build_add_to_person_group_submenu` for characters.
+    fn build_add_to_character_group_submenu(
+        &self,
+        data: &TreeData,
+        parent_id: i64,
+        cid: i64,
+    ) -> gio::Menu {
+        let m = gio::Menu::new();
+        let mut children: Vec<i64> = data
+            .character_group_children
+            .get(&parent_id)
+            .cloned()
+            .unwrap_or_default();
+        children.sort_by(|a, b| {
+            let na = data.character_groups.get(a).map(|g| g.name.as_str()).unwrap_or("");
+            let nb = data.character_groups.get(b).map(|g| g.name.as_str()).unwrap_or("");
+            na.cmp(nb)
+        });
+        for gid in children {
+            let target = format!("{gid}:{cid}");
+            let name = data
+                .character_groups
+                .get(&gid)
+                .map(|g| g.name.clone())
+                .unwrap_or_default();
+            if data
+                .character_group_children
+                .get(&gid)
+                .map(|c| c.is_empty())
+                .unwrap_or(true)
+            {
+                m.append(Some(&name), Some(&detailed("add-character-to-group", &target)));
+            } else {
+                let sub = gio::Menu::new();
+                let here = gio::Menu::new();
+                here.append(
+                    Some("Add here"),
+                    Some(&detailed("add-character-to-group", &target)),
+                );
+                sub.append_section(None, &here);
+                sub.append_section(None, &self.build_add_to_character_group_submenu(data, gid, cid));
+                m.append_submenu(Some(&name), &sub);
+            }
+        }
+        m
+    }
+
+    /// Mirrors `build_remove_from_person_group_menu` for characters.
+    fn build_remove_from_character_group_menu(&self, data: &TreeData, cid: i64) -> Option<gio::Menu> {
+        let gids = data.character_memberships.get(&cid)?;
+        if gids.is_empty() {
+            return None;
+        }
+        let mut items: Vec<(i64, String)> = gids
+            .iter()
+            .map(|&gid| {
+                (
+                    gid,
+                    data.character_groups
+                        .get(&gid)
+                        .map(|g| g.name.clone())
+                        .unwrap_or_default(),
+                )
+            })
+            .collect();
+        items.sort_by(|a, b| a.1.cmp(&b.1));
+        let m = gio::Menu::new();
+        for (gid, name) in items {
+            let target = format!("{gid}:{cid}");
+            m.append(
+                Some(&name),
+                Some(&detailed("remove-character-from-group", &target)),
+            );
+        }
+        Some(m)
+    }
+
     /// Select the first folder in the tree, if any, and return it.
     pub fn select_first_folder(self: &Rc<Self>) -> Option<Folder> {
         let data = self.data.borrow();
@@ -2456,8 +3265,29 @@ fn person_id_of(id: &str) -> Option<i64> {
     id.strip_prefix(PERSON_PREFIX).and_then(|n| n.parse().ok())
 }
 
+fn person_group_id_of(id: &str) -> Option<i64> {
+    id.strip_prefix(PERSON_GROUP_PREFIX)
+        .and_then(|n| n.parse().ok())
+}
+
 fn character_id_of(id: &str) -> Option<i64> {
     id.strip_prefix(CHARACTER_PREFIX).and_then(|n| n.parse().ok())
+}
+
+fn character_group_id_of(id: &str) -> Option<i64> {
+    id.strip_prefix(CHARACTER_GROUP_PREFIX)
+        .and_then(|n| n.parse().ok())
+}
+
+/// Parse a `"<a>:<b>"` action-target string of two ids. Used for the
+/// "Add to Group ▸" and "Remove from Group ▸" submenus, always in
+/// `<group_id>:<person_or_character_id>` order, where a group id alone is not
+/// enough context (a person/character can be reached under several group rows
+/// at once, and "add" needs a specific person/character regardless of the
+/// current tree selection).
+fn parse_id_pair(target: &str) -> Option<(i64, i64)> {
+    let (a, b) = target.split_once(':')?;
+    Some((a.parse().ok()?, b.parse().ok()?))
 }
 
 fn immich_server_id_of(id: &str) -> Option<i64> {

@@ -549,6 +549,18 @@ pub struct Person {
     pub cover_face_id: i64,
 }
 
+/// A nestable group of named people (e.g. "Disney", "Furry"). A person may
+/// belong to any number of groups at once — membership is stored separately
+/// in `person_group_members`, not on `Person`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PersonGroup {
+    pub id: i64,
+    pub name: String,
+    /// `0` means top-level.
+    pub parent_id: i64,
+    pub position: i32,
+}
+
 /// One detected face in one photo.
 ///
 /// The bounding box and the landmarks are in per-mille (0..1000) of the photo
@@ -586,6 +598,16 @@ pub struct Character {
     pub name: String,
     /// A representative face id for the character icon. `0` means none chosen.
     pub cover_face_id: i64,
+}
+
+/// A nestable group of named characters. Mirrors `PersonGroup`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CharacterGroup {
+    pub id: i64,
+    pub name: String,
+    /// `0` means top-level.
+    pub parent_id: i64,
+    pub position: i32,
 }
 
 /// One detected stylised face in one photo. The box is in per-mille (0..1000)

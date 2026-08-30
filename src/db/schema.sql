@@ -366,6 +366,47 @@ CREATE TABLE IF NOT EXISTS style_face_rejections (
 CREATE INDEX IF NOT EXISTS idx_style_face_rejections_face ON style_face_rejections(face_id);
 
 -- ---------------------------------------------------------------------------
+-- Groups organise named people/characters into a nestable tree (e.g. "Disney",
+-- "Furry"), separately from persons/characters themselves. A group may nest
+-- under a parent group (sub-groups). Unlike album_folders, membership here is
+-- NOT exclusive: a person/character may belong to any number of groups at
+-- once, so add/remove operations never evict other memberships.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS person_groups (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    name      TEXT NOT NULL,
+    parent_id INTEGER REFERENCES person_groups(id) ON DELETE CASCADE,
+    position  INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS person_group_members (
+    group_id  INTEGER NOT NULL REFERENCES person_groups(id) ON DELETE CASCADE,
+    person_id INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+    position  INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (group_id, person_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_person_group_members_person ON person_group_members(person_id);
+
+-- Parallel group tree for stylised characters. Mirrors person_groups exactly.
+CREATE TABLE IF NOT EXISTS character_groups (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    name      TEXT NOT NULL,
+    parent_id INTEGER REFERENCES character_groups(id) ON DELETE CASCADE,
+    position  INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS character_group_members (
+    group_id     INTEGER NOT NULL REFERENCES character_groups(id) ON DELETE CASCADE,
+    character_id INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    position     INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (group_id, character_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_character_group_members_character ON character_group_members(character_id);
+
+-- ---------------------------------------------------------------------------
 -- Duplicate-finder bans. The user marked two photos as "not a duplicate" so the
 -- duplicate finder never groups that pair again. The pair is stored normalised
 -- (photo_a < photo_b). Either photo's deletion cascades the ban away.

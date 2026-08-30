@@ -278,10 +278,15 @@ enum Source {
     Person(i64, String),
     /// An unnamed face cluster (id, display name).
     Cluster(i64, String),
+    /// A person group (id, display name): every photo of every person
+    /// transitively in the group (its members plus sub-groups' members).
+    PersonGroup(i64, String),
     /// A stylised character (id, display name).
     Character(i64, String),
     /// An unnamed stylised face cluster (id, display name).
     StyleCluster(i64, String),
+    /// A character group (id, display name). Mirrors `PersonGroup`.
+    CharacterGroup(i64, String),
     /// An Immich album (server id, album uuid, display name). Not re-queryable
     /// from the local database; a reload refetches over HTTP through the caller.
     #[allow(dead_code)] // Fields document the album payload.
@@ -1163,7 +1168,7 @@ impl Grid {
     pub fn is_style_source(&self) -> bool {
         matches!(
             *self.source.borrow(),
-            Source::Character(..) | Source::StyleCluster(..)
+            Source::Character(..) | Source::StyleCluster(..) | Source::CharacterGroup(..)
         )
     }
 
@@ -1174,7 +1179,12 @@ impl Grid {
     pub fn is_face_source(&self) -> bool {
         matches!(
             *self.source.borrow(),
-            Source::Person(..) | Source::Cluster(..) | Source::Character(..) | Source::StyleCluster(..)
+            Source::Person(..)
+                | Source::Cluster(..)
+                | Source::PersonGroup(..)
+                | Source::Character(..)
+                | Source::StyleCluster(..)
+                | Source::CharacterGroup(..)
         )
     }
 
@@ -1244,6 +1254,16 @@ impl Grid {
         self.set_photos(name, photos);
     }
 
+    /// Show every photo of every person transitively in a group (its own
+    /// members plus every sub-group's members), remembering the group as the
+    /// source so the grid can re-query after membership changes.
+    pub fn show_person_group(&self, group_id: i64, name: &str) {
+        *self.source.borrow_mut() = Source::PersonGroup(group_id, name.to_string());
+        let photos = self.lib.photos_of_person_group(group_id).unwrap_or_default();
+        self.load_face_boxes(&photos, false);
+        self.set_photos(name, photos);
+    }
+
     /// Show every photo in an unnamed face cluster, remembering the cluster as
     /// the source so the grid can re-query after a new scan.
     pub fn show_cluster(&self, cluster_id: i64, name: &str) {
@@ -1257,6 +1277,18 @@ impl Grid {
     pub fn show_character(&self, character_id: i64, name: &str) {
         *self.source.borrow_mut() = Source::Character(character_id, name.to_string());
         let photos = self.lib.photos_of_character(character_id).unwrap_or_default();
+        self.load_face_boxes(&photos, true);
+        self.set_photos(name, photos);
+    }
+
+    /// Show every photo of every character transitively in a group (its own
+    /// members plus every sub-group's members).
+    pub fn show_character_group(&self, group_id: i64, name: &str) {
+        *self.source.borrow_mut() = Source::CharacterGroup(group_id, name.to_string());
+        let photos = self
+            .lib
+            .photos_of_character_group(group_id)
+            .unwrap_or_default();
         self.load_face_boxes(&photos, true);
         self.set_photos(name, photos);
     }
@@ -1365,12 +1397,20 @@ impl Grid {
                 let photos = self.lib.photos_in_cluster(id).unwrap_or_default();
                 self.set_photos_preserving(&name, photos);
             }
+            Source::PersonGroup(id, name) => {
+                let photos = self.lib.photos_of_person_group(id).unwrap_or_default();
+                self.set_photos_preserving(&name, photos);
+            }
             Source::Character(id, name) => {
                 let photos = self.lib.photos_of_character(id).unwrap_or_default();
                 self.set_photos_preserving(&name, photos);
             }
             Source::StyleCluster(id, name) => {
                 let photos = self.lib.photos_in_style_cluster(id).unwrap_or_default();
+                self.set_photos_preserving(&name, photos);
+            }
+            Source::CharacterGroup(id, name) => {
+                let photos = self.lib.photos_of_character_group(id).unwrap_or_default();
                 self.set_photos_preserving(&name, photos);
             }
             Source::None => {}

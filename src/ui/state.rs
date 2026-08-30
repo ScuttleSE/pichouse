@@ -455,6 +455,20 @@ impl AppState {
             .set_message(&format!("{name} — {count} faces"));
     }
 
+    /// Show every photo of every person transitively in a group.
+    pub fn show_person_group(self: &Rc<Self>, group_id: i64, name: &str) {
+        *self.current_folder.borrow_mut() = 0;
+        self.grid().show_person_group(group_id, name);
+        let count = self.lib.person_group_face_count(group_id).unwrap_or(0);
+        {
+            let this = self.clone();
+            self.grid().set_back(move || this.show_faces());
+        }
+        self.show_grid();
+        self.status()
+            .set_message(&format!("{name} — {count} faces"));
+    }
+
     /// Show every photo in an unnamed face cluster, with a back button to the
     /// Faces view.
     pub fn show_cluster(self: &Rc<Self>, cluster_id: i64, name: &str) {
@@ -497,6 +511,20 @@ impl AppState {
         *self.current_folder.borrow_mut() = 0;
         self.grid().show_character(character_id, name);
         let count = self.lib.character_face_count(character_id).unwrap_or(0);
+        {
+            let this = self.clone();
+            self.grid().set_back(move || this.show_characters());
+        }
+        self.show_grid();
+        self.status()
+            .set_message(&format!("{name} — {count} faces"));
+    }
+
+    /// Show every photo of every character transitively in a group.
+    pub fn show_character_group(self: &Rc<Self>, group_id: i64, name: &str) {
+        *self.current_folder.borrow_mut() = 0;
+        self.grid().show_character_group(group_id, name);
+        let count = self.lib.character_group_face_count(group_id).unwrap_or(0);
         {
             let this = self.clone();
             self.grid().set_back(move || this.show_characters());

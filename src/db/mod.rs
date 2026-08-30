@@ -4,6 +4,7 @@
 //! (thumbnail blobs).
 
 mod albums;
+mod character_groups;
 mod config;
 mod duplicates;
 mod edits;
@@ -12,6 +13,7 @@ mod faces;
 mod immich;
 mod immich_thumbs;
 mod library;
+mod person_groups;
 mod presets;
 mod style_face_thumbs;
 mod style_faces;
