@@ -13,9 +13,9 @@
   "11": "AppState",
   "12": "facescan.rs",
   "13": "Client",
-  "14": "CharactersView",
+  "14": "Properties",
   "15": "reconcile.rs",
-  "16": "Properties",
+  "16": "CharactersView",
   "17": "settings.rs",
   "18": "Grid",
   "19": "face/cluster.rs",
@@ -42,7 +42,7 @@
   "40": ".new",
   "41": "Prefs",
   "42": "opencode.json",
-  "43": "Result",
+  "43": "runtime.rs",
   "44": "enrich.rs",
   "45": "graphify.js",
   "46": "StatusBar",
@@ -59,7 +59,7 @@
   "57": "name_cluster_dialog",
   "58": "Config",
   "59": "parse_log_level",
-  "60": "LevelPreset",
+  "60": "albumscan.rs",
   "61": "inference_test.rs",
   "62": "FolderTree",
   "63": "HANDOFF.md",
@@ -110,5 +110,5 @@
   "108": "ui/mod.rs",
   "109": "FaceConfig",
   "110": "StyleFaceConfig",
-  "112": "VirtualRule"
+  "111": "settings_characters.rs"
 }
