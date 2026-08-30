@@ -191,10 +191,9 @@ where
     }
     let total = needs.len();
     super::enrich::enqueue_ids(state, needs);
-    show_message(
-        state,
-        "Face detection",
+    state.status().set_message_transient(
         &format!("Generating thumbnails for {total} photo(s) before scanning for faces…"),
+        3,
     );
     let state = state.clone();
     let mut then = Some(then);

@@ -60,16 +60,7 @@ pub fn enqueue_visible(state: &Rc<AppState>, ids: Vec<i64>) {
     if ids.is_empty() {
         return;
     }
-    {
-        let mut q = state.enrich_queue.lock().unwrap();
-        let present: std::collections::HashSet<i64> = q.iter().copied().collect();
-        // Push to the front, preserving order, skipping ids already queued.
-        for id in ids.into_iter().rev() {
-            if !present.contains(&id) {
-                q.push_front(id);
-            }
-        }
-    }
+    prepend_ids(state, ids);
     start_if_idle(state);
 }
 
@@ -139,14 +130,16 @@ pub fn rescan_folder(state: &Rc<AppState>, folder_id: i64) {
     start_if_idle(state);
 }
 
-/// Queue explicit photo ids for enrichment and start the pool if idle. Used by
-/// face-scan actions that must enrich specific photos (so their thumbnails
-/// and hashes exist) before scanning them for faces.
+/// Queue explicit photo ids for enrichment at the FRONT of the worklist and
+/// start the pool if idle. Used by face-scan actions that must enrich
+/// specific photos (so their thumbnails and hashes exist) before scanning
+/// them for faces; jumping the queue keeps a single folder's face scan from
+/// being starved behind an already-running whole-library bulk pass.
 pub fn enqueue_ids(state: &Rc<AppState>, ids: Vec<i64>) {
     if ids.is_empty() {
         return;
     }
-    append_ids(state, ids);
+    prepend_ids(state, ids);
     start_if_idle(state);
 }
 
@@ -160,6 +153,21 @@ fn append_ids(state: &Rc<AppState>, ids: Vec<i64>) {
     for id in ids {
         if !present.contains(&id) {
             q.push_back(id);
+        }
+    }
+}
+
+/// Push ids to the front of the shared worklist, preserving their relative
+/// order and skipping ids already queued.
+fn prepend_ids(state: &Rc<AppState>, ids: Vec<i64>) {
+    if ids.is_empty() {
+        return;
+    }
+    let mut q = state.enrich_queue.lock().unwrap();
+    let present: std::collections::HashSet<i64> = q.iter().copied().collect();
+    for id in ids.into_iter().rev() {
+        if !present.contains(&id) {
+            q.push_front(id);
         }
     }
 }

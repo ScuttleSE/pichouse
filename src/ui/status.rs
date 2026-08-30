@@ -66,6 +66,23 @@ impl StatusBar {
         self.message.set_text(msg);
     }
 
+    /// Set the status message, then revert it to "Ready" after `secs` seconds
+    /// unless something else (e.g. enrichment progress) has already changed
+    /// it in the meantime.
+    pub fn set_message_transient(&self, msg: &str, secs: u64) {
+        self.set_message(msg);
+        let label = self.message.clone();
+        let shown = msg.to_string();
+        gtk4::glib::source::timeout_add_local_once(
+            std::time::Duration::from_secs(secs),
+            move || {
+                if label.text() == shown {
+                    label.set_text("Ready");
+                }
+            },
+        );
+    }
+
     /// Show or hide the Stop button.
     pub fn set_scanning(&self, scanning: bool) {
         self.stop.set_visible(scanning);
