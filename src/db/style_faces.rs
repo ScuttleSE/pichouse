@@ -313,6 +313,19 @@ impl Library {
         Ok(())
     }
 
+    /// Give a character a default cover face, but only if they don't already
+    /// have one. Used when a cluster of stylised faces is folded into a
+    /// character (a brand-new character still needs an initial cover; an
+    /// existing one must keep whatever the user already chose).
+    pub fn set_character_cover_if_unset(&self, id: i64, face_id: i64) -> Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "UPDATE characters SET cover_face_id = ?2 WHERE id = ?1 AND cover_face_id IS NULL",
+            params![id, face_id],
+        )?;
+        Ok(())
+    }
+
     /// Delete a character. Their faces keep their rows but lose the link.
     pub fn delete_character(&self, id: i64) -> Result<()> {
         let conn = self.lock();
@@ -776,5 +789,34 @@ mod tests {
 
         let ids = lib.photo_ids_in_style_cluster(42).unwrap();
         assert_eq!(ids, vec![p_pending]);
+    }
+
+    #[test]
+    fn cover_if_unset_fills_gap_but_not_an_existing_choice() {
+        let lib = temp_lib();
+        let p1 = add_photo(&lib, "i");
+        let f1 = lib
+            .insert_style_face(&StyleFace {
+                photo_id: p1,
+                embedding: vec![1.0],
+                ..Default::default()
+            })
+            .unwrap();
+        let f2 = lib
+            .insert_style_face(&StyleFace {
+                photo_id: p1,
+                embedding: vec![1.0],
+                ..Default::default()
+            })
+            .unwrap();
+        let a = lib.create_character("A").unwrap();
+
+        // No cover yet: the fallback fills it in.
+        lib.set_character_cover_if_unset(a, f1).unwrap();
+        assert_eq!(lib.character_representative_face(a).unwrap(), f1);
+
+        // Already covered: a later merge's fallback must not replace it.
+        lib.set_character_cover_if_unset(a, f2).unwrap();
+        assert_eq!(lib.character_representative_face(a).unwrap(), f1);
     }
 }

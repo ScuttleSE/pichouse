@@ -35,9 +35,11 @@ fn assign_cluster_to_person(
             .set_face_person(f.id, person_id)
             .map_err(|e| e.to_string())?;
     }
-    // Give the person a cover face from the cluster.
+    // Give the person a default cover face from the cluster, but only if
+    // they don't already have one — merging into an existing person must
+    // not clobber a cover the user already chose.
     if let Some(first) = faces.first() {
-        let _ = state.lib.set_person_cover(person_id, first.id);
+        let _ = state.lib.set_person_cover_if_unset(person_id, first.id);
     }
     Ok(())
 }

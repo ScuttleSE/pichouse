@@ -56,8 +56,10 @@ fn assign_style_cluster_to_character(
     assign_style_faces_to_character(state, &face_ids, character_id)
 }
 
-/// Assign the given stylised faces to a character, then set the character's
-/// cover to the first face (callers pass faces already ordered best-first).
+/// Assign the given stylised faces to a character, then give the character a
+/// default cover from the first face (callers pass faces already ordered
+/// best-first) — but only if they don't already have one, so assigning more
+/// faces to an existing character never clobbers a cover the user chose.
 fn assign_style_faces_to_character(
     state: &Rc<AppState>,
     face_ids: &[i64],
@@ -70,7 +72,7 @@ fn assign_style_faces_to_character(
             .map_err(|e| e.to_string())?;
     }
     if let Some(&first) = face_ids.first() {
-        let _ = state.lib.set_character_cover(character_id, first);
+        let _ = state.lib.set_character_cover_if_unset(character_id, first);
     }
     Ok(())
 }

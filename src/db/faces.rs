@@ -344,6 +344,19 @@ impl Library {
         Ok(())
     }
 
+    /// Give a person a default cover face, but only if they don't already
+    /// have one. Used when a cluster of faces is folded into a person (a
+    /// brand-new person still needs an initial cover; an existing one must
+    /// keep whatever the user already chose).
+    pub fn set_person_cover_if_unset(&self, id: i64, face_id: i64) -> Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "UPDATE persons SET cover_face_id = ?2 WHERE id = ?1 AND cover_face_id IS NULL",
+            params![id, face_id],
+        )?;
+        Ok(())
+    }
+
     /// Delete a person. Their faces keep their rows but lose the person link
     /// (the schema sets `person_id` to NULL on delete).
     pub fn delete_person(&self, id: i64) -> Result<()> {
@@ -815,6 +828,35 @@ mod tests {
         lib.delete_all_face_data().unwrap();
         assert!(lib.faces_for_photo(p1).unwrap().is_empty());
         assert!(lib.persons().unwrap().is_empty());
+    }
+
+    #[test]
+    fn cover_if_unset_fills_gap_but_not_an_existing_choice() {
+        let lib = temp_lib();
+        let p1 = add_photo(&lib, "g");
+        let f1 = lib
+            .insert_face(&Face {
+                photo_id: p1,
+                embedding: vec![1.0],
+                ..Default::default()
+            })
+            .unwrap();
+        let f2 = lib
+            .insert_face(&Face {
+                photo_id: p1,
+                embedding: vec![1.0],
+                ..Default::default()
+            })
+            .unwrap();
+        let a = lib.create_person("A").unwrap();
+
+        // No cover yet: the fallback fills it in.
+        lib.set_person_cover_if_unset(a, f1).unwrap();
+        assert_eq!(lib.person_representative_face(a).unwrap(), f1);
+
+        // Already covered: a later merge's fallback must not replace it.
+        lib.set_person_cover_if_unset(a, f2).unwrap();
+        assert_eq!(lib.person_representative_face(a).unwrap(), f1);
     }
 }
 
