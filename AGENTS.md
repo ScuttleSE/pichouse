@@ -88,7 +88,8 @@ The version format is major.minor.build. The series starts at 0.0.0.
   version bump, the build, and the release for such a push.
 - CI commits the new version back with `[skip ci]` in the message.
 - Do not increase the build number by hand.
-- CI keeps one rolling pre-release from the latest `main` build.
+- CI keeps one rolling pre-release from the latest `main` build. CI mirrors it
+  to GitHub (`ScuttleSE/pichouse`) too, under the `rolling` tag.
 
 ### Named release
 
@@ -96,16 +97,20 @@ A named release is a permanent release on the release page. It also mirrors the
 code and the release to GitHub (`ScuttleSE/pichouse`).
 
 - The user asks for a named release and gives the exact version `X.Y.Z`.
-- Create the tag and push it. Run `git tag vX.Y.Z`. Run `git push origin vX.Y.Z`.
-- The tag push starts `.gitea/workflows/release.yaml`.
+- Run `.gitea/workflows/release.yaml` manually from the Gitea Actions UI:
+  Actions -> Named release -> Run workflow -> enter `X.Y.Z` -> Run.
+- Do not `git tag`/`git push` a version tag. The workflow tags the release
+  itself. A tag-push trigger existed before but stopped creating any Actions
+  run at all (a server-side bug, unresolved — see the note at the top of
+  `release.yaml`), so `workflow_dispatch` is the only reliable path.
 - The workflow writes `X.Y.Z` into `Cargo.toml` on `main`. It commits the change
   back with `[skip ci]`.
 - The workflow builds, tests, and publishes a Gitea release with the binary.
-- The workflow pushes the commit and the tag to GitHub. It publishes a GitHub
-  release with the binary.
+- The workflow pushes a filtered snapshot and the tag to GitHub. It publishes a
+  GitHub release with the binary.
 - The GitHub push needs a `GH_TOKEN` secret in the Gitea repo settings. The
   token is a GitHub PAT with `contents: write` on `ScuttleSE/pichouse`.
-- Do not push a tag without the user's request.
+- Do not run a named release without the user's request.
 
 ---
 
@@ -319,9 +324,13 @@ Reuse this pattern for the Immich client.
 
 `.gitea/workflows/build.yaml` builds on push to `main` on the `debian-go` runner,
 reads the version from `Cargo.toml`, runs `cargo test --release` and `cargo build
---release`, and publishes a rolling pre-release. Build-only — it does not launch
+--release`, and publishes a rolling pre-release on both Gitea and GitHub
+(`ScuttleSE/pichouse`, under the `rolling` tag). Build-only — it does not launch
 the GUI. The runner host must have the system prerequisites installed (see above)
 plus a Rust toolchain (`cargo`).
+
+`.gitea/workflows/release.yaml` is manual only (`workflow_dispatch`, run from
+the Gitea Actions UI with a version input) — see RULE THREE, Named release.
 
 ## Conventions
 
