@@ -61,6 +61,33 @@ impl Library {
         }))
     }
 
+    /// Edit records for a set of photos, keyed by `photo_id` (bulk form of
+    /// `photo_edit`, for warming a grid's texture cache in one query instead
+    /// of one per photo). A photo absent from the map is unedited, same
+    /// convention as `photo_edit`. Uses `read_lock()` so this never contends
+    /// with a background scan/enrich holding the writer lock (see
+    /// `Library::lock`'s doc comment on multi-second UI freezes).
+    pub fn photo_edits_for_photos(
+        &self,
+        photo_ids: &[i64],
+    ) -> Result<std::collections::HashMap<i64, PhotoEdit>> {
+        let mut out = std::collections::HashMap::new();
+        if photo_ids.is_empty() {
+            return Ok(out);
+        }
+        let conn = self.read_lock();
+        let placeholders = photo_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!("SELECT {EDIT_COLS} FROM photo_edits WHERE photo_id IN ({placeholders})");
+        let mut stmt = conn.prepare(&sql)?;
+        let ps: Vec<&dyn rusqlite::ToSql> = photo_ids.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+        let rows = stmt.query_map(ps.as_slice(), map_edit)?;
+        for row in rows {
+            let edit = row?;
+            out.insert(edit.photo_id, edit);
+        }
+        Ok(out)
+    }
+
     /// Insert or replace the whole edit record for a photo, bumping `edit_rev`.
     /// If the edit is the identity (no visible change), the row is removed
     /// instead so unedited photos keep no row.

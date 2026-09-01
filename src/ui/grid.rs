@@ -533,11 +533,16 @@ impl Grid {
         let pause_for_apply = pause_until.clone();
         done_rx.attach(None, move |done: Done| {
             if done.generation == gen_for_apply.load(Ordering::Relaxed) {
-                if let Some(obj) = pending_for_apply.borrow_mut().remove(&done.key) {
-                    if let Some(texture) = decode_texture(&done.blob) {
-                        cache_for_apply
-                            .borrow_mut()
-                            .put(done.key.clone(), texture.clone());
+                if let Some(texture) = decode_texture(&done.blob) {
+                    // Cache unconditionally, even if the cell that requested
+                    // this decode has since scrolled out of view and unbound
+                    // (see `drop_pending_for`): a fully-decoded texture must
+                    // never be thrown away, so a later re-bind of the same
+                    // cell is a cache hit instead of a fresh decode.
+                    cache_for_apply
+                        .borrow_mut()
+                        .put(done.key.clone(), texture.clone());
+                    if let Some(obj) = pending_for_apply.borrow_mut().remove(&done.key) {
                         obj.set_texture(Some(texture));
                         // A thumbnail for the current view just landed: keep the
                         // background scan/enrichment paused so the UI keeps the
@@ -779,7 +784,7 @@ impl Grid {
             let Some(obj) = self.store.item(i as u32).and_downcast::<PhotoObject>() else {
                 continue;
             };
-            self.ensure_thumb_for(&obj);
+            self.ensure_thumb_for(&obj, Some(i));
             if obj.hash().is_empty() && !obj.path().is_empty() && obj.id() != 0 {
                 enrich_ids.push(obj.id());
             }
@@ -1558,6 +1563,8 @@ impl Grid {
         let size = self.thumb_size.get();
         self.header
             .set_text(&format!("{}  ({})", self.title.borrow(), filtered.len()));
+        let ids: Vec<i64> = filtered.iter().map(|p| p.id).collect();
+        let edits = self.lib.photo_edits_for_photos(&ids).unwrap_or_default();
         for (i, p) in filtered.iter().enumerate() {
             let Some(obj) = self.store.item(i as u32).and_downcast::<PhotoObject>() else {
                 continue;
@@ -1577,7 +1584,7 @@ impl Grid {
             if obj.texture().is_some() {
                 continue;
             }
-            let edit = self.lib.photo_edit(p.id).unwrap_or_default();
+            let edit = edits.get(&p.id).cloned().unwrap_or_default();
             let key = cell_key(p, size, &edit);
             if let Some(texture) = self.tex_cache.borrow_mut().get(&key) {
                 obj.set_texture(Some(texture));
@@ -1630,33 +1637,46 @@ impl Grid {
         (start, end)
     }
 
+    /// Whether a store index falls within the current visible index window.
+    fn index_visible(&self, i: usize) -> bool {
+        let (start, end) = self.visible_index_range();
+        i >= start && i < end
+    }
+
     /// Whether a photo object is within the current visible index window. When
     /// the geometry is not ready, treats the fallback first-screen as visible.
+    /// O(n) (`store.find`): prefer `ensure_thumb_for` with an explicit index
+    /// when the caller already has one (e.g. from a `store.item(i)` loop).
     fn is_object_visible(&self, obj: &PhotoObject) -> bool {
-        let (start, end) = self.visible_index_range();
-        if let Some(i) = self.store.find(obj) {
-            let i = i as usize;
-            i >= start && i < end
-        } else {
-            false
-        }
+        self.store
+            .find(obj)
+            .map(|i| self.index_visible(i as usize))
+            .unwrap_or(false)
     }
 
     /// Ensure a thumbnail exists for a cell that just scrolled into view.
     ///
     /// This is the demand-driven path: the factory `bind` calls it for every
     /// cell GTK realises. Because GTK can bind the whole model, the work is
-    /// gated by `is_object_visible` so only the on-screen window (plus a small
-    /// margin) is decoded. It serves the in-memory texture cache first, and only
-    /// sends a worker job when the cell has no texture yet.
-    fn ensure_thumb_for(&self, obj: &PhotoObject) {
+    /// gated by visibility so only the on-screen window (plus a small margin)
+    /// is decoded. It serves the in-memory texture cache first, and only sends
+    /// a worker job when the cell has no texture yet.
+    ///
+    /// `index`, when the caller already knows the cell's store position (e.g.
+    /// `ListItem::position()` or a `store.item(i)` loop), avoids an O(n)
+    /// `store.find` lookup.
+    fn ensure_thumb_for(&self, obj: &PhotoObject, index: Option<usize>) {
         // Nothing to do in duplicate mode (that path renders its own cells).
         if self.dup_mode.get() {
             return;
         }
         // Gate to the visible window so a full-model bind pass does not queue a
         // decode job for every photo in a large folder.
-        if !self.is_object_visible(obj) {
+        let visible = match index {
+            Some(i) => self.index_visible(i),
+            None => self.is_object_visible(obj),
+        };
+        if !visible {
             return;
         }
         // Rebuild the minimal Photo fields the job needs from the object.
@@ -1852,8 +1872,10 @@ impl Grid {
         self.header
             .set_text(&format!("{}  ({})", self.title.borrow(), photos.len()));
 
+        let ids: Vec<i64> = photos.iter().map(|p| p.id).collect();
+        let edits = self.lib.photo_edits_for_photos(&ids).unwrap_or_default();
         for (p, obj) in photos.iter().zip(objs) {
-            let edit = self.lib.photo_edit(p.id).unwrap_or_default();
+            let edit = edits.get(&p.id).cloned().unwrap_or_default();
             let key = cell_key(p, size, &edit);
             // Serve from the in-memory texture cache when available, skipping a
             // worker job and JPEG decode entirely. Cells that are not cached are
@@ -2029,7 +2051,7 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
         // realised (visible range + GridView overscan). When the cell scrolls
         // away, unbind marks the job stale so the worker pool drops it.
         if let Some(grid) = grid.upgrade() {
-            grid.ensure_thumb_for(&photo);
+            grid.ensure_thumb_for(&photo, Some(item.position() as usize));
             // Viewport enrichment: an on-screen photo with no hash is not yet
             // enriched, so request enrichment for just this cell. Enrichment
             // never runs library-wide on its own; it follows what is viewed.

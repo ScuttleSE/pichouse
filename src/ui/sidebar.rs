@@ -132,6 +132,14 @@ pub struct Sidebar {
     list_view: ListView,
     data: RefCell<TreeData>,
     expanded: RefCell<std::collections::HashSet<String>>,
+    /// Ids marked for auto-expansion since the last `reload`. `mark_expanded`
+    /// writes here instead of `expanded` directly, because callers invoke it
+    /// synchronously (e.g. a dialog's OK handler) before `reload_deferred`'s
+    /// `idle_add_local_once` callback actually runs `reload` — and `reload`'s
+    /// `save_expansion` would otherwise resync `expanded` from the still-stale
+    /// live row state and silently drop the request. Drained into `expanded` by
+    /// `reload`, after `save_expansion` and before `restore_expansion`.
+    pending_reveal: RefCell<std::collections::HashSet<String>>,
     state: RefCell<Option<Rc<AppState>>>,
     /// A shared per-right-click popover (rebuilt each time).
     menu_pop: RefCell<Option<PopoverMenu>>,
@@ -261,6 +269,7 @@ impl Sidebar {
                 list_view,
                 data: RefCell::new(TreeData::default()),
                 expanded: RefCell::new(std::collections::HashSet::new()),
+                pending_reveal: RefCell::new(std::collections::HashSet::new()),
                 state: RefCell::new(None),
                 menu_pop: RefCell::new(None),
                 weak_self: weak.clone(),
@@ -1080,6 +1089,13 @@ impl Sidebar {
         }
 
         self.save_expansion();
+        // Apply pending reveal requests now: after `save_expansion` has resynced
+        // `expanded` from the live (pre-rebuild) rows — which would otherwise drop
+        // an id `mark_expanded` added for a row that was still collapsed at the
+        // time (e.g. a virtual album's parent header, just created) — and before
+        // `restore_expansion` below reads `expanded` back to actually expand rows.
+        let pending: Vec<String> = self.pending_reveal.borrow_mut().drain().collect();
+        self.expanded.borrow_mut().extend(pending);
         *self.data.borrow_mut() = data;
 
         // Rebuild the root list: top-level albums, then New folders.
@@ -1313,7 +1329,7 @@ impl Sidebar {
     }
 
     fn mark_expanded(&self, id: &str) {
-        self.expanded.borrow_mut().insert(id.to_string());
+        self.pending_reveal.borrow_mut().insert(id.to_string());
     }
 
     // --- album operations ---
