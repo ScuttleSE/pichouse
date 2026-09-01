@@ -320,6 +320,10 @@ fn rule_clause(rule: &VirtualRule, params: &mut Vec<Box<dyn rusqlite::ToSql>>) -
             params.push(Box::new(format!("%{}%", rule.value)));
             "filename LIKE ? COLLATE NOCASE".to_string()
         }
+        RuleField::Path => {
+            params.push(Box::new(format!("%{}%", rule.value)));
+            "path LIKE ? COLLATE NOCASE".to_string()
+        }
         RuleField::Folder => {
             let fid: i64 = rule.value.parse().unwrap_or(0);
             params.push(Box::new(fid));
@@ -590,6 +594,59 @@ mod tests {
             al,
             RuleMatch::Or,
             &[rule(RuleField::Person, RuleOp::Has, "Alice")],
+        )
+        .unwrap();
+        let ids: Vec<i64> = lib
+            .photos_in_virtual_album(al)
+            .unwrap()
+            .iter()
+            .map(|x| x.id)
+            .collect();
+        assert_eq!(ids, vec![p1]);
+        assert!(!ids.contains(&p2));
+        cleanup(p);
+    }
+
+    #[test]
+    fn path_rule_matches_full_path_not_just_filename() {
+        let (lib, p) = temp_lib();
+        let fid = lib
+            .upsert_folder(&Folder {
+                path: "/tmp/vroot".into(),
+                name: "vroot".into(),
+                mtime: 0,
+                year: 2020,
+                ..Default::default()
+            })
+            .unwrap();
+        // p1 lives under a "Xennos" subdirectory that isn't part of its filename.
+        let p1 = lib
+            .upsert_photo(&Photo {
+                folder_id: fid,
+                path: "/tmp/vroot/Xennos/1001530 Extra Funding 3/test.png".into(),
+                filename: "test.png".into(),
+                taken_at: 100,
+                ..Default::default()
+            })
+            .unwrap();
+        let p2 = mk_photo(&lib, fid, "other.png", 200);
+
+        let al = lib.create_virtual_album("Xennos", 0).unwrap();
+
+        // "Filename contains" cannot see the directory component.
+        lib.set_virtual_album_rules(
+            al,
+            RuleMatch::Or,
+            &[rule(RuleField::Filename, RuleOp::Contains, "Xennos")],
+        )
+        .unwrap();
+        assert!(lib.photos_in_virtual_album(al).unwrap().is_empty());
+
+        // "Path contains" matches on the full path.
+        lib.set_virtual_album_rules(
+            al,
+            RuleMatch::Or,
+            &[rule(RuleField::Path, RuleOp::Contains, "Xennos")],
         )
         .unwrap();
         let ids: Vec<i64> = lib

@@ -377,6 +377,8 @@ pub enum RuleField {
     DateTo,
     /// Filename substring (case-insensitive). `value` is the substring.
     Filename,
+    /// Full file path substring (case-insensitive). `value` is the substring.
+    Path,
     /// Owning folder id. `value` is the folder id.
     Folder,
     /// A named person the photo contains. `value` is the person name.
@@ -390,6 +392,7 @@ impl RuleField {
             RuleField::DateFrom => "date_from",
             RuleField::DateTo => "date_to",
             RuleField::Filename => "filename",
+            RuleField::Path => "path",
             RuleField::Folder => "folder",
             RuleField::Person => "person",
         }
@@ -401,6 +404,7 @@ impl RuleField {
             "date_from" => RuleField::DateFrom,
             "date_to" => RuleField::DateTo,
             "filename" => RuleField::Filename,
+            "path" => RuleField::Path,
             "folder" => RuleField::Folder,
             "person" => RuleField::Person,
             _ => RuleField::Tag,
