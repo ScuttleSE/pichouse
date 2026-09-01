@@ -1,8 +1,8 @@
 {
   "Cargo.toml": {
-    "mtime": 1788183176.1966112,
-    "seen": 1788241416.479439,
-    "ast_hash": "507ff1e8273246eee9a52532ae84970a",
+    "mtime": 1788111901.3310666,
+    "seen": 1788149213.5952246,
+    "ast_hash": "e88c8de5731f7ca3df035bd8b3624ecc",
     "semantic_hash": ""
   },
   "src/ai/client.rs": {
@@ -132,9 +132,9 @@
     "semantic_hash": "5f9c755af8411ce87b042b36f9c801ff"
   },
   "src/db/virtual_albums.rs": {
-    "mtime": 1788241375.7439058,
-    "seen": 1788241416.480161,
-    "ast_hash": "489d3d01339888f922b9d9ad5c9c6789",
+    "mtime": 1788008200.2595177,
+    "seen": 1788008704.2012112,
+    "ast_hash": "7bc8f69c7e6f1645c291e88911d7e7fd",
     "semantic_hash": ""
   },
   "src/dedup.rs": {
@@ -216,9 +216,9 @@
     "semantic_hash": "3b623d61ae28189cef146abb12de92de"
   },
   "src/model.rs": {
-    "mtime": 1788241345.0359235,
-    "seen": 1788241416.4805684,
-    "ast_hash": "6c823a3d3979d71c3d1f0091fffdc42c",
+    "mtime": 1788110884.039723,
+    "seen": 1788111689.2666035,
+    "ast_hash": "af1d5ec8e6b82b7d9a29512988d907ed",
     "semantic_hash": ""
   },
   "src/phash.rs": {
@@ -528,10 +528,10 @@
     "semantic_hash": ""
   },
   "src/ui/vrules.rs": {
-    "mtime": 1788241353.4679186,
-    "seen": 1788241416.4821782,
-    "ast_hash": "4281cf47ac101daecf5d3480172e1e91",
-    "semantic_hash": ""
+    "mtime": 1787897950.487191,
+    "seen": 1787995271.401823,
+    "ast_hash": "9157604ff2f76dc2c705d0465abd7aab",
+    "semantic_hash": "9157604ff2f76dc2c705d0465abd7aab"
   },
   "src/ui/watcher.rs": {
     "mtime": 1788010029.1744556,
@@ -546,21 +546,21 @@
     "semantic_hash": "854de8f19cc44087ff0606cf9b370680"
   },
   ".gitea/workflows/build.yaml": {
-    "mtime": 1788174862.8972743,
-    "seen": 1788241416.4822395,
-    "ast_hash": "f996b4ab0553e259b207c5abf96dc7f6",
+    "mtime": 1788067353.668786,
+    "seen": 1788068476.784277,
+    "ast_hash": "281046fb2ec13d8609e1a336a3255bb7",
     "semantic_hash": ""
   },
   ".gitea/workflows/release.yaml": {
-    "mtime": 1788183176.200611,
-    "seen": 1788241416.4822407,
-    "ast_hash": "82eff862ccdfc59a0b6422656380d32b",
-    "semantic_hash": ""
+    "mtime": 1787985553.4803133,
+    "seen": 1787995271.4018254,
+    "ast_hash": "2be728b9e82027a38d51695f422d2bdc",
+    "semantic_hash": "2be728b9e82027a38d51695f422d2bdc"
   },
   "AGENTS.md": {
-    "mtime": 1788183176.200611,
-    "seen": 1788241416.482242,
-    "ast_hash": "607e6dc11d5a9934830c144fe16485db",
+    "mtime": 1788003195.865967,
+    "seen": 1788005657.4373543,
+    "ast_hash": "3441196a1cf4a026d53733d31c30082c",
     "semantic_hash": ""
   },
   "HANDOFF.md": {
