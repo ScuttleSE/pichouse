@@ -230,6 +230,30 @@ fn migrate(conn: &Connection) -> Result<()> {
             )?;
         }
     }
+    // virtual_album_rules.group_id: optional membership in a one-level rule
+    // group (virtual_album_rule_groups). NULL = top-level rule. Added after
+    // the rules table's initial release.
+    {
+        let mut vr: std::collections::HashSet<String> = std::collections::HashSet::new();
+        {
+            let mut stmt = conn.prepare("PRAGMA table_info(virtual_album_rules)")?;
+            let rows = stmt.query_map([], |r| r.get::<_, String>(1))?;
+            for name in rows {
+                vr.insert(name?);
+            }
+        }
+        if !vr.contains("group_id") {
+            conn.execute_batch(
+                "ALTER TABLE virtual_album_rules ADD COLUMN group_id INTEGER \
+                 REFERENCES virtual_album_rule_groups(id) ON DELETE CASCADE;",
+            )?;
+        }
+        // The column is now guaranteed to exist (freshly created by SCHEMA,
+        // or just added above), so the index is safe to create here.
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_var_group ON virtual_album_rules(group_id);",
+        )?;
+    }
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_photos_scan_state ON photos(scan_state);",
     )?;

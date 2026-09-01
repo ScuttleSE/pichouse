@@ -383,6 +383,8 @@ pub enum RuleField {
     Folder,
     /// A named person the photo contains. `value` is the person name.
     Person,
+    /// A named character the photo contains. `value` is the character name.
+    Character,
 }
 
 impl RuleField {
@@ -395,6 +397,7 @@ impl RuleField {
             RuleField::Path => "path",
             RuleField::Folder => "folder",
             RuleField::Person => "person",
+            RuleField::Character => "character",
         }
     }
 
@@ -407,6 +410,7 @@ impl RuleField {
             "path" => RuleField::Path,
             "folder" => RuleField::Folder,
             "person" => RuleField::Person,
+            "character" => RuleField::Character,
             _ => RuleField::Tag,
         }
     }
@@ -458,6 +462,17 @@ pub struct VirtualRule {
     pub field: RuleField,
     pub op: RuleOp,
     pub value: String,
+}
+
+/// One group of an album's rules, combined by its own AND/OR mode; the group
+/// as a whole is a single term in the owning album's top-level `rule_match`.
+/// Groups do not nest — a group cannot contain another group.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleGroup {
+    /// `0` for an unsaved group.
+    pub id: i64,
+    pub rule_match: RuleMatch,
+    pub rules: Vec<VirtualRule>,
 }
 
 /// A remote Immich server the user connects to. pichouse reads albums and

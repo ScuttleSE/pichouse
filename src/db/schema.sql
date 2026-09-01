@@ -147,19 +147,35 @@ CREATE TABLE IF NOT EXISTS virtual_album_photos (
 
 CREATE INDEX IF NOT EXISTS idx_vap_photo ON virtual_album_photos(photo_id);
 
+-- Groups a subset of an album's rules so they combine with their own AND/OR
+-- mode into a single term of the album's top-level rule_match. One level
+-- only — a group cannot contain another group.
+CREATE TABLE IF NOT EXISTS virtual_album_rule_groups (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    album_id   INTEGER NOT NULL REFERENCES virtual_albums(id) ON DELETE CASCADE,
+    rule_match INTEGER NOT NULL DEFAULT 1   -- 0 = AND, 1 = OR
+);
+
+CREATE INDEX IF NOT EXISTS idx_varg_album ON virtual_album_rule_groups(album_id);
+
 -- Structured rules that drive smart membership. field/op/value describe one
--- condition; the owning album's rule_match combines them.
---   field: 'tag' | 'date_from' | 'date_to' | 'filename' | 'folder'
+-- condition; a NULL group_id means the rule is a top-level term combined by
+-- the owning album's rule_match, otherwise it's a member of that rule group.
+--   field: 'tag' | 'date_from' | 'date_to' | 'filename' | 'path' | 'folder' | 'person' | 'character'
 --   op:    'has' | 'gte' | 'lte' | 'contains' | 'eq'
 CREATE TABLE IF NOT EXISTS virtual_album_rules (
     id       INTEGER PRIMARY KEY AUTOINCREMENT,
     album_id INTEGER NOT NULL REFERENCES virtual_albums(id) ON DELETE CASCADE,
+    group_id INTEGER REFERENCES virtual_album_rule_groups(id) ON DELETE CASCADE,
     field    TEXT NOT NULL,
     op       TEXT NOT NULL,
     value    TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_var_album ON virtual_album_rules(album_id);
+-- idx_var_group is created in migrate() instead of here: on a pre-existing
+-- database this table exists without group_id until migrate() adds it, and
+-- an index on that column can't be created before the column exists.
 
 -- Non-destructive edits for a photo. One row per edited photo. Edits are never
 -- written to the original file on disk; they are applied at view time and when
