@@ -1,0 +1,47 @@
+//! GTK4 user interface for pichouse.
+
+mod actions;
+mod aitag;
+mod albumscan;
+mod albumtree;
+mod app;
+mod characters;
+mod charactersview;
+mod controller;
+mod dedup_scan;
+mod dialogs;
+mod editor;
+mod enrich;
+mod export;
+mod facescan;
+mod facesview;
+mod foldertree;
+mod freshness;
+mod grid;
+mod immich;
+ mod newfiles;
+ mod nftree;
+ mod people;
+mod photo_object;
+mod prefs;
+mod properties;
+mod settings;
+mod settings_ai;
+mod settings_faces;
+mod settings_characters;
+mod settings_immich;
+mod shortcuts;
+mod sidebar;
+mod state;
+mod status;
+mod stylefacescan;
+mod tagmanager;
+mod thumbcache;
+mod toolbar;
+mod util;
+mod viewer;
+mod vmenu;
+mod vrules;
+mod watcher;
+
+pub use app::run;
