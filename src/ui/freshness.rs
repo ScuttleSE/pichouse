@@ -30,8 +30,28 @@ enum Msg {
 /// enrichment and refresh the view. No-op if a reconciliation is already
 /// running (avoids overlapping walks; the next timer tick will catch up).
 pub fn reconcile_now(state: &Rc<AppState>) {
+    run_reconcile(state, false);
+}
+
+/// Tools > Scan for New Folders: run the same reconciliation on demand. It
+/// shows a status message at the start and reports an empty result.
+pub fn scan_new_folders(state: &Rc<AppState>) {
+    run_reconcile(state, true);
+}
+
+/// Shared reconcile run. `announce` adds start and empty-result messages; the
+/// periodic timer and "Refresh Library" stay silent when nothing changed.
+fn run_reconcile(state: &Rc<AppState>, announce: bool) {
     if state.reconcile_job.running() {
+        if announce {
+            state
+                .status()
+                .set_message("A library scan is already running.");
+        }
         return;
+    }
+    if announce {
+        state.status().set_message("Scanning for new folders");
     }
     let cancel = state.reconcile_job.begin();
     let (tx, rx) = glib::MainContext::channel::<Msg>(glib::Priority::DEFAULT);
@@ -86,6 +106,8 @@ pub fn reconcile_now(state: &Rc<AppState>) {
                 state
                     .status()
                     .set_message(&format!("Library updated: {}", parts.join(", ")));
+            } else if announce {
+                state.status().set_message("No new folders or files found.");
             }
             glib::ControlFlow::Continue
         });

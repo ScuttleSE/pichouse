@@ -19,13 +19,14 @@ pub fn build_toolbar(state: &Rc<AppState>) -> GtkBox {
         settings.connect_clicked(move |_| super::settings::show_settings(&state));
     }
 
-    // Tools menu button. Holds rescan, refresh, slideshow, AI tagging, and the
-    // duplicate finder.
+    // Tools menu button. Holds rescan, the new-folder scan, refresh, slideshow,
+    // AI tagging, and the duplicate finder.
     let tools_btn = compact_button("applications-utilities-symbolic", "Tools");
     let tools_menu = gio::Menu::new();
 
     let library_section = gio::Menu::new();
     library_section.append(Some("Rescan All Folders"), Some("tools.rescan"));
+    library_section.append(Some("Scan for New Folders"), Some("tools.scan_new_folders"));
     library_section.append(Some("Refresh Library"), Some("tools.refresh"));
     library_section.append(Some("Generate Thumbnails"), Some("tools.gen_thumbs"));
     tools_menu.append_section(None, &library_section);
@@ -79,6 +80,10 @@ pub fn build_toolbar(state: &Rc<AppState>) -> GtkBox {
     add_action("rescan", {
         let state = state.clone();
         Box::new(move || super::actions::rescan_all(&state))
+    });
+    add_action("scan_new_folders", {
+        let state = state.clone();
+        Box::new(move || super::freshness::scan_new_folders(&state))
     });
     add_action("refresh", {
         let state = state.clone();
