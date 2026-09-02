@@ -187,10 +187,18 @@ fn start_scan_worker(state: &Rc<AppState>) {
             let tx_folder = tx.clone();
             let lib_folder = lib.clone();
             let root_folder = path.clone();
-            // File each scanned directory into the Library album tree the moment
-            // its rows are written, so folders never linger under "New folders".
-            // A per-root mapper caches albums so this stays cheap.
-            let mut mapper = super::albumtree::DiskAlbumMapper::new(&lib_folder);
+            // Auto-file gate. A root's FIRST scan files every scanned directory
+            // into the Library album tree as the rows are written, so the
+            // initial import builds the disk-mirror tree. After that boundary,
+            // newly discovered folders stay unassigned and surface under the
+            // sidebar's "New folders" section, where the user files them by
+            // hand. The mapper is cached per root so first scans stay cheap.
+            let first_scan_done = lib_folder.root_first_scan_done(&path).unwrap_or(true);
+            let mut mapper = if first_scan_done {
+                None
+            } else {
+                Some(super::albumtree::DiskAlbumMapper::new(&lib_folder))
+            };
             // Start "already due" so the very first folder discovered still
             // appears immediately; every following refresh is throttled to
             // SCAN_TREE_REFRESH.
@@ -218,18 +226,21 @@ fn start_scan_worker(state: &Rc<AppState>) {
                 },
                 move |fid, dir| {
                     // Folder just recorded: file it into its disk-mirrored album
-                    // immediately, then refresh the sidebar every few folders so
-                    // the Library tree builds up live during the scan.
+                    // immediately (first scans only — see the gate above), then
+                    // refresh the sidebar every few folders so the Library tree
+                    // builds up live during the scan.
                     let folder = crate::model::Folder {
                         id: fid,
                         path: dir.to_string_lossy().into_owned(),
                         ..Default::default()
                     };
-                    let t = std::time::Instant::now();
-                    mapper.file(&lib_folder, &root_folder, &folder);
-                    let el = t.elapsed();
-                    if el.as_millis() >= 50 {
-                        log::debug!("mapper.file {} took {:.2?}", dir.display(), el);
+                    if let Some(mapper) = mapper.as_mut() {
+                        let t = std::time::Instant::now();
+                        mapper.file(&lib_folder, &root_folder, &folder);
+                        let el = t.elapsed();
+                        if el.as_millis() >= 50 {
+                            log::debug!("mapper.file {} took {:.2?}", dir.display(), el);
+                        }
                     }
                     // Throttled by wall-clock time, not folder count: a GTK
                     // mouse click is a press-then-release gesture resolved
@@ -261,9 +272,14 @@ fn start_scan_worker(state: &Rc<AppState>) {
                     // Record that this root's first scan is complete, so files
                     // added later count as "new".
                     let _ = lib.mark_first_scan_done(&path);
-                    // Safety-net sweep in case any folder was missed, then
-                    // refresh the sidebars.
-                    super::albumtree::sync_disk_tree(&lib, &path);
+                    // Safety-net sweep in case any folder was missed. First
+                    // scans only: `first_scan_done` was read before the walk,
+                    // so a first sweep still runs even though the boundary is
+                    // now stamped. Post-first-scan folders must stay in "New
+                    // folders".
+                    if !first_scan_done {
+                        super::albumtree::sync_disk_tree(&lib, &path);
+                    }
                     let _ = tx.send(Msg::ReloadOnly);
                 }
                 Err(ScanError::Cancelled(_)) => {

@@ -410,6 +410,21 @@ impl Library {
         Ok(())
     }
 
+    /// Whether a root's first full scan has completed (`first_scan_done_at` is
+    /// stamped). The scan worker uses this to decide whether newly discovered
+    /// folders are auto-filed into the disk-mirror album tree (first scan) or
+    /// left unassigned for the "New folders" section (later scans). Unknown
+    /// roots count as done, so a typo'd path cannot re-enable auto-filing.
+    pub fn root_first_scan_done(&self, root_path: &str) -> Result<bool> {
+        let conn = self.read_lock();
+        let stamp: i64 = conn.query_row(
+            "SELECT first_scan_done_at FROM library_folders WHERE path = ?1",
+            params![root_path],
+            |r| r.get(0),
+        )?;
+        Ok(stamp != 0)
+    }
+
     /// Root folders whose first scan never completed but which already hold at
     /// least one recorded photo. These are the roots an interrupted initial scan
     /// left partial. The UI offers to resume them at startup. A root with a zero
@@ -1082,6 +1097,23 @@ impl Library {
              FROM photos WHERE folder_id = ?1 ORDER BY taken_at ASC, filename ASC",
         )?;
         let rows = stmt.query_map(params![folder_id], map_photo)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// All photos in a directory and its subdirectories, ordered by taken date
+    /// then name. Backs the synthetic "New folders" directory nodes, which have
+    /// no folder row of their own.
+    pub fn photos_under_dir(&self, dir: &str) -> Result<Vec<Photo>> {
+        let sep = std::path::MAIN_SEPARATOR.to_string();
+        let prefix = format!("{}{}%", dir, sep);
+        let conn = self.read_lock();
+        let mut stmt = conn.prepare(
+            "SELECT p.id, p.folder_id, p.path, p.filename, p.size, p.mod_time, p.taken_at, p.width, p.height, p.hash, p.thumb_ready, p.orientation, p.ai_status, p.scan_state, p.missing, p.added_at, p.phash, p.skip_face_scan
+             FROM photos p JOIN folders f ON f.id = p.folder_id
+             WHERE (f.path = ?1 OR f.path LIKE ?2) AND p.missing = 0
+             ORDER BY p.taken_at ASC, p.filename ASC",
+        )?;
+        let rows = stmt.query_map(params![dir, prefix], map_photo)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 

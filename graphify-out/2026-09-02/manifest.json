@@ -1,8 +1,8 @@
 {
   "Cargo.toml": {
-    "mtime": 1788258672.3414195,
-    "seen": 1788279721.3243852,
-    "ast_hash": "6ab9ff2be0e7b1017178bf798c8908f3",
+    "mtime": 1788324641.3211513,
+    "seen": 1788325964.1188943,
+    "ast_hash": "a20e0eafc0771954894356a265d16408",
     "semantic_hash": ""
   },
   "src/ai/client.rs": {
@@ -294,8 +294,8 @@
     "semantic_hash": "7937ee931918e7b90ed711d717d9dace"
   },
   "src/ui/albumscan.rs": {
-    "mtime": 1788324563.8092067,
-    "seen": 1788324618.3367846,
+    "mtime": 1788324641.3611512,
+    "seen": 1788325964.120464,
     "ast_hash": "88e804c79caae4f6629f6899d9b8c86c",
     "semantic_hash": ""
   },
@@ -378,9 +378,9 @@
     "semantic_hash": "002cd6c12b9c344b4247cc3d9a81cc7b"
   },
   "src/ui/freshness.rs": {
-    "mtime": 1788010024.842458,
-    "seen": 1788010494.7227323,
-    "ast_hash": "b7d9369aeb95ed8d7a74032d8b279dac",
+    "mtime": 1788325861.6323292,
+    "seen": 1788325964.1208868,
+    "ast_hash": "4303a387fc031d4b83eb56344e32a9d7",
     "semantic_hash": ""
   },
   "src/ui/grid.rs": {
@@ -468,8 +468,8 @@
     "semantic_hash": "1d6427d13c23fc72c0b413776ccd6cce"
   },
   "src/ui/sidebar.rs": {
-    "mtime": 1788324593.8571851,
-    "seen": 1788324618.3376822,
+    "mtime": 1788324641.3611512,
+    "seen": 1788325964.121338,
     "ast_hash": "830699c3b40b29bc264852a072a53f8a",
     "semantic_hash": ""
   },
@@ -504,9 +504,9 @@
     "semantic_hash": "383c7004dd7b9ed9558904d8dfc31f80"
   },
   "src/ui/toolbar.rs": {
-    "mtime": 1788010307.1103063,
-    "seen": 1788010494.7232902,
-    "ast_hash": "b096c677339254623940eccc286b1f59",
+    "mtime": 1788325893.4403083,
+    "seen": 1788325964.1214976,
+    "ast_hash": "11f0e8fab47154d0f7900ed0eb4876b6",
     "semantic_hash": ""
   },
   "src/ui/util.rs": {

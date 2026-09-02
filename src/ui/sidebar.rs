@@ -104,6 +104,10 @@ struct TreeData {
     immich_albums: HashMap<i64, Vec<(String, String, i64)>>,
     /// Folder ids linked to an Immich album for auto-upload.
     immich_linked_folders: std::collections::HashSet<i64>,
+    /// The "New folders" tree: unassigned folders grouped by disk path, with
+    /// synthetic directory nodes for unfiled parents. Rebuilt in `reload` by
+    /// `nftree::build`.
+    nf_tree: Vec<super::nftree::NfNode>,
 }
 
 impl TreeData {
@@ -409,10 +413,13 @@ impl Sidebar {
             }
             out
         } else if id == NEW_FOLDERS_ID {
-            data.unassigned
-                .iter()
-                .map(|fid| format!("{FOLDER_PREFIX}{fid}"))
-                .collect()
+            data.nf_tree.iter().map(|n| n.id.clone()).collect()
+        } else if let Some(node) = data
+            .nf_tree
+            .iter()
+            .find_map(|n| super::nftree::NfNode::find(std::slice::from_ref(n), id).cloned())
+        {
+            node.children.iter().map(|c| c.id.clone()).collect()
         } else {
             Vec::new()
         }
@@ -597,6 +604,12 @@ impl Sidebar {
                 format!("New folders ({})", data.unassigned.len()),
                 "folder-symbolic",
             )
+        } else if let Some(path) = nfdir_path_of(id) {
+            let name = std::path::Path::new(&path)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.clone());
+            (name, "folder-symbolic")
         } else if let Some(aid) = album_id_of(id) {
             let album = data.albums.get(&aid);
             let name = album.map(|a| a.name.clone()).unwrap_or_default();
@@ -762,6 +775,12 @@ impl Sidebar {
                 if let (Some(state), Some(f)) = (self.state(), folder) {
                     state.show_grid();
                     super::app::load_folder_into_grid(&state, &f);
+                    return;
+                }
+            }
+            if let Some(path) = nfdir_path_of(&id) {
+                if let Some(state) = self.state() {
+                    state.show_new_folder_dir(&path);
                     return;
                 }
             }
@@ -1064,6 +1083,33 @@ impl Sidebar {
             } else {
                 data.unassigned.push(f.id);
             }
+        }
+        // Build the "New folders" tree: unassigned folders grouped by disk
+        // path, with synthetic directory nodes for unfiled parents. The stop
+        // set is every ancestor of a filed folder, so a new folder under an
+        // already-filed parent shows standalone (see nftree module docs).
+        {
+            let unassigned_pairs: Vec<(i64, String)> = data
+                .unassigned
+                .iter()
+                .filter_map(|fid| {
+                    data.folders
+                        .get(fid)
+                        .map(|f| (*fid, f.path.clone()))
+                })
+                .collect();
+            let assigned_paths: Vec<String> = folder_album
+                .keys()
+                .filter_map(|fid| data.folders.get(fid).map(|f| f.path.clone()))
+                .collect();
+            let root_paths: Vec<String> = state
+                .lib
+                .library_folders()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|r| r.path)
+                .collect();
+            data.nf_tree = super::nftree::build(&unassigned_pairs, &assigned_paths, &root_paths);
         }
 
         // Immich servers and their cached albums. The album cache is filled by
@@ -1466,6 +1512,109 @@ impl Sidebar {
         }
         self.mark_expanded(&format!("{ALBUM_PREFIX}{target}"));
         self.reload_deferred();
+    }
+
+    /// The selected node ids that take part in a New Folders drag: synthetic
+    /// directory ids and folder ids alike.
+    fn selected_new_folder_node_ids(&self) -> Vec<String> {
+        let Some(sel) = self
+            .list_view
+            .model()
+            .and_downcast::<gtk4::MultiSelection>()
+        else {
+            return Vec::new();
+        };
+        self.selected_ids(&sel)
+            .into_iter()
+            .filter(|id| folder_id_of(id).is_some() || nfdir_path_of(id).is_some())
+            .collect()
+    }
+
+    /// Move dragged New Folders nodes into `target`.
+    ///
+    /// Synthetic `nfdir:` nodes and unassigned folders move as subtrees: the
+    /// node's unassigned folders (itself included for folder rows) are filed
+    /// under the target with their on-disk nesting preserved, creating the
+    /// album chain as needed (so dropping `vacation` creates a `vacation`
+    /// sub-album containing `italy` and `greece`). A node with no unassigned
+    /// descendants — a leaf folder, or an already-filed folder — moves flat,
+    /// same as before. Assigned folders in the selection always move flat.
+    fn move_new_folder_nodes(self: &Rc<Self>, ids: &[String], target: i64) {
+        if ids.is_empty() {
+            return;
+        }
+        let Some(state) = self.state() else { return };
+        // Gather the subtree roots: (base disk path, includes the folder row
+        // itself). Synthetic dirs never have a row of their own.
+        let mut bases: Vec<(String, bool)> = Vec::new();
+        let mut flat: Vec<i64> = Vec::new();
+        {
+            let data = self.data.borrow();
+            for id in ids {
+                if let Some(path) = nfdir_path_of(id) {
+                    bases.push((path, false));
+                } else if let Some(fid) = folder_id_of(id) {
+                    match data.folders.get(&fid) {
+                        Some(f) if data.unassigned.contains(&fid) => {
+                            bases.push((f.path.clone(), true));
+                        }
+                        Some(_) => flat.push(fid),
+                        None => {}
+                    }
+                }
+            }
+            // Drop a base whose path already sits under another kept base, so
+            // a multi-select of a group and its members does not file twice.
+            bases.sort_by(|a, b| a.0.len().cmp(&b.0.len()));
+            let mut kept: Vec<(String, bool)> = Vec::new();
+            for (path, self_incl) in bases {
+                let under = kept.iter().any(|(p, _)| {
+                    path != *p
+                        && path
+                            .strip_prefix(&format!("{}{}", p, std::path::MAIN_SEPARATOR))
+                            .is_some()
+                });
+                if !under {
+                    kept.push((path, self_incl));
+                }
+            }
+            for (base, self_incl) in kept {
+                let prefix = format!("{}{}", base, std::path::MAIN_SEPARATOR);
+                let mut group: Vec<(i64, String)> = data
+                    .unassigned
+                    .iter()
+                    .filter_map(|fid| data.folders.get(fid).map(|f| (*fid, f.path.clone())))
+                    .filter(|(_, p)| {
+                        if self_incl {
+                            p == &base || p.starts_with(&prefix)
+                        } else {
+                            p.starts_with(&prefix)
+                        }
+                    })
+                    .collect();
+                group.sort_by(|a, b| a.1.cmp(&b.1));
+                match group.len() {
+                    0 => {}
+                    // A single folder with no unassigned children: file it
+                    // straight into the target, as the flat move always did.
+                    1 if self_incl => flat.push(group.remove(0).0),
+                    _ => {
+                        super::albumtree::file_subtree_under_album(
+                            &state.lib,
+                            &base,
+                            &group,
+                            target,
+                        );
+                    }
+                }
+            }
+        }
+        if !flat.is_empty() {
+            self.move_folders_to_album(&flat, target);
+        } else {
+            self.mark_expanded(&format!("{ALBUM_PREFIX}{target}"));
+            self.reload_deferred();
+        }
     }
 
     fn remove_folders_from_album(self: &Rc<Self>, fids: &[i64]) {
@@ -2170,8 +2319,12 @@ impl Sidebar {
                 &group,
                 Rc::new(move |t| {
                     let target = album_id_of(t).unwrap_or(0);
-                    let fids = this.selected_folder_ids();
-                    this.move_folders_to_album(&fids, target);
+                    // Route through the New Folders move so an unassigned
+                    // folder carries its unassigned subfolders; assigned
+                    // folders move flat, same as before. This returns every
+                    // selected folder and synthetic directory node.
+                    let ids = this.selected_new_folder_node_ids();
+                    this.move_new_folder_nodes(&ids, target);
                 }),
             );
         }
@@ -2684,6 +2837,7 @@ impl Sidebar {
                 && person_group_id_of(&id).is_none()
                 && character_id_of(&id).is_none()
                 && character_group_id_of(&id).is_none()
+                && nfdir_path_of(&id).is_none()
             {
                 return None;
             }
@@ -2766,12 +2920,16 @@ impl Sidebar {
                 }
                 this.reparent_albums(&aids, target_album);
                 true
-            } else if let Some(fid) = folder_id_of(&dragged) {
-                let mut fids = this.selected_folder_ids();
-                if fids.is_empty() {
-                    fids.push(fid);
+            } else if folder_id_of(&dragged).is_some() || nfdir_path_of(&dragged).is_some() {
+                // A folder or a synthetic "New folders" directory. Unassigned
+                // folders carry their unassigned subtree with them (so dragging
+                // a new group files the whole tree); assigned folders move flat,
+                // as before.
+                let mut ids = this.selected_new_folder_node_ids();
+                if !ids.contains(&dragged) {
+                    ids.push(dragged.clone());
                 }
-                this.move_folders_to_album(&fids, target_album);
+                this.move_new_folder_nodes(&ids, target_album);
                 true
             } else {
                 false
@@ -3301,6 +3459,11 @@ fn album_id_of(id: &str) -> Option<i64> {
 
 fn folder_id_of(id: &str) -> Option<i64> {
     id.strip_prefix(FOLDER_PREFIX).and_then(|n| n.parse().ok())
+}
+
+/// The absolute disk path of a synthetic "New folders" directory node.
+fn nfdir_path_of(id: &str) -> Option<String> {
+    id.strip_prefix(super::nftree::NFDIR_PREFIX).map(|s| s.to_string())
 }
 
 fn valbum_id_of(id: &str) -> Option<i64> {

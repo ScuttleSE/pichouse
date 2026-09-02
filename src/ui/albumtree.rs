@@ -1,11 +1,14 @@
 //! Auto-organize scanned folders into the Library album tree, mirroring the
 //! on-disk directory hierarchy.
 //!
-//! After (and during) a scan, each scanned folder beneath a library root is
-//! placed into an album chain matching its directory path relative to the root.
-//! The root's basename becomes a top-level album; intermediate directories
-//! become nested sub-albums. Folders already filed in an album are never moved,
-//! so user edits persist.
+//! During a root's FIRST scan, each scanned folder beneath the root is placed
+//! into an album chain matching its directory path relative to the root. The
+//! root's basename becomes a top-level album; intermediate directories become
+//! nested sub-albums. Folders already filed in an album are never moved, so
+//! user edits persist. After the first scan, newly discovered folders are NOT
+//! auto-filed: they stay unassigned and surface under the sidebar's
+//! "New folders" section for manual filing (the scan worker gates this — see
+//! `ui::actions`).
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -91,6 +94,28 @@ impl DiskAlbumMapper {
             self.folder_album.insert(folder.id, parent_id);
         }
     }
+
+    /// Resolve an album by `(parent_id, name)`, creating it when missing, and
+    /// cache the result. `None` on a DB error.
+    pub fn ensure_album(&mut self, lib: &Library, parent_id: i64, name: &str) -> Option<i64> {
+        let key = (parent_id, name.to_string());
+        match self.album_by_key.get(&key) {
+            Some(&id) => Some(id),
+            None => match lib.create_album(name, parent_id) {
+                Ok(id) => {
+                    self.album_by_key.insert(key, id);
+                    Some(id)
+                }
+                Err(_) => None,
+            },
+        }
+    }
+
+    /// Record that `folder_id` is now filed under `album_id`, so later calls in
+    /// this mapper skip it.
+    pub fn note_filed(&mut self, folder_id: i64, album_id: i64) {
+        self.folder_album.insert(folder_id, album_id);
+    }
 }
 
 /// Mirror the on-disk directory tree under `root` into the album tree in one
@@ -104,5 +129,65 @@ pub fn sync_disk_tree(lib: &Library, root: &str) {
     let mut mapper = DiskAlbumMapper::new(lib);
     for folder in &folders {
         mapper.file(lib, root, folder);
+    }
+}
+
+/// File a dropped "New folders" subtree into `target_album`, preserving the
+/// on-disk nesting relative to `base`.
+///
+/// First an album named after `base`'s basename is resolved or created under
+/// `target_album` (so dropping a group `vacation` creates a sub-album
+/// `vacation`). Then each folder in `folders` — `(id, path)` pairs, all at or
+/// beneath `base` — is filed into the album chain that mirrors its path
+/// relative to `base`. A folder directly at `base` files into the base album.
+/// Already-filed folders are skipped, and user placements are never moved.
+pub fn file_subtree_under_album(
+    lib: &Library,
+    base: &str,
+    folders: &[(i64, String)],
+    target_album: i64,
+) {
+    let base = base.trim_end_matches(std::path::MAIN_SEPARATOR);
+    let base_name = std::path::Path::new(base)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| base.to_string());
+    let mut mapper = DiskAlbumMapper::new(lib);
+    // Resolve or create the base album under the drop target.
+    let Some(base_album) = mapper.ensure_album(lib, target_album, &base_name) else {
+        return;
+    };
+    for (fid, path) in folders {
+        let p = path.trim_end_matches(std::path::MAIN_SEPARATOR);
+        let rel = match std::path::Path::new(p).strip_prefix(base) {
+            Ok(r) => r,
+            Err(_) => continue, // not under base; skip
+        };
+        // Album chain under the base album: the intermediate directories of
+        // the relative path (excluding the folder's own leaf).
+        let comps: Vec<String> = rel
+            .components()
+            .filter_map(|c| match c {
+                std::path::Component::Normal(s) => Some(s.to_string_lossy().into_owned()),
+                _ => None,
+            })
+            .collect();
+        let mut parent = base_album;
+        let mut ok = true;
+        for name in comps.iter().take(comps.len().saturating_sub(1)) {
+            match mapper.ensure_album(lib, parent, name) {
+                Some(id) => parent = id,
+                None => {
+                    ok = false;
+                    break;
+                }
+            }
+        }
+        if !ok {
+            continue;
+        }
+        if lib.add_folder_to_album(*fid, parent).is_ok() {
+            mapper.note_filed(*fid, parent);
+        }
     }
 }

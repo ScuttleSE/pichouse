@@ -279,6 +279,19 @@ count is over zero, a `node_label` branch, and an `on_selection_changed`
 dispatch. "Missing Files" lists photos with `missing = 1` and offers a
 right-click "Clear Missing Files…" action that calls `delete_missing_photos`.
 
+The "New folders" section lists folders with no album membership. A root's
+FIRST scan auto-files every discovered folder into the disk-mirror album tree
+(`src/ui/albumtree.rs`, gated on `library_folders.first_scan_done_at` in
+`src/ui/actions.rs`). Later discoveries stay unassigned and appear here. The
+section is a tree built by `src/ui/nftree.rs`: unassigned folders nest under
+unassigned parent folder rows; parents with no folder row become synthetic
+`nfdir:<path>` nodes; a synthetic node left with one child collapses away; the
+chain stops at any ancestor of a filed folder or any library root. Clicking a
+synthetic node shows all photos under the directory
+(`Library::photos_under_dir`). Dragging a node onto an album files its whole
+unassigned subtree with nesting preserved (`Sidebar::move_new_folder_nodes`,
+`albumtree::file_subtree_under_album`).
+
 To add a section, do these steps:
 1. Add id constants for the header and the item prefix.
 2. Add data fields to `TreeData` and fill them in `reload`.

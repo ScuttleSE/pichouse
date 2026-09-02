@@ -376,6 +376,22 @@ impl AppState {
             .set_message(&format!("Missing Files — {n} gone from disk"));
     }
 
+    /// Show every photo under a directory and its subdirectories in the grid.
+    /// Backs the synthetic directory nodes in the "New folders" sidebar
+    /// section, which have no folder row of their own.
+    pub fn show_new_folder_dir(self: &Rc<Self>, path: &str) {
+        *self.current_folder.borrow_mut() = 0;
+        let photos = self.lib.photos_under_dir(path).unwrap_or_default();
+        let name = std::path::Path::new(path)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.to_string());
+        let n = photos.len();
+        self.grid().show_photos(&name, &photos);
+        self.show_grid();
+        self.status().set_message(&format!("{name} — {n} photos"));
+    }
+
     /// Show the photos involved in banned duplicate matches. Each banned pair
     /// contributes both photos. The user un-bans everything with the section's
     /// right-click "Clear Banned Matches…" action.
