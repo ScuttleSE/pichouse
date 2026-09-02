@@ -106,8 +106,10 @@ code and the release to GitHub (`ScuttleSE/pichouse`).
 - The workflow writes `X.Y.Z` into `Cargo.toml` on `main`. It commits the change
   back with `[skip ci]`.
 - The workflow builds, tests, and publishes a Gitea release with the binary.
-- The workflow pushes a filtered snapshot and the tag to GitHub. It publishes a
-  GitHub release with the binary.
+- The workflow pushes the full commit history and the tag to GitHub. The
+  rewrite removes `.gitea/` from every commit. So the commit hashes on
+  GitHub differ from the hashes on Gitea. It publishes a GitHub release
+  with the binary.
 - The GitHub push needs a `GH_TOKEN` secret in the Gitea repo settings. The
   token is a GitHub PAT with `contents: write` on `ScuttleSE/pichouse`.
 - Do not run a named release without the user's request.
