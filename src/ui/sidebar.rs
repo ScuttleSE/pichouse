@@ -1430,14 +1430,27 @@ impl Sidebar {
         super::albumscan::scan_album_faces(&state, id, rescan);
     }
 
-    /// Scan (or rescan) faces for a single folder, routed by its effective
-    /// Face type.
-    fn scan_folder_faces(self: &Rc<Self>, id: i64, rescan: bool) {
-        if id == 0 {
+    /// Scan (or rescan) faces for one or more folders, routed by each
+    /// folder's effective Face type.
+    fn scan_folder_faces(self: &Rc<Self>, fids: &[i64], rescan: bool) {
+        if fids.is_empty() {
             return;
         }
         let Some(state) = self.state() else { return };
-        super::albumscan::scan_folder_faces(&state, id, rescan);
+        super::albumscan::scan_folder_faces(&state, fids, rescan);
+    }
+
+    /// The folders a face-scan action covers: the whole selection when the
+    /// right-clicked folder is part of it, otherwise just that folder.
+    fn scan_target_folder_ids(&self, clicked: &str) -> Vec<i64> {
+        let Some(clicked_fid) = folder_id_of(clicked) else {
+            return Vec::new();
+        };
+        let selected = self.selected_folder_ids();
+        if selected.contains(&clicked_fid) {
+            return selected;
+        }
+        vec![clicked_fid]
     }
 
     fn move_folders_to_album(self: &Rc<Self>, fids: &[i64], target: i64) {
@@ -2207,7 +2220,10 @@ impl Sidebar {
             add(
                 "scan-folder-faces",
                 &group,
-                Rc::new(move |t| this.scan_folder_faces(folder_id_of(t).unwrap_or(0), false)),
+                Rc::new(move |t| {
+                    let fids = this.scan_target_folder_ids(t);
+                    this.scan_folder_faces(&fids, false);
+                }),
             );
         }
         {
@@ -2215,7 +2231,10 @@ impl Sidebar {
             add(
                 "rescan-folder-faces",
                 &group,
-                Rc::new(move |t| this.scan_folder_faces(folder_id_of(t).unwrap_or(0), true)),
+                Rc::new(move |t| {
+                    let fids = this.scan_target_folder_ids(t);
+                    this.scan_folder_faces(&fids, true);
+                }),
             );
         }
         {
@@ -3011,12 +3030,23 @@ impl Sidebar {
                 Some("Rescan all thumbnails (all)"),
                 Some(&detailed("rescan-folder-thumbs", id)),
             );
+            // The face-scan actions cover the whole folder selection when the
+            // right-clicked folder is part of it. The label shows the count.
+            let scan_targets = self.scan_target_folder_ids(id);
+            let (scan_text, rescan_text) = if scan_targets.len() > 1 {
+                (
+                    format!("Scan faces in {} folders", scan_targets.len()),
+                    format!("Rescan faces in {} folders", scan_targets.len()),
+                )
+            } else {
+                (
+                    "Scan faces in folder".to_string(),
+                    "Rescan faces in folder".to_string(),
+                )
+            };
+            menu.append(Some(scan_text.as_str()), Some(&detailed("scan-folder-faces", id)));
             menu.append(
-                Some("Scan faces in folder"),
-                Some(&detailed("scan-folder-faces", id)),
-            );
-            menu.append(
-                Some("Rescan faces in folder"),
+                Some(rescan_text.as_str()),
                 Some(&detailed("rescan-folder-faces", id)),
             );
             // Offer upload only when a server exists and the folder has photos.

@@ -294,9 +294,9 @@
     "semantic_hash": "7937ee931918e7b90ed711d717d9dace"
   },
   "src/ui/albumscan.rs": {
-    "mtime": 1788324563.8092067,
-    "seen": 1788324618.3367846,
-    "ast_hash": "88e804c79caae4f6629f6899d9b8c86c",
+    "mtime": 1788080182.6095252,
+    "seen": 1788085078.3963,
+    "ast_hash": "2581f9a53e8603d8925f7e8411e4669a",
     "semantic_hash": ""
   },
   "src/ui/albumtree.rs": {
@@ -468,9 +468,9 @@
     "semantic_hash": "1d6427d13c23fc72c0b413776ccd6cce"
   },
   "src/ui/sidebar.rs": {
-    "mtime": 1788324593.8571851,
-    "seen": 1788324618.3376822,
-    "ast_hash": "830699c3b40b29bc264852a072a53f8a",
+    "mtime": 1788279683.2152872,
+    "seen": 1788279721.3268309,
+    "ast_hash": "4ff059984ab22a983866edb3eb67907b",
     "semantic_hash": ""
   },
   "src/ui/state.rs": {

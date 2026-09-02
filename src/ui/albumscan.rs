@@ -49,18 +49,30 @@ pub fn scan_album_faces(state: &Rc<AppState>, album_id: i64, rescan: bool) {
     }
 }
 
-/// Scan (or rescan) faces for one folder, routed by its effective Face type
-/// (the album it belongs to, or Photo if it is in no album). Works the same
-/// way as the album-scoped scan: un-enriched photos are enriched (generating
-/// their thumbnails) first, then scanned.
-pub fn scan_folder_faces(state: &Rc<AppState>, folder_id: i64, rescan: bool) {
-    if folder_id == 0 {
-        return;
+/// Scan (or rescan) faces for one or more folders, routed by each folder's
+/// effective Face type (the album it belongs to, or Photo if it is in no
+/// album). Folders go to the human face or the stylised pipeline by kind, and
+/// each non-empty group starts its own scan. Works the same way as the
+/// album-scoped scan: un-enriched photos are enriched (generating their
+/// thumbnails) first, then scanned.
+pub fn scan_folder_faces(state: &Rc<AppState>, folder_ids: &[i64], rescan: bool) {
+    let mut photo_folders: Vec<i64> = Vec::new();
+    let mut art_folders: Vec<i64> = Vec::new();
+    for &fid in folder_ids {
+        if fid == 0 {
+            continue;
+        }
+        if state.lib.folder_effective_face_kind(fid).unwrap_or(1) == 2 {
+            art_folders.push(fid);
+        } else {
+            photo_folders.push(fid);
+        }
     }
-    let kind = state.lib.folder_effective_face_kind(folder_id).unwrap_or(1);
-    match kind {
-        2 => scan_art(state, &[folder_id], rescan, "folder"),
-        _ => scan_photo(state, &[folder_id], rescan, "folder"),
+    if !photo_folders.is_empty() {
+        scan_photo(state, &photo_folders, rescan, "folder");
+    }
+    if !art_folders.is_empty() {
+        scan_art(state, &art_folders, rescan, "folder");
     }
 }
 
