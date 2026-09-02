@@ -1,16 +1,16 @@
 # Graph Report - pichouse  (2026-09-02)
 
 ## Corpus Check
-- 103 files · ~155,343 words
+- 103 files · ~156,240 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 2006 nodes · 5288 edges · 118 communities (81 shown, 37 thin omitted)
+- 2011 nodes · 5306 edges · 118 communities (80 shown, 38 thin omitted)
 - Extraction: 97% EXTRACTED · 3% INFERRED · 0% AMBIGUOUS · INFERRED: 153 edges (avg confidence: 0.86)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `6b67736a`
+- Built from commit: `ab467384`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -37,10 +37,10 @@
 - face/cluster.rs
 - NewFilesView
 - app.rs
-- Manager
+- Config
 - dedup.rs
 - vrules.rs
-- styleface/detector.rs
+- virtual_albums.rs
 - show_message
 - Library
 - ui/immich.rs
@@ -55,7 +55,7 @@
 - Photo
 - PhotoObject
 - vmenu.rs
-- grid.rs
+- build_factory
 - Prefs
 - opencode.json
 - Library
@@ -77,13 +77,13 @@
 - parse_log_level
 - StyleFaceConfig
 - inference_test.rs
-- .new
+- edit.rs
 - HANDOFF.md
 - Human facial detection and recognition system
 - parse_tags
-- Config
-- spin_row
-- state.rs
+- grid.rs
+- Library
+- immich_pane
 - Duplicate image finder (HANDOFF)
 - Immich integration (HANDOFF)
 - Non-destructive editing and color levels (HANDOFF)
@@ -124,19 +124,19 @@
 - nftree.rs
 - model.rs
 - Result
-- Self
+- VirtualRule
 - DiskAlbumMapper
 - .show_duplicates
-- .level_presets
+- albumscan.rs
 - .set_sort_order
-- settings_faces.rs
+- settings_characters.rs
 
 ## God Nodes (most connected - your core abstractions)
 1. `AppState` - 231 edges
 2. `Grid` - 107 edges
 3. `Sidebar` - 94 edges
 4. `show_error()` - 72 edges
-5. `Photo` - 69 edges
+5. `Photo` - 70 edges
 6. `Library` - 54 edges
 7. `Viewer` - 53 edges
 8. `EditPanel` - 50 edges
@@ -156,8 +156,8 @@
   README.md → ROADMAP.md
 
 ## Import Cycles
-- 2-file cycle: `src/ui/state.rs -> src/ui/status.rs -> src/ui/state.rs`
 - 2-file cycle: `src/ui/properties.rs -> src/ui/state.rs -> src/ui/properties.rs`
+- 2-file cycle: `src/ui/state.rs -> src/ui/status.rs -> src/ui/state.rs`
 - 2-file cycle: `src/ui/state.rs -> src/ui/viewer.rs -> src/ui/state.rs`
 - 3-file cycle: `src/ui/editor.rs -> src/ui/state.rs -> src/ui/properties.rs -> src/ui/editor.rs`
 - 4-file cycle: `src/ui/grid.rs -> src/ui/photo_object.rs -> src/ui/properties.rs -> src/ui/state.rs -> src/ui/grid.rs`
@@ -168,11 +168,11 @@
 - **CI release pipeline: rolling build, named release, versioning rule** — gitea_workflows_build_build_and_release_workflow, gitea_workflows_release_named_release_workflow, agents_rule_three [INFERRED 0.85]
 - **Dual face-recognition pipelines: human People and stylised Characters** — handoff_stylised_face_recognition, handoff_facial_detection_recognition, readme_people_vs_characters, roadmap_facial_detection_recognition [INFERRED 0.85]
 
-## Communities (118 total, 37 thin omitted)
+## Communities (118 total, 38 thin omitted)
 
 ### Community 0 - "Sidebar"
-Cohesion: 0.08
-Nodes (46): ListItem, ListView, Propagation, confirm(), prompt_text(), F, Option, Rc (+38 more)
+Cohesion: 0.07
+Nodes (47): ListItem, ListView, Propagation, Album, confirm(), prompt_text(), F, Option (+39 more)
 
 ### Community 1 - "Generator"
 Cohesion: 0.06
@@ -183,28 +183,28 @@ Cohesion: 0.09
 Nodes (22): MutexGuard, CountCache, enrichment_in_is_scoped_to_folder_set(), enrichment_under_root_is_scoped_by_prefix(), Library, map_photo(), migrate(), new_files_respects_first_scan_boundary() (+14 more)
 
 ### Community 3 - "EditPanel"
-Cohesion: 0.12
-Nodes (30): CheckButton, Context, Scale, SpinButton, channel_vals(), ChannelWidgets, Controls, draw_triangle() (+22 more)
+Cohesion: 0.09
+Nodes (37): CheckButton, Context, Scale, SpinButton, Library, map_preset(), Result, Row (+29 more)
 
 ### Community 4 - "Viewer"
 Cohesion: 0.11
 Nodes (25): CropPermille, Picture, Pixbuf, SourceId, decode_edited(), decode_pixbuf(), immich_server_for(), pixbuf_to_rgba() (+17 more)
 
 ### Community 5 - "stylefacescan.rs"
-Cohesion: 0.14
-Nodes (30): download_and_extract(), ensure_runtime(), ensure_runtime_progress(), extract_so_from_tgz(), init_runtime(), Fn, Path, PathBuf (+22 more)
+Cohesion: 0.07
+Nodes (47): download_and_extract(), ensure_runtime(), ensure_runtime_progress(), extract_so_from_tgz(), init_runtime(), Fn, Path, PathBuf (+39 more)
 
 ### Community 6 - "PhotoEdit"
-Cohesion: 0.09
-Nodes (42): Rgba, Library, map_edit(), HashMap, Result, Row, String, Vec (+34 more)
+Cohesion: 0.13
+Nodes (25): Library, map_edit(), HashMap, Result, Row, String, Vec, PhotoEdit (+17 more)
 
 ### Community 7 - "scan.rs"
 Cohesion: 0.09
-Nodes (43): Error, Exif, FnMut, Instant, civil_to_unix(), civil_unix_year_roundtrip(), dimensions(), enrich_file() (+35 more)
+Nodes (44): Error, Exif, FnMut, Instant, civil_to_unix(), civil_unix_year_roundtrip(), dimensions(), enrich_file() (+36 more)
 
 ### Community 8 - "Library"
 Cohesion: 0.10
-Nodes (22): add_photo(), blob_to_floats(), cover_if_unset_fills_gap_but_not_an_existing_choice(), delete_all_clears_everything(), face_roundtrip_preserves_embedding(), face_scan_state_gates_needing_list(), FaceGroup, floats_to_blob() (+14 more)
+Nodes (22): add_photo(), blob_to_floats(), cover_if_unset_fills_gap_but_not_an_existing_choice(), delete_all_clears_everything(), face_roundtrip_preserves_embedding(), face_scan_state_gates_needing_list(), floats_to_blob(), Library (+14 more)
 
 ### Community 9 - "Library"
 Cohesion: 0.09
@@ -216,11 +216,11 @@ Nodes (48): face_thumbs_path(), FaceThumbs, remove_face_thumbs_database(), Conne
 
 ### Community 11 - "AppState"
 Cohesion: 0.08
-Nodes (29): ApplicationWindow, Condvar, SimpleAction, reconcile_now(), Rc, run_reconcile(), scan_new_folders(), start_periodic() (+21 more)
+Nodes (29): ApplicationWindow, Condvar, SimpleAction, delete_all_face_data(), faces_pane(), GtkBox, Rc, AppState (+21 more)
 
 ### Community 12 - "facescan.rs"
 Cohesion: 0.08
-Nodes (38): Cand, Detector, iou(), nms(), Mutex, Result, Session, String (+30 more)
+Nodes (39): FaceGroup, Cand, Detector, iou(), nms(), Mutex, Result, Session (+31 more)
 
 ### Community 13 - "Client"
 Cohesion: 0.11
@@ -231,8 +231,8 @@ Cohesion: 0.14
 Nodes (18): Notebook, bold_label(), field(), Properties, Button, Entry, GtkBox, Label (+10 more)
 
 ### Community 15 - "reconcile.rs"
-Cohesion: 0.17
-Nodes (28): collect(), DbSnapshot, dir_has_images(), mtime_secs(), PhotoInsert, PhotoMove, plan_dir(), plan_vanished_dirs() (+20 more)
+Cohesion: 0.14
+Nodes (32): collect(), DbSnapshot, dir_has_images(), mtime_secs(), PhotoInsert, PhotoMove, plan_dir(), plan_vanished_dirs() (+24 more)
 
 ### Community 16 - "CharactersView"
 Cohesion: 0.23
@@ -243,8 +243,8 @@ Cohesion: 0.15
 Nodes (23): action_key(), appearance_pane(), capture_shortcut(), folder_pane(), pane_box(), GtkBox, Label, Rc (+15 more)
 
 ### Community 18 - "Grid"
-Cohesion: 0.09
-Nodes (13): GridView, ListStore, SignalHandlerId, Grid, Box, Button, DrawingArea, DropDown (+5 more)
+Cohesion: 0.08
+Nodes (17): GridView, ListStore, SignalHandlerId, Grid, Arc, AtomicU64, Box, Button (+9 more)
 
 ### Community 19 - "face/cluster.rs"
 Cohesion: 0.12
@@ -252,31 +252,31 @@ Nodes (23): Center, accumulate(), cluster(), ClusterAssignment, ClusterItem, cos
 
 ### Community 20 - "NewFilesView"
 Cohesion: 0.11
-Nodes (21): decode_texture(), Done, Job, NewFilesView, Arc, AtomicU64, Box, Cell (+13 more)
+Nodes (24): ControlFlow, BuildState, decode_pixels(), Done, FolderRange, Job, NewFilesView, Arc (+16 more)
 
 ### Community 21 - "app.rs"
 Cohesion: 0.24
 Nodes (14): Application, apply_theme(), build_ui(), install_css(), load_folder_into_grid(), load_raw_folder_into_grid(), populate(), populate_deferred() (+6 more)
 
-### Community 22 - "Manager"
-Cohesion: 0.21
-Nodes (7): Child, Manager, Client, Drop, Option, Result, String
+### Community 22 - "Config"
+Cohesion: 0.11
+Nodes (17): Child, Config, normalize_fills_defaults_and_clamps(), Default, String, Manager, Client, Drop (+9 more)
 
 ### Community 23 - "dedup.rs"
 Cohesion: 0.14
 Nodes (22): banned_pair_is_not_grouped(), choose_keep(), DupGroup, exact_hash_groups(), find_duplicates(), format_rank(), keep_prefers_larger_then_lossless(), norm_pair() (+14 more)
 
 ### Community 24 - "vrules.rs"
-Cohesion: 0.08
-Nodes (58): Frame, build_membership_sql(), character_rule_matches_photos_of_that_character(), cleanup(), crud_nesting_and_cycle(), empty_rule_group_contributes_no_clause(), Library, manual_membership_roundtrip() (+50 more)
+Cohesion: 0.20
+Nodes (27): Frame, add_row_to(), build_group_box(), build_rule_row(), choices_for_field(), civil_from_days(), collect_rule(), date_roundtrip() (+19 more)
 
-### Community 25 - "styleface/detector.rs"
-Cohesion: 0.15
-Nodes (17): Cand, Detector, iou(), nms(), Mutex, Result, Session, String (+9 more)
+### Community 25 - "virtual_albums.rs"
+Cohesion: 0.43
+Nodes (15): character_rule_matches_photos_of_that_character(), cleanup(), empty_rule_group_contributes_no_clause(), manual_membership_roundtrip(), migration_adds_group_id_to_pre_existing_db(), mk_photo(), path_rule_matches_full_path_not_just_filename(), person_rule_matches_photos_of_that_person() (+7 more)
 
 ### Community 26 - "show_message"
-Cohesion: 0.17
-Nodes (22): ai_tag_folder(), ai_tag_library(), Msg, Arc, AtomicBool, Client, Library, Rc (+14 more)
+Cohesion: 0.26
+Nodes (13): ai_tag_folder(), ai_tag_library(), Msg, Arc, AtomicBool, Client, Library, Rc (+5 more)
 
 ### Community 27 - "Library"
 Cohesion: 0.19
@@ -314,10 +314,6 @@ Nodes (17): catalog(), ensure_model(), ensure_model_progress(), entry(), model_p
 Cohesion: 0.24
 Nodes (5): Controller, Arc, AtomicBool, Mutex, Option
 
-### Community 37 - "Photo"
-Cohesion: 0.32
-Nodes (3): Photo, cell_key(), Vec
-
 ### Community 38 - "PhotoObject"
 Cohesion: 0.18
 Nodes (8): ObjectImpl, ObjectSubclass, PhotoObject, Option, RefCell, Self, String, Texture
@@ -326,9 +322,9 @@ Nodes (8): ObjectImpl, ObjectSubclass, PhotoObject, Option, RefCell, Self, Strin
 Cohesion: 0.22
 Nodes (18): album_depth(), bake_source(), build_menu(), copy_photo_to_clipboard(), CopySource, dismiss(), install_grid_context_menu(), local_photo_ids() (+10 more)
 
-### Community 40 - "grid.rs"
-Cohesion: 0.10
-Nodes (26): Overlay, SignalListItemFactory, apply_texture(), build_factory(), decode_texture(), Done, DupCellUi, DupGroupUi (+18 more)
+### Community 40 - "build_factory"
+Cohesion: 0.16
+Nodes (12): Overlay, SignalListItemFactory, apply_texture(), build_factory(), decode_texture(), image_rect(), overlay_parts(), Image (+4 more)
 
 ### Community 41 - "Prefs"
 Cohesion: 0.21
@@ -339,8 +335,8 @@ Cohesion: 0.50
 Nodes (3): plugin, $schema, .opencode/plugins/graphify.js
 
 ### Community 43 - "Library"
-Cohesion: 0.21
-Nodes (14): cleanup(), create_rename_delete_person_group(), delete_group_does_not_delete_persons(), Library, person_can_belong_to_multiple_groups(), persons_under_group_covers_subtree_and_dedupes(), HashMap, Path (+6 more)
+Cohesion: 0.20
+Nodes (15): cleanup(), create_rename_delete_person_group(), delete_group_does_not_delete_persons(), Library, person_can_belong_to_multiple_groups(), persons_under_group_covers_subtree_and_dedupes(), HashMap, Path (+7 more)
 
 ### Community 44 - "enrich.rs"
 Cohesion: 0.31
@@ -367,7 +363,7 @@ Cohesion: 0.29
 Nodes (7): Embedder, Mutex, Result, Session, String, Vec, sample_rgb()
 
 ### Community 51 - "Result"
-Cohesion: 0.22
+Cohesion: 0.24
 Nodes (6): Library, HashSet, Option, Result, Vec, ImmichServer
 
 ### Community 52 - "RULE THREE: versioning and named release process"
@@ -406,9 +402,9 @@ Nodes (4): Default, Self, String, StyleFaceConfig
 Cohesion: 0.43
 Nodes (7): cosine(), data_dir(), face_pipeline_real_inference(), init(), load_rgb(), PathBuf, Vec
 
-### Community 62 - ".new"
-Cohesion: 0.24
-Nodes (4): Arc, AtomicU64, F, Library
+### Community 62 - "edit.rs"
+Cohesion: 0.28
+Nodes (16): Rgba, apply_brightness_contrast(), apply_edits(), apply_levels(), auto_levels(), auto_levels_finds_range(), channel_bounds(), channel_lut() (+8 more)
 
 ### Community 63 - "HANDOFF.md"
 Cohesion: 0.29
@@ -422,17 +418,17 @@ Nodes (7): ONNX Runtime download-on-demand design, CCIP embedder swap for stylis
 Cohesion: 0.43
 Nodes (5): clean_tag(), parse_tags(), parse_tags_cases(), String, Vec
 
-### Community 66 - "Config"
-Cohesion: 0.38
-Nodes (4): Config, normalize_fills_defaults_and_clamps(), Default, String
+### Community 66 - "grid.rs"
+Cohesion: 0.19
+Nodes (15): cell_key(), Done, DupCellUi, DupGroupUi, FaceBoxRect, human_size(), immich_path(), ImmichJob (+7 more)
 
-### Community 67 - "spin_row"
-Cohesion: 0.57
-Nodes (6): ai_pane(), fixed_label(), GtkBox, Label, Rc, spin_row()
+### Community 67 - "Library"
+Cohesion: 0.32
+Nodes (4): crud_nesting_and_cycle(), Library, Result, Vec
 
-### Community 68 - "state.rs"
-Cohesion: 0.21
-Nodes (10): immich_pane(), labeled_entry(), Entry, GtkBox, Rc, crop_pool(), now_millis(), queue_crop_job() (+2 more)
+### Community 68 - "immich_pane"
+Cohesion: 0.53
+Nodes (5): immich_pane(), labeled_entry(), Entry, GtkBox, Rc
 
 ### Community 69 - "Duplicate image finder (HANDOFF)"
 Cohesion: 1.00
@@ -459,48 +455,48 @@ Cohesion: 0.24
 Nodes (22): ancestors(), basename_lower(), build(), collapse_synthetics(), deep_new_folder_with_subfolders_nests(), fids(), find_locates_nested_node(), folder_with_subfolders_groups_under_synthetic_dir() (+14 more)
 
 ### Community 110 - "model.rs"
-Cohesion: 0.15
-Nodes (13): Album, AlbumKind, CharacterGroup, ImmichAlbum, ImmichFolderLink, LevelPreset, Person, PersonGroup (+5 more)
+Cohesion: 0.07
+Nodes (15): AiStatus, AlbumKind, CharacterGroup, ImmichAlbum, ImmichFolderLink, PhotoScanState, Self, String (+7 more)
 
 ### Community 111 - "Result"
 Cohesion: 0.24
 Nodes (4): Library, HashSet, Result, Vec
 
-### Community 112 - "Self"
-Cohesion: 0.15
-Nodes (4): AiStatus, PhotoScanState, Self, ScanStatus
+### Community 112 - "VirtualRule"
+Cohesion: 0.29
+Nodes (10): build_membership_sql(), map_rule(), Box, Row, String, rule_clause(), RuleGroup, RuleMatch (+2 more)
 
 ### Community 113 - "DiskAlbumMapper"
 Cohesion: 0.36
 Nodes (7): DiskAlbumMapper, file_subtree_under_album(), HashMap, Library, Option, String, sync_disk_tree()
 
-### Community 115 - ".level_presets"
-Cohesion: 0.28
-Nodes (5): Library, map_preset(), Result, Row, Vec
+### Community 115 - "albumscan.rs"
+Cohesion: 0.47
+Nodes (9): autoscan_routed(), ensure_enriched_then(), F, Rc, Vec, scan_album_faces(), scan_art(), scan_folder_faces() (+1 more)
 
-### Community 118 - "settings_faces.rs"
+### Community 117 - "settings_characters.rs"
 Cohesion: 0.70
-Nodes (4): delete_all_face_data(), faces_pane(), GtkBox, Rc
+Nodes (4): characters_pane(), delete_all(), GtkBox, Rc
 
 ## Knowledge Gaps
 - **36 isolated node(s):** `$schema`, `.opencode/plugins/graphify.js`, `pichouse`, `Msg`, `graphify` (+31 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **37 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **38 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `AppState` connect `AppState` to `Sidebar`, `Generator`, `EditPanel`, `Viewer`, `stylefacescan.rs`, `PhotoEdit`, `Library`, `db/mod.rs`, `facescan.rs`, `Properties`, `CharactersView`, `settings.rs`, `Grid`, `NewFilesView`, `app.rs`, `Manager`, `dedup.rs`, `vrules.rs`, `show_message`, `ui/immich.rs`, `Rc`, `FolderTree`, `Controller`, `vmenu.rs`, `Prefs`, `enrich.rs`, `StatusBar`, `characters.rs`, `actions.rs`, `FacesView`, `name_cluster_dialog`, `FaceConfig`, `StyleFaceConfig`, `Config`, `spin_row`, `state.rs`, `toolbar.rs`, `model.rs`, `settings_faces.rs`?**
-  _High betweenness centrality (0.327) - this node is a cross-community bridge._
-- **Why does `Photo` connect `Photo` to `Library`, `EditPanel`, `Viewer`, `PhotoEdit`, `scan.rs`, `Library`, `Library`, `AppState`, `Properties`, `Grid`, `NewFilesView`, `dedup.rs`, `vrules.rs`, `show_message`, `Library`, `ui/immich.rs`, `PhotoObject`, `vmenu.rs`, `grid.rs`, `model.rs`, `Result`, `Self`, `.show_duplicates`?**
-  _High betweenness centrality (0.166) - this node is a cross-community bridge._
-- **Why does `Grid` connect `Grid` to `state.rs`, `Photo`, `PhotoObject`, `vmenu.rs`, `grid.rs`, `AppState`, `TextureCache`, `.show_duplicates`, `.set_sort_order`, `Rc`, `.new`?**
-  _High betweenness centrality (0.093) - this node is a cross-community bridge._
+- **Why does `AppState` connect `AppState` to `Sidebar`, `Generator`, `EditPanel`, `Viewer`, `stylefacescan.rs`, `PhotoEdit`, `db/mod.rs`, `facescan.rs`, `Properties`, `reconcile.rs`, `CharactersView`, `settings.rs`, `Grid`, `NewFilesView`, `app.rs`, `Config`, `dedup.rs`, `vrules.rs`, `show_message`, `ui/immich.rs`, `Rc`, `FolderTree`, `Controller`, `vmenu.rs`, `Prefs`, `enrich.rs`, `StatusBar`, `characters.rs`, `actions.rs`, `FacesView`, `name_cluster_dialog`, `FaceConfig`, `StyleFaceConfig`, `immich_pane`, `toolbar.rs`, `model.rs`, `albumscan.rs`, `settings_characters.rs`?**
+  _High betweenness centrality (0.350) - this node is a cross-community bridge._
+- **Why does `Photo` connect `Photo` to `Library`, `EditPanel`, `Viewer`, `PhotoEdit`, `scan.rs`, `Library`, `Library`, `AppState`, `Properties`, `Grid`, `NewFilesView`, `dedup.rs`, `virtual_albums.rs`, `show_message`, `Library`, `ui/immich.rs`, `PhotoObject`, `vmenu.rs`, `grid.rs`, `model.rs`, `Result`, `.show_duplicates`?**
+  _High betweenness centrality (0.164) - this node is a cross-community bridge._
+- **Why does `Grid` connect `Grid` to `grid.rs`, `Photo`, `PhotoObject`, `vmenu.rs`, `build_factory`, `AppState`, `TextureCache`, `.show_duplicates`, `.set_sort_order`, `Rc`?**
+  _High betweenness centrality (0.087) - this node is a cross-community bridge._
 - **Are the 68 inferred relationships involving `show_error()` (e.g. with `add_library_folder()` and `rescan_all()`) actually correct?**
   _`show_error()` has 68 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `$schema`, `.opencode/plugins/graphify.js`, `pichouse` to the rest of the system?**
   _36 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Sidebar` be split into smaller, more focused modules?**
-  _Cohesion score 0.07574053243344582 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.07480314960629922 - nodes in this community are weakly interconnected._
 - **Should `Generator` be split into smaller, more focused modules?**
   _Cohesion score 0.0629399585921325 - nodes in this community are weakly interconnected._

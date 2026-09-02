@@ -89,6 +89,8 @@ fn build_ui(app: &Application) {
         status: RefCell::new(None),
         grid: RefCell::new(None),
         new_files: RefCell::new(None),
+        new_files_loading: std::cell::Cell::new(false),
+        new_files_reload_after: std::cell::Cell::new(false),
         faces_view: RefCell::new(None),
         characters_view: RefCell::new(None),
         properties: RefCell::new(None),

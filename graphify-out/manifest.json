@@ -1,8 +1,8 @@
 {
   "Cargo.toml": {
-    "mtime": 1788333717.6240027,
-    "seen": 1788336184.0553818,
-    "ast_hash": "dd41edfabb2ea624b8c7c0c5c18a7b04",
+    "mtime": 1788336228.0824583,
+    "seen": 1788338552.2893558,
+    "ast_hash": "e40706ddf9ccfc0e3a59033cb0326dc1",
     "semantic_hash": ""
   },
   "src/ai/client.rs": {
@@ -306,9 +306,9 @@
     "semantic_hash": ""
   },
   "src/ui/app.rs": {
-    "mtime": 1788079381.8099587,
-    "seen": 1788080155.5923314,
-    "ast_hash": "852b7483fe683b3f3235bbecded149ce",
+    "mtime": 1788338295.1412396,
+    "seen": 1788338552.2910655,
+    "ast_hash": "b8988f950378d18332c95b055eb56c98",
     "semantic_hash": ""
   },
   "src/ui/characters.rs": {
@@ -402,9 +402,9 @@
     "semantic_hash": ""
   },
   "src/ui/newfiles.rs": {
-    "mtime": 1788336088.2545407,
-    "seen": 1788336184.0576248,
-    "ast_hash": "072aa9bc669621de69cf43f7bef58df3",
+    "mtime": 1788338497.2251215,
+    "seen": 1788338552.291558,
+    "ast_hash": "6101ef42fe7d4e7b50d2ffe2eebacea7",
     "semantic_hash": ""
   },
   "src/ui/people.rs": {
@@ -474,9 +474,9 @@
     "semantic_hash": ""
   },
   "src/ui/state.rs": {
-    "mtime": 1788331809.4610279,
-    "seen": 1788333707.3323236,
-    "ast_hash": "af48c2d31c54a23a620862f5c13d1d46",
+    "mtime": 1788338444.737152,
+    "seen": 1788338552.2919827,
+    "ast_hash": "8777ef7d96091383941f288c1c9e6b25",
     "semantic_hash": ""
   },
   "src/ui/status.rs": {

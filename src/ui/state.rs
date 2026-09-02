@@ -1,10 +1,11 @@
 //! Shared application state, held in an `Rc` so widgets and callbacks can reach
 //! the library, thumbnail generator, preferences, and panels.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{ApplicationWindow, Stack};
 
@@ -83,6 +84,11 @@ pub struct AppState {
     pub status: RefCell<Option<Rc<StatusBar>>>,
     pub grid: RefCell<Option<Rc<Grid>>>,
     pub new_files: RefCell<Option<Rc<super::newfiles::NewFilesView>>>,
+    /// A grouped New Files query is running off the main thread. Bursts of
+    /// refresh requests coalesce into one rerun when it lands.
+    pub new_files_loading: Cell<bool>,
+    /// A refresh arrived while a load was in flight; rerun once it lands.
+    pub new_files_reload_after: Cell<bool>,
     pub faces_view: RefCell<Option<Rc<super::facesview::FacesView>>>,
     pub characters_view: RefCell<Option<Rc<super::charactersview::CharactersView>>>,
     pub properties: RefCell<Option<Rc<Properties>>>,
@@ -348,21 +354,55 @@ impl AppState {
         }
     }
 
-    /// Show the grouped "New Files" view in the center, rebuilding it from the
-    /// current database state.
+    /// Show the grouped "New Files" view in the center. The view switches at
+    /// once; the grouped query runs off the main thread and fills the view
+    /// when it lands.
     pub fn show_new_files(self: &Rc<Self>) {
         *self.current_folder.borrow_mut() = 0;
-        let groups = self
-            .lib
-            .new_photos_grouped(self.prefs.borrow().new_max_age_secs())
-            .unwrap_or_default();
-        let count: usize = groups.iter().map(|(_, ps)| ps.len()).sum();
-        self.new_files().show_groups(groups);
         if let Some(stack) = self.center_stack.borrow().as_ref() {
             stack.set_visible_child_name("newfiles");
         }
-        self.status()
-            .set_message(&format!("New Files — {count} recently added"));
+        self.status().set_message("New Files — loading…");
+        self.load_new_files_async();
+    }
+
+    /// Run `new_photos_grouped` on a worker thread and apply the result to the
+    /// New Files view on the main thread. A 30k-photo window takes the query
+    /// noticeable time, so it must never block the UI. Rapid refresh requests
+    /// (watcher bursts) coalesce: while a load runs, later requests only set
+    /// the rerun flag.
+    pub fn load_new_files_async(self: &Rc<Self>) {
+        if self.new_files_loading.get() {
+            self.new_files_reload_after.set(true);
+            return;
+        }
+        self.new_files_loading.set(true);
+        let max_age = self.prefs.borrow().new_max_age_secs();
+        let lib = Arc::clone(&self.lib);
+        let (tx, rx) = glib::MainContext::channel::<Vec<(crate::model::Folder, Vec<crate::model::Photo>)>>(
+            glib::Priority::DEFAULT,
+        );
+        std::thread::spawn(move || {
+            let groups = lib.new_photos_grouped(max_age).unwrap_or_default();
+            let _ = tx.send(groups);
+        });
+        let state = self.clone();
+        rx.attach(None, move |groups| {
+            state.new_files_loading.set(false);
+            // Apply only if the New Files view is still the visible child, so
+            // a slow result does not overwrite another view's status message.
+            if state.new_files_active() {
+                let count: usize = groups.iter().map(|(_, ps)| ps.len()).sum();
+                state.new_files().show_groups(groups);
+                state
+                    .status()
+                    .set_message(&format!("New Files — {count} recently added"));
+            }
+            if state.new_files_reload_after.replace(false) {
+                state.load_new_files_async();
+            }
+            glib::ControlFlow::Continue
+        });
     }
 
     /// Show every photo currently marked missing (gone from disk) in the grid.
@@ -626,15 +666,12 @@ impl AppState {
             .unwrap_or(false)
     }
 
-    /// If the New Files view is showing, rebuild it from the database (used
-    /// after a reconcile/enrichment lands new files).
+    /// If the New Files view is showing, reload it from the database (used
+    /// after a reconcile/enrichment lands new files). The query itself runs
+    /// off the main thread.
     pub fn refresh_new_files_if_active(self: &Rc<Self>) {
         if self.new_files_active() {
-            let groups = self
-                .lib
-                .new_photos_grouped(self.prefs.borrow().new_max_age_secs())
-                .unwrap_or_default();
-            self.new_files().show_groups(groups);
+            self.load_new_files_async();
         }
     }
 }
