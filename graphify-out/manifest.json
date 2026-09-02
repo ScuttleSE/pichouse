@@ -1,8 +1,8 @@
 {
   "Cargo.toml": {
-    "mtime": 1788331809.401028,
-    "seen": 1788333707.3298886,
-    "ast_hash": "486c86f27c8da5ce790b8ab0c78419cc",
+    "mtime": 1788333717.6240027,
+    "seen": 1788336184.0553818,
+    "ast_hash": "dd41edfabb2ea624b8c7c0c5c18a7b04",
     "semantic_hash": ""
   },
   "src/ai/client.rs": {
@@ -402,10 +402,10 @@
     "semantic_hash": ""
   },
   "src/ui/newfiles.rs": {
-    "mtime": 1787833262.3087564,
-    "seen": 1787995271.4018073,
-    "ast_hash": "43b136fa049364011518280d6c91e32b",
-    "semantic_hash": "43b136fa049364011518280d6c91e32b"
+    "mtime": 1788336088.2545407,
+    "seen": 1788336184.0576248,
+    "ast_hash": "072aa9bc669621de69cf43f7bef58df3",
+    "semantic_hash": ""
   },
   "src/ui/people.rs": {
     "mtime": 1788149150.5207403,
@@ -546,20 +546,20 @@
     "semantic_hash": "854de8f19cc44087ff0606cf9b370680"
   },
   ".gitea/workflows/build.yaml": {
-    "mtime": 1788333650.5760403,
-    "seen": 1788333707.3326726,
+    "mtime": 1788333717.6520028,
+    "seen": 1788336184.0584393,
     "ast_hash": "219e37f07ec4b92900ac967abb7dc2dd",
     "semantic_hash": ""
   },
   ".gitea/workflows/release.yaml": {
-    "mtime": 1788333685.396021,
-    "seen": 1788333707.332674,
+    "mtime": 1788333717.6520028,
+    "seen": 1788336184.0584404,
     "ast_hash": "ea038e1f4fa6441f3ad82de4c943a07f",
     "semantic_hash": ""
   },
   "AGENTS.md": {
-    "mtime": 1788333697.2840142,
-    "seen": 1788333707.3326752,
+    "mtime": 1788333717.6520028,
+    "seen": 1788336184.0584416,
     "ast_hash": "85db542ddcd7a22e2578dcbff20990a8",
     "semantic_hash": ""
   },
