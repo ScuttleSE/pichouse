@@ -159,9 +159,14 @@ pub fn reconcile_all(lib: &Library, cancel: &Arc<AtomicBool>) -> Report {
             }
             plan_dir(&snapshot, dir, files, &mut plan, &mut report);
         }
+        // A cancelled walk is partial. Every folder it did not reach looks
+        // vanished, and the check below stats each of their photos. Stop now.
+        if cancel.load(Ordering::Relaxed) {
+            break;
+        }
         // Directories that once held photos but no longer exist on disk: mark
         // all their photos missing.
-        plan_vanished_dirs(&snapshot, &root.path, &by_dir, &mut plan, &mut report);
+        plan_vanished_dirs(&snapshot, &root.path, &by_dir, cancel, &mut plan, &mut report);
     }
 
     // A cancelled walk saw only part of the disk. Its plan can mark present
@@ -354,6 +359,7 @@ fn plan_vanished_dirs(
     snap: &DbSnapshot,
     root_path: &str,
     by_dir: &HashMap<PathBuf, Vec<PathBuf>>,
+    cancel: &Arc<AtomicBool>,
     plan: &mut ReconcilePlan,
     report: &mut Report,
 ) {
@@ -363,6 +369,9 @@ fn plan_vanished_dirs(
         .collect();
     let prefix = format!("{}{}", root_path, std::path::MAIN_SEPARATOR);
     for (path, fid) in &snap.folder_id_by_path {
+        if cancel.load(Ordering::Relaxed) {
+            return;
+        }
         if path != root_path && !path.starts_with(&prefix) {
             continue; // not under this root
         }
