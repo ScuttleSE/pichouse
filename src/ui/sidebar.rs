@@ -178,6 +178,10 @@ pub struct Sidebar {
     /// `bind_row` grabs focus itself the moment it binds a widget to this id,
     /// then clears it so it only fires once.
     pending_focus_id: RefCell<Option<String>>,
+    /// Every row widget made so far (one per recycled list item). `reload`
+    /// keeps a row whose id did not change, so GTK does not bind it again.
+    /// `refresh_row_widgets` uses this list to update such rows.
+    row_widgets: RefCell<Vec<glib::WeakRef<TreeExpander>>>,
     /// The last `(folder_count, album_count)` this sidebar rebuilt from. During
     /// a scan, `reload` compares the live signature against this and skips the
     /// rebuild when neither grew, so an idle refresh tick costs nothing. `None`
@@ -230,6 +234,7 @@ impl Sidebar {
                 expander.set_child(Some(&row));
                 item.set_child(Some(&expander));
                 if let Some(sidebar) = weak_setup.upgrade() {
+                    sidebar.row_widgets.borrow_mut().push(expander.downgrade());
                     sidebar.attach_row_menu(&expander);
                     sidebar.attach_row_drag(&expander);
                     sidebar.attach_row_activate(&expander);
@@ -301,6 +306,7 @@ impl Sidebar {
                 suppress_expand_notify: std::cell::Cell::new(false),
                 suppress_selection_notify: std::cell::Cell::new(false),
                 pending_focus_id: RefCell::new(None),
+                row_widgets: RefCell::new(Vec::new()),
                 last_tree_signature: std::cell::Cell::new(None),
             }
         });
@@ -469,25 +475,7 @@ impl Sidebar {
             expander.grab_focus();
         }
         expander.set_widget_name(&id);
-        let Some(box_) = expander.child().and_downcast::<GtkBox>() else {
-            return;
-        };
-        let icon = box_.first_child().and_downcast::<Image>();
-        let label = box_
-            .first_child()
-            .and_then(|c| c.next_sibling())
-            .and_downcast::<Label>();
-        let badge = box_.last_child().and_downcast::<Image>();
-        let (name, icon_name) = self.node_label(&id);
-        if let Some(icon) = icon {
-            icon.set_from_icon_name(Some(icon_name));
-        }
-        if let Some(label) = label {
-            label.set_text(&name);
-        }
-        if let Some(badge) = badge {
-            badge.set_visible(self.face_scan_done(&id));
-        }
+        self.update_row_widget(&expander, &id);
 
         // Persist expansion changes immediately when the user expands/collapses
         // this row, so the tree view survives a restart even without a reload.
@@ -525,6 +513,53 @@ impl Sidebar {
         let weak_row = glib::object::ObjectExt::downgrade(&row);
         unsafe {
             item.set_data("expanded-handler", (weak_row, handler));
+        }
+    }
+
+    /// Set the icon, the label, and the face-scan badge of one row widget from
+    /// the current `TreeData`.
+    fn update_row_widget(&self, expander: &TreeExpander, id: &str) {
+        let Some(box_) = expander.child().and_downcast::<GtkBox>() else {
+            return;
+        };
+        let icon = box_.first_child().and_downcast::<Image>();
+        let label = box_
+            .first_child()
+            .and_then(|c| c.next_sibling())
+            .and_downcast::<Label>();
+        let badge = box_.last_child().and_downcast::<Image>();
+        let (name, icon_name) = self.node_label(id);
+        if let Some(icon) = icon {
+            icon.set_from_icon_name(Some(icon_name));
+        }
+        if let Some(label) = label {
+            if label.text() != name {
+                label.set_text(&name);
+            }
+        }
+        if let Some(badge) = badge {
+            badge.set_visible(self.face_scan_done(id));
+        }
+    }
+
+    /// Update every live row widget from the current `TreeData`. A row whose id
+    /// did not change keeps its widget, so this is the only update it gets.
+    fn refresh_row_widgets(&self) {
+        let rows: Vec<TreeExpander> = {
+            let mut v = self.row_widgets.borrow_mut();
+            v.retain(|w| w.upgrade().is_some());
+            v.iter().filter_map(|w| w.upgrade()).collect()
+        };
+        for expander in rows {
+            // An unbound recycled widget has no list row. Skip it.
+            if expander.list_row().is_none() {
+                continue;
+            }
+            let id = expander.widget_name().to_string();
+            if id.is_empty() {
+                continue;
+            }
+            self.update_row_widget(&expander, &id);
         }
     }
 
@@ -1303,6 +1338,9 @@ impl Sidebar {
 
         self.restore_expansion();
         self.suppress_expand_notify.set(false);
+
+        // Update the label and the badge of rows that GTK did not bind again.
+        self.refresh_row_widgets();
 
         // Re-select whichever of the previously selected rows still exist, on
         // the freshly created row objects, without re-triggering navigation —
