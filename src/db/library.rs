@@ -289,6 +289,111 @@ fn migrate(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_photos_added_at ON photos(added_at);",
     )?;
+    // A partial index for the "Missing Files" count. It holds only the
+    // missing rows, so the count does not read the full table.
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_photos_missing ON photos(missing) WHERE missing = 1;",
+    )?;
+    migrate_face_stats(conn)?;
+    Ok(())
+}
+
+/// The setting key that marks the one-time fill of `folder_face_stats`.
+const FACE_STATS_MARKER: &str = "face_stats.v1";
+
+/// Fill `folder_face_stats` one time, then create the triggers that keep it
+/// current. The sidebar reads the per-folder face-scan counts from this table.
+/// A full count over all photos takes seconds on a large library.
+///
+/// A photo counts in `total` when `missing = 0`. It counts in `done` when it
+/// also has `face_status = 2` or `style_face_status = 2`. These two columns
+/// mirror `face_scan.state` and `style_face_scan.state`.
+fn migrate_face_stats(conn: &Connection) -> Result<()> {
+    let done: bool = conn
+        .query_row(
+            "SELECT 1 FROM settings WHERE key = ?1",
+            params![FACE_STATS_MARKER],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if !done {
+        let t = std::time::Instant::now();
+        log::info!("migrate: building folder_face_stats (one time)");
+        // Drop old triggers first, so the bulk writes below do not fire them.
+        conn.execute_batch(
+            "BEGIN;
+             DROP TRIGGER IF EXISTS trg_photos_face_stats_ins;
+             DROP TRIGGER IF EXISTS trg_photos_face_stats_del;
+             DROP TRIGGER IF EXISTS trg_photos_face_stats_upd;
+             UPDATE photos SET face_status = \
+                 COALESCE((SELECT state FROM face_scan WHERE photo_id = photos.id), 0) \
+                 WHERE face_status IS NOT \
+                 COALESCE((SELECT state FROM face_scan WHERE photo_id = photos.id), 0);
+             UPDATE photos SET style_face_status = \
+                 COALESCE((SELECT state FROM style_face_scan WHERE photo_id = photos.id), 0) \
+                 WHERE style_face_status IS NOT \
+                 COALESCE((SELECT state FROM style_face_scan WHERE photo_id = photos.id), 0);
+             DELETE FROM folder_face_stats;
+             INSERT INTO folder_face_stats(folder_id, total, done) \
+                 SELECT folder_id, COUNT(*), \
+                        SUM(CASE WHEN face_status = 2 OR style_face_status = 2 THEN 1 ELSE 0 END) \
+                 FROM photos WHERE missing = 0 GROUP BY folder_id;",
+        )?;
+        create_face_stats_triggers(conn)?;
+        conn.execute(
+            "INSERT OR REPLACE INTO settings(key, value) VALUES(?1, '1')",
+            params![FACE_STATS_MARKER],
+        )?;
+        conn.execute_batch("COMMIT;")?;
+        log::info!("migrate: folder_face_stats built in {:.2?}", t.elapsed());
+    } else {
+        create_face_stats_triggers(conn)?;
+    }
+    Ok(())
+}
+
+/// Create the triggers that keep `folder_face_stats` current. Idempotent.
+fn create_face_stats_triggers(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE TRIGGER IF NOT EXISTS trg_photos_face_stats_ins AFTER INSERT ON photos
+         WHEN NEW.missing = 0
+         BEGIN
+             INSERT INTO folder_face_stats(folder_id, total, done)
+                 VALUES(NEW.folder_id, 1,
+                        CASE WHEN NEW.face_status = 2 OR NEW.style_face_status = 2 THEN 1 ELSE 0 END)
+                 ON CONFLICT(folder_id) DO UPDATE SET
+                     total = total + 1,
+                     done = done + excluded.done;
+         END;
+         CREATE TRIGGER IF NOT EXISTS trg_photos_face_stats_del AFTER DELETE ON photos
+         WHEN OLD.missing = 0
+         BEGIN
+             UPDATE folder_face_stats SET
+                 total = total - 1,
+                 done = done - (CASE WHEN OLD.face_status = 2 OR OLD.style_face_status = 2 THEN 1 ELSE 0 END)
+                 WHERE folder_id = OLD.folder_id;
+         END;
+         CREATE TRIGGER IF NOT EXISTS trg_photos_face_stats_upd
+         AFTER UPDATE OF folder_id, missing, face_status, style_face_status ON photos
+         WHEN OLD.folder_id IS NOT NEW.folder_id
+           OR OLD.missing IS NOT NEW.missing
+           OR (OLD.face_status = 2 OR OLD.style_face_status = 2)
+              IS NOT (NEW.face_status = 2 OR NEW.style_face_status = 2)
+         BEGIN
+             UPDATE folder_face_stats SET
+                 total = total - 1,
+                 done = done - (CASE WHEN OLD.face_status = 2 OR OLD.style_face_status = 2 THEN 1 ELSE 0 END)
+                 WHERE folder_id = OLD.folder_id AND OLD.missing = 0;
+             INSERT INTO folder_face_stats(folder_id, total, done)
+                 SELECT NEW.folder_id, 1,
+                        CASE WHEN NEW.face_status = 2 OR NEW.style_face_status = 2 THEN 1 ELSE 0 END
+                 WHERE NEW.missing = 0
+                 ON CONFLICT(folder_id) DO UPDATE SET
+                     total = total + 1,
+                     done = done + excluded.done;
+         END;",
+    )?;
     Ok(())
 }
 

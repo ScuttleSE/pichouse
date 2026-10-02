@@ -553,7 +553,9 @@ impl Library {
             ps.as_slice(),
         )?;
         conn.execute(
-            &format!("UPDATE photos SET style_face_status = 0 WHERE folder_id IN ({placeholders})"),
+            &format!(
+                "UPDATE photos SET style_face_status = 0 WHERE style_face_status <> 0 AND folder_id IN ({placeholders})"
+            ),
             ps.as_slice(),
         )?;
         Ok(())
@@ -590,7 +592,7 @@ impl Library {
         let conn = self.lock();
         conn.execute_batch(
             "DELETE FROM style_faces; DELETE FROM characters; DELETE FROM style_face_scan; \
-             UPDATE photos SET style_face_status = 0;",
+             UPDATE photos SET style_face_status = 0 WHERE style_face_status <> 0;",
         )?;
         Ok(())
     }

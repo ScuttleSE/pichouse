@@ -608,7 +608,9 @@ impl Library {
             ps.as_slice(),
         )?;
         conn.execute(
-            &format!("UPDATE photos SET face_status = 0 WHERE folder_id IN ({placeholders})"),
+            &format!(
+                "UPDATE photos SET face_status = 0 WHERE face_status <> 0 AND folder_id IN ({placeholders})"
+            ),
             ps.as_slice(),
         )?;
         Ok(())
@@ -647,16 +649,11 @@ impl Library {
     /// not count. A photo counts as scanned when the human scan or the
     /// stylised scan has state 2 (done).
     pub fn folder_face_scan_counts(&self) -> Result<HashMap<i64, (i64, i64)>> {
+        // Triggers on `photos` keep `folder_face_stats` current. A full count
+        // over all photos takes seconds on a large library.
         let conn = self.read_lock();
-        let mut stmt = conn.prepare(
-            "SELECT p.folder_id, COUNT(*), \
-                    SUM(CASE WHEN fs.state = 2 OR ss.state = 2 THEN 1 ELSE 0 END) \
-             FROM photos p \
-             LEFT JOIN face_scan fs ON fs.photo_id = p.id \
-             LEFT JOIN style_face_scan ss ON ss.photo_id = p.id \
-             WHERE p.missing = 0 \
-             GROUP BY p.folder_id",
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT folder_id, total, done FROM folder_face_stats WHERE total > 0")?;
         let rows = stmt.query_map([], |r| {
             Ok((r.get::<_, i64>(0)?, (r.get::<_, i64>(1)?, r.get::<_, i64>(2)?)))
         })?;
@@ -740,7 +737,7 @@ impl Library {
         let conn = self.lock();
         conn.execute_batch(
             "DELETE FROM faces; DELETE FROM persons; DELETE FROM face_scan; \
-             UPDATE photos SET face_status = 0;",
+             UPDATE photos SET face_status = 0 WHERE face_status <> 0;",
         )?;
         Ok(())
     }
@@ -909,6 +906,102 @@ mod tests {
             ..Default::default()
         })
         .unwrap()
+    }
+
+    /// The per-folder counts from a full query over `photos` and the scan
+    /// tables. The trigger-kept `folder_face_stats` must match this.
+    fn face_counts_full(lib: &Library) -> HashMap<i64, (i64, i64)> {
+        let conn = lib.lock();
+        let mut stmt = conn
+            .prepare(
+                "SELECT p.folder_id, COUNT(*), \
+                        SUM(CASE WHEN fs.state = 2 OR ss.state = 2 THEN 1 ELSE 0 END) \
+                 FROM photos p \
+                 LEFT JOIN face_scan fs ON fs.photo_id = p.id \
+                 LEFT JOIN style_face_scan ss ON ss.photo_id = p.id \
+                 WHERE p.missing = 0 GROUP BY p.folder_id",
+            )
+            .unwrap();
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, (r.get(1)?, r.get(2)?))))
+            .unwrap();
+        rows.map(|r| r.unwrap()).collect()
+    }
+
+    fn assert_stats(lib: &Library, step: &str) {
+        assert_eq!(
+            lib.folder_face_scan_counts().unwrap(),
+            face_counts_full(lib),
+            "after {step}"
+        );
+    }
+
+    #[test]
+    fn folder_face_stats_follow_every_change() {
+        let lib = temp_lib();
+        let a = add_photo(&lib, "a");
+        let b = add_photo(&lib, "b");
+        let c = add_photo(&lib, "c");
+        assert_stats(&lib, "insert");
+        lib.set_face_scan_state(a, 2).unwrap();
+        lib.set_style_face_scan_state(b, 2).unwrap();
+        lib.set_style_face_scan_state(a, 2).unwrap();
+        assert_stats(&lib, "scan state");
+        lib.set_face_scan_state(a, 1).unwrap();
+        assert_stats(&lib, "scan state, one of two left");
+        lib.set_photo_missing(b, true).unwrap();
+        assert_stats(&lib, "missing");
+        lib.set_photo_missing(b, false).unwrap();
+        assert_stats(&lib, "not missing");
+        // Move photo c into the folder of photo a.
+        let fa = lib.photo_by_id(a).unwrap().unwrap().folder_id;
+        lib.lock()
+            .execute("UPDATE photos SET folder_id = ?1 WHERE id = ?2", params![fa, c])
+            .unwrap();
+        assert_stats(&lib, "move");
+        lib.clear_style_face_scan_in(&[fa]).unwrap();
+        assert_stats(&lib, "clear style scan in folder");
+        lib.set_face_scan_state(c, 2).unwrap();
+        lib.delete_all_face_data().unwrap();
+        assert_stats(&lib, "delete all face data");
+        lib.set_style_face_scan_state(b, 2).unwrap();
+        let fb = lib.photo_by_id(b).unwrap().unwrap().folder_id;
+        lib.delete_folder(fb).unwrap();
+        assert_stats(&lib, "delete folder (cascade)");
+        lib.delete_all_style_face_data().unwrap();
+        assert_stats(&lib, "delete all style face data");
+    }
+
+    #[test]
+    fn folder_face_stats_backfill_on_old_database() {
+        let mut p = std::env::temp_dir();
+        p.push(format!("pichouse-facestats-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&p);
+        {
+            let lib = Library::open_at(&p).unwrap();
+            let a = add_photo(&lib, "a");
+            add_photo(&lib, "b");
+            lib.set_face_scan_state(a, 2).unwrap();
+            // Act as an old database: no marker, no triggers, no stats, and a
+            // mirror column out of sync with the scan table.
+            lib.lock()
+                .execute_batch(
+                    "DELETE FROM settings WHERE key = 'face_stats.v1';
+                     DROP TRIGGER trg_photos_face_stats_ins;
+                     DROP TRIGGER trg_photos_face_stats_del;
+                     DROP TRIGGER trg_photos_face_stats_upd;
+                     DELETE FROM folder_face_stats;
+                     UPDATE photos SET face_status = 0;",
+                )
+                .unwrap();
+        }
+        let lib = Library::open_at(&p).unwrap();
+        assert_stats(&lib, "backfill");
+        let c = add_photo(&lib, "c");
+        lib.set_style_face_scan_state(c, 2).unwrap();
+        assert_stats(&lib, "change after backfill");
+        drop(lib);
+        let _ = std::fs::remove_file(&p);
     }
 
     #[test]
