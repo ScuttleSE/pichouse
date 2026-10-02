@@ -31,40 +31,56 @@ enum Msg {
 /// running (avoids overlapping walks; the next timer tick will catch up).
 /// `trigger` names the caller in the log.
 pub fn reconcile_now(state: &Rc<AppState>, trigger: &str) {
-    run_reconcile(state, trigger, false);
+    run_reconcile(state, trigger, false, false);
+}
+
+/// Refresh Library: a user request. It cancels a running reconciliation (for
+/// example the startup run) and starts a new one.
+pub fn refresh_library(state: &Rc<AppState>) {
+    run_reconcile(state, "refresh", false, true);
 }
 
 /// Tools > Scan for New Folders: run the same reconciliation on demand. It
-/// shows a status message at the start and reports an empty result. If a
-/// reconciliation is already running, it joins that run and reports its result.
+/// shows a status message at the start and reports an empty result. It cancels
+/// a running reconciliation (for example the startup run) and starts a new one.
 pub fn scan_new_folders(state: &Rc<AppState>) {
-    run_reconcile(state, "manual", true);
+    run_reconcile(state, "manual", true, true);
 }
 
 /// Shared reconcile run. `announce` adds start and empty-result messages. The
 /// periodic timer and "Refresh Library" stay silent when nothing changed.
-fn run_reconcile(state: &Rc<AppState>, trigger: &str, announce: bool) {
+/// `preempt` cancels a running reconciliation. Without it, the call is skipped.
+fn run_reconcile(state: &Rc<AppState>, trigger: &str, announce: bool, preempt: bool) {
     if state.reconcile_job.running() {
-        log::debug!("reconcile ({trigger}): skipped, a reconcile is already running");
-        if announce {
-            state.reconcile_announce.set(true);
-            state
-                .status()
-                .set_message("Library scan in progress. Results follow.");
+        if !preempt {
+            log::debug!("reconcile ({trigger}): skipped, a reconcile is already running");
+            return;
         }
-        return;
+        log::info!("reconcile ({trigger}): cancels the running reconcile");
+        // A joined manual scan must still report its result.
+        let announce = announce || state.reconcile_announce.get();
+        state.reconcile_announce.set(announce);
+    } else {
+        state.reconcile_announce.set(announce);
     }
     log::info!("reconcile ({trigger}): start");
-    state.reconcile_announce.set(announce);
     if announce {
         state.status().set_message("Scanning for new folders");
     }
+    // `begin` cancels the old session. Its worker stops at the next check.
     let cancel = state.reconcile_job.begin();
     let (tx, rx) = glib::MainContext::channel::<Msg>(glib::Priority::DEFAULT);
 
     {
         let state = state.clone();
+        let session = cancel.clone();
         rx.attach(None, move |Msg::Done(report)| {
+            // A newer reconcile replaced this one. Do not touch the job
+            // state or the UI. The newer run owns both.
+            if !state.reconcile_job.is_current(&session) {
+                log::debug!("reconcile: old cancelled run ended");
+                return glib::ControlFlow::Break;
+            }
             state.reconcile_job.finish();
             let announce = state.reconcile_announce.replace(false);
             if report.changed() {

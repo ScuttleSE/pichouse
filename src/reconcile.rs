@@ -164,10 +164,17 @@ pub fn reconcile_all(lib: &Library, cancel: &Arc<AtomicBool>) -> Report {
         plan_vanished_dirs(&snapshot, &root.path, &by_dir, &mut plan, &mut report);
     }
 
-    // Apply the whole batch in one transaction. This is the only DB write.
+    // A cancelled walk saw only part of the disk. Its plan can mark present
+    // photos as missing. Discard the plan. A newer reconcile does the work.
     if cancel.load(Ordering::Relaxed) {
-        log::debug!("reconcile: cancelled. The partial plan is applied.");
+        log::info!(
+            "reconcile: cancelled after {:.2?}. The partial plan is discarded.",
+            started.elapsed()
+        );
+        return Report::default();
     }
+
+    // Apply the whole batch in one transaction. This is the only DB write.
     let apply_start = std::time::Instant::now();
     match lib.apply_reconcile_plan(&plan) {
         Ok(added) => report.added = added,

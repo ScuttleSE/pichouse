@@ -31,6 +31,12 @@ impl Controller {
         *cur = None;
     }
 
+    /// Whether `flag` belongs to the current session. A cancelled session
+    /// that `begin` replaced is not current.
+    pub fn is_current(&self, flag: &Arc<AtomicBool>) -> bool {
+        matches!(self.current.lock().unwrap().as_ref(), Some(cur) if Arc::ptr_eq(cur, flag))
+    }
+
     /// Whether a session is currently active.
     pub fn running(&self) -> bool {
         self.current.lock().unwrap().is_some()

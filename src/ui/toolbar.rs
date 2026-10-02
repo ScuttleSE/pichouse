@@ -87,7 +87,7 @@ pub fn build_toolbar(state: &Rc<AppState>) -> GtkBox {
     });
     add_action("refresh", {
         let state = state.clone();
-        Box::new(move || super::freshness::reconcile_now(&state, "refresh"))
+        Box::new(move || super::freshness::refresh_library(&state))
     });
     add_action("slideshow", {
         let state = state.clone();
