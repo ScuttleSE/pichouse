@@ -516,14 +516,14 @@ impl AppState {
     pub fn show_person(self: &Rc<Self>, person_id: i64, name: &str) {
         *self.current_folder.borrow_mut() = 0;
         self.grid().show_person(person_id, name);
-        let count = self.lib.person_face_count(person_id).unwrap_or(0);
+        let count = self.lib.person_photo_count(person_id).unwrap_or(0);
         {
             let this = self.clone();
             self.grid().set_back(move || this.back_to_faces());
         }
         self.show_grid();
         self.status()
-            .set_message(&format!("{name} — {count} faces"));
+            .set_message(&format!("{name} — {count} photos"));
     }
 
     /// Show a person group's page in the Faces view: its sub-groups and
@@ -590,14 +590,14 @@ impl AppState {
     pub fn show_character(self: &Rc<Self>, character_id: i64, name: &str) {
         *self.current_folder.borrow_mut() = 0;
         self.grid().show_character(character_id, name);
-        let count = self.lib.character_face_count(character_id).unwrap_or(0);
+        let count = self.lib.character_photo_count(character_id).unwrap_or(0);
         {
             let this = self.clone();
             self.grid().set_back(move || this.back_to_characters());
         }
         self.show_grid();
         self.status()
-            .set_message(&format!("{name} — {count} faces"));
+            .set_message(&format!("{name} — {count} photos"));
     }
 
     /// Show a character group's page in the Characters view: its sub-groups

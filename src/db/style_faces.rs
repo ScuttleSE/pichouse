@@ -262,13 +262,14 @@ impl Library {
         Ok(fid.unwrap_or(0))
     }
 
-    /// The unnamed style clusters with their face counts. The order is stable:
-    /// by cluster id, with the noise cluster (-1) last. A stable order stops the
+    /// The unnamed style clusters with their photo counts. A photo with two or
+    /// more faces in one cluster counts one time. The order is stable: by
+    /// cluster id, with the noise cluster (-1) last. A stable order stops the
     /// Characters grid from re-ordering while a scan adds faces.
     pub fn unnamed_style_clusters(&self) -> Result<Vec<(i64, i64)>> {
         let conn = self.lock();
         let mut stmt = conn.prepare(
-            "SELECT cluster_id, COUNT(*) AS n FROM style_faces \
+            "SELECT cluster_id, COUNT(DISTINCT photo_id) AS n FROM style_faces \
              WHERE character_id IS NULL AND cluster_id IS NOT NULL \
              GROUP BY cluster_id ORDER BY (cluster_id = -1), cluster_id",
         )?;
@@ -374,12 +375,13 @@ impl Library {
         Ok(())
     }
 
-    /// All characters with their face counts, ordered by name.
+    /// All characters with their photo counts, ordered by name. A photo with
+    /// two or more faces of one character counts one time.
     pub fn characters(&self) -> Result<Vec<(Character, i64)>> {
         let conn = self.read_lock();
         let mut stmt = conn.prepare(
             "SELECT c.id, c.name, c.cover_face_id, \
-                (SELECT COUNT(*) FROM style_faces f WHERE f.character_id = c.id) AS n \
+                (SELECT COUNT(DISTINCT f.photo_id) FROM style_faces f WHERE f.character_id = c.id) AS n \
              FROM characters c ORDER BY c.name COLLATE NOCASE",
         )?;
         let rows = stmt.query_map([], |r| Ok((map_character(r)?, r.get::<_, i64>(3)?)))?;
@@ -390,11 +392,11 @@ impl Library {
         Ok(v)
     }
 
-    /// The number of stylised faces assigned to a character.
-    pub fn character_face_count(&self, id: i64) -> Result<i64> {
+    /// The number of distinct photos that contain a face of a character.
+    pub fn character_photo_count(&self, id: i64) -> Result<i64> {
         let conn = self.lock();
         let n: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM style_faces WHERE character_id = ?1",
+            "SELECT COUNT(DISTINCT photo_id) FROM style_faces WHERE character_id = ?1",
             params![id],
             |r| r.get(0),
         )?;
@@ -818,5 +820,35 @@ mod tests {
         // Already covered: a later merge's fallback must not replace it.
         lib.set_character_cover_if_unset(a, f2).unwrap();
         assert_eq!(lib.character_representative_face(a).unwrap(), f1);
+    }
+
+    #[test]
+    fn counts_are_photos_not_faces() {
+        // One photo has two faces of the same character. A second photo has
+        // one face. The counts must agree with the opened grid: 2 photos, not 3.
+        let lib = temp_lib();
+        let p1 = add_photo(&lib, "m");
+        let p2 = add_photo(&lib, "n");
+        let face = |photo_id| StyleFace {
+            photo_id,
+            cluster_id: 7,
+            embedding: vec![1.0],
+            ..Default::default()
+        };
+        let f1 = lib.insert_style_face(&face(p1)).unwrap();
+        let f2 = lib.insert_style_face(&face(p1)).unwrap();
+        let f3 = lib.insert_style_face(&face(p2)).unwrap();
+
+        // Unnamed cluster: 3 faces in 2 photos.
+        assert_eq!(lib.unnamed_style_clusters().unwrap(), vec![(7, 2)]);
+
+        let a = lib.create_character("A").unwrap();
+        for f in [f1, f2, f3] {
+            lib.set_style_face_character(f, a).unwrap();
+        }
+        assert_eq!(lib.character_photo_count(a).unwrap(), 2);
+        let (_, n) = lib.characters().unwrap().into_iter().next().unwrap();
+        assert_eq!(n, 2);
+        assert_eq!(lib.photos_of_character(a).unwrap().len(), 2);
     }
 }

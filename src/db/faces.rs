@@ -265,12 +265,13 @@ impl Library {
         Ok(v)
     }
 
-    /// The next largest unnamed cluster ids with their face counts, for the
-    /// "review unnamed people" flow. Ordered by count, largest first.
+    /// The next largest unnamed cluster ids with their photo counts, for the
+    /// "review unnamed people" flow. A photo with two or more faces in one
+    /// cluster counts one time. Ordered by count, largest first.
     pub fn unnamed_clusters(&self) -> Result<Vec<(i64, i64)>> {
         let conn = self.lock();
         let mut stmt = conn.prepare(
-            "SELECT cluster_id, COUNT(*) AS n FROM faces \
+            "SELECT cluster_id, COUNT(DISTINCT photo_id) AS n FROM faces \
              WHERE person_id IS NULL AND cluster_id IS NOT NULL \
              GROUP BY cluster_id ORDER BY n DESC",
         )?;
@@ -408,12 +409,13 @@ impl Library {
         Ok(())
     }
 
-    /// All persons with their face counts, ordered by name.
+    /// All persons with their photo counts, ordered by name. A photo with two
+    /// or more faces of one person counts one time.
     pub fn persons(&self) -> Result<Vec<(Person, i64)>> {
         let conn = self.read_lock();
         let mut stmt = conn.prepare(
             "SELECT p.id, p.name, p.cover_face_id, \
-                (SELECT COUNT(*) FROM faces f WHERE f.person_id = p.id) AS n \
+                (SELECT COUNT(DISTINCT f.photo_id) FROM faces f WHERE f.person_id = p.id) AS n \
              FROM persons p ORDER BY p.name COLLATE NOCASE",
         )?;
         let rows = stmt.query_map([], |r| Ok((map_person(r)?, r.get::<_, i64>(3)?)))?;
@@ -424,11 +426,11 @@ impl Library {
         Ok(v)
     }
 
-    /// The number of faces assigned to a person.
-    pub fn person_face_count(&self, id: i64) -> Result<i64> {
+    /// The number of distinct photos that contain a face of a person.
+    pub fn person_photo_count(&self, id: i64) -> Result<i64> {
         let conn = self.lock();
         let n: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM faces WHERE person_id = ?1",
+            "SELECT COUNT(DISTINCT photo_id) FROM faces WHERE person_id = ?1",
             params![id],
             |r| r.get(0),
         )?;
@@ -731,7 +733,7 @@ mod tests {
 
         let alice = lib.create_person("Alice").unwrap();
         lib.set_face_person(f1, alice).unwrap();
-        assert_eq!(lib.person_face_count(alice).unwrap(), 1);
+        assert_eq!(lib.person_photo_count(alice).unwrap(), 1);
         let photos = lib.photos_of_person(alice).unwrap();
         assert_eq!(photos.len(), 1);
         assert_eq!(photos[0].id, p1);
@@ -787,7 +789,7 @@ mod tests {
         let b = lib.create_person("B").unwrap();
         lib.set_face_person(f1, a).unwrap();
         lib.merge_persons(a, b).unwrap();
-        assert_eq!(lib.person_face_count(b).unwrap(), 1);
+        assert_eq!(lib.person_photo_count(b).unwrap(), 1);
         // A is gone.
         let names: Vec<String> = lib.persons().unwrap().into_iter().map(|(p, _)| p.name).collect();
         assert_eq!(names, vec!["B".to_string()]);
@@ -857,6 +859,36 @@ mod tests {
         // Already covered: a later merge's fallback must not replace it.
         lib.set_person_cover_if_unset(a, f2).unwrap();
         assert_eq!(lib.person_representative_face(a).unwrap(), f1);
+    }
+
+    #[test]
+    fn counts_are_photos_not_faces() {
+        // One photo has two faces of the same person. A second photo has one
+        // face. The counts must agree with the opened grid: 2 photos, not 3.
+        let lib = temp_lib();
+        let p1 = add_photo(&lib, "m");
+        let p2 = add_photo(&lib, "n");
+        let face = |photo_id| Face {
+            photo_id,
+            cluster_id: 7,
+            embedding: vec![1.0],
+            ..Default::default()
+        };
+        let f1 = lib.insert_face(&face(p1)).unwrap();
+        let f2 = lib.insert_face(&face(p1)).unwrap();
+        let f3 = lib.insert_face(&face(p2)).unwrap();
+
+        // Unnamed cluster: 3 faces in 2 photos.
+        assert_eq!(lib.unnamed_clusters().unwrap(), vec![(7, 2)]);
+
+        let a = lib.create_person("A").unwrap();
+        for f in [f1, f2, f3] {
+            lib.set_face_person(f, a).unwrap();
+        }
+        assert_eq!(lib.person_photo_count(a).unwrap(), 2);
+        let (_, n) = lib.persons().unwrap().into_iter().next().unwrap();
+        assert_eq!(n, 2);
+        assert_eq!(lib.photos_of_person(a).unwrap().len(), 2);
     }
 }
 
