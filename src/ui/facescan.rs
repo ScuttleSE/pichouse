@@ -183,7 +183,7 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::face::FaceConfi
             Arc::new(Mutex::new(ids.into_iter().collect()));
 
         let workers = cfg.concurrency.max(1);
-        let cfg_threshold = cfg.cluster_threshold;
+        let cfg_params = cfg.cluster_params();
         // Guard against two workers running a full recluster at the same time.
         let reclustering = Arc::new(AtomicBool::new(false));
         let mut handles = Vec::new();
@@ -226,7 +226,7 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::face::FaceConfi
                         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
                         .is_ok()
                 {
-                    if let Err(e) = recluster(&lib, cfg_threshold) {
+                    if let Err(e) = recluster(&lib, cfg_params) {
                         log::warn!("progressive clustering: {e}");
                     }
                     reclustering.store(false, Ordering::Release);
@@ -241,7 +241,7 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::face::FaceConfi
         // Cluster the whole library's embeddings so new faces join the right
         // group and named people pull matching faces in.
         let _ = tx.send(Msg::Message("Grouping faces…".into()));
-        if let Err(e) = recluster(&lib, cfg.cluster_threshold) {
+        if let Err(e) = recluster(&lib, cfg.cluster_params()) {
             log::warn!("clustering: {e}");
         }
 
@@ -346,7 +346,7 @@ fn scan_one_photo(lib: &Library, pipeline: &FacePipeline, id: i64) -> bool {
 /// embeddings and rewrites cluster ids only.
 pub fn recluster_now(state: &Rc<AppState>) {
     let lib = state.lib.clone();
-    let threshold = state.face_config.borrow().cluster_threshold;
+    let params = state.face_config.borrow().cluster_params();
     let (tx, rx) = glib::MainContext::channel::<()>(glib::Priority::DEFAULT);
     {
         let state = state.clone();
@@ -360,14 +360,14 @@ pub fn recluster_now(state: &Rc<AppState>) {
         });
     }
     std::thread::spawn(move || {
-        let _ = recluster(&lib, threshold);
+        let _ = recluster(&lib, params);
         let _ = tx.send(());
     });
 }
 
 /// Re-cluster every embedded face in the library. Person-assigned faces anchor
 /// stable clusters, so named people keep their identity across runs.
-fn recluster(lib: &Library, threshold: f32) -> Result<(), String> {
+fn recluster(lib: &Library, params: cluster::ClusterParams) -> Result<(), String> {
     let rows = lib
         .faces_for_clustering()
         .map_err(|e| format!("read faces: {e}"))?;
@@ -387,7 +387,7 @@ fn recluster(lib: &Library, threshold: f32) -> Result<(), String> {
         .collect();
     // Unnamed cluster ids start above any existing unnamed id to avoid reuse.
     let next = 1i64;
-    let assignments = cluster::cluster(&items, threshold, next);
+    let assignments = cluster::cluster(&items, params, next);
     let pairs: Vec<(i64, i64)> = assignments
         .into_iter()
         .map(|a| (a.face_id, a.cluster_id))

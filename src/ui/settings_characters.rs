@@ -6,7 +6,10 @@
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use gtk4::{Box as GtkBox, Button, CheckButton, DropDown, Label, Orientation, Separator, StringList};
+use gtk4::{
+    Box as GtkBox, Button, CheckButton, DropDown, Label, Orientation, Scale, Separator, SpinButton,
+    StringList,
+};
 
 use crate::styleface::models;
 
@@ -124,6 +127,9 @@ pub fn characters_pane(state: &Rc<AppState>) -> GtkBox {
     btn_row.append(&scan);
     root.append(&btn_row);
 
+    root.append(&Separator::new(Orientation::Horizontal));
+    root.append(&grouping_section(state));
+
     let hint = Label::new(Some(
         "Manage and name characters in the Characters section of the Library \
          sidebar.",
@@ -184,6 +190,134 @@ pub fn characters_pane(state: &Rc<AppState>) -> GtkBox {
     root.append(&reset);
 
     root
+}
+
+/// Build the Grouping section: the match strictness slider, the epsilon
+/// slider, the minimum samples spin button, and the "Regroup now" button.
+fn grouping_section(state: &Rc<AppState>) -> GtkBox {
+    let bx = GtkBox::new(Orientation::Vertical, 4);
+    let title = Label::new(None);
+    title.set_markup("<b>Grouping</b>");
+    title.set_xalign(0.0);
+    bx.append(&title);
+
+    let cfg = state.style_face_config.borrow().clone();
+
+    let strict = slider(
+        &bx,
+        "Match strictness",
+        "The largest distance from a face to its group centre. Lower values \
+         make more, smaller groups and more unclear faces. Higher values make \
+         larger groups that can mix characters. Default: 0.15.",
+        0.05,
+        0.30,
+        0.01,
+        cfg.cluster_max_dist as f64,
+    );
+    {
+        let state = state.clone();
+        strict.connect_value_changed(move |s| {
+            let v = s.value() as f32;
+            state.style_face_config.borrow_mut().cluster_max_dist = v;
+            let _ = state
+                .lib
+                .set_setting(prefs::KEY_STYLEFACE_CLUSTER_MAX_DIST, &format!("{v:.2}"));
+        });
+    }
+
+    let eps = slider(
+        &bx,
+        "Group merging (epsilon)",
+        "Higher values merge near groups into fewer, larger groups. Zero makes \
+         the smallest groups. Default: 0.00.",
+        0.0,
+        0.50,
+        0.01,
+        cfg.cluster_epsilon as f64,
+    );
+    {
+        let state = state.clone();
+        eps.connect_value_changed(move |s| {
+            let v = s.value() as f32;
+            state.style_face_config.borrow_mut().cluster_epsilon = v;
+            let _ = state
+                .lib
+                .set_setting(prefs::KEY_STYLEFACE_CLUSTER_EPSILON, &format!("{v:.2}"));
+        });
+    }
+
+    let row = GtkBox::new(Orientation::Horizontal, 6);
+    let l = Label::new(Some("Minimum samples"));
+    l.set_xalign(0.0);
+    l.set_width_chars(26);
+    row.append(&l);
+    let spin = SpinButton::with_range(1.0, 10.0, 1.0);
+    spin.set_value(cfg.min_samples as f64);
+    row.append(&spin);
+    bx.append(&row);
+    let h = Label::new(Some(
+        "Higher values stop chains of similar faces from linking two \
+         characters into one group. Default: 3.",
+    ));
+    h.set_xalign(0.0);
+    h.set_wrap(true);
+    h.add_css_class("dim-label");
+    bx.append(&h);
+    {
+        let state = state.clone();
+        spin.connect_value_changed(move |s| {
+            let v = s.value_as_int().max(1) as usize;
+            state.style_face_config.borrow_mut().min_samples = v;
+            let _ = state
+                .lib
+                .set_setting(prefs::KEY_STYLEFACE_MIN_SAMPLES, &v.to_string());
+        });
+    }
+
+    let regroup = Button::with_label("Regroup now");
+    regroup.set_halign(gtk4::Align::Start);
+    regroup.set_tooltip_text(Some(
+        "Group all detected stylised faces again with these values. Named \
+         characters keep their faces.",
+    ));
+    {
+        let state = state.clone();
+        regroup.connect_clicked(move |_| {
+            super::stylefacescan::recluster_now(&state);
+        });
+    }
+    bx.append(&regroup);
+    bx
+}
+
+/// Add a labelled slider with a help line to `parent`. Returns the slider.
+fn slider(
+    parent: &GtkBox,
+    label: &str,
+    help: &str,
+    min: f64,
+    max: f64,
+    step: f64,
+    value: f64,
+) -> Scale {
+    let row = GtkBox::new(Orientation::Horizontal, 6);
+    let l = Label::new(Some(label));
+    l.set_xalign(0.0);
+    l.set_width_chars(26);
+    row.append(&l);
+    let s = Scale::with_range(Orientation::Horizontal, min, max, step);
+    s.set_digits(2);
+    s.set_draw_value(true);
+    s.set_hexpand(true);
+    s.set_value(value);
+    row.append(&s);
+    parent.append(&row);
+    let h = Label::new(Some(help));
+    h.set_xalign(0.0);
+    h.set_wrap(true);
+    h.add_css_class("dim-label");
+    parent.append(&h);
+    s
 }
 
 /// Clear every stylised face, character, and grouping, plus the crop cache.

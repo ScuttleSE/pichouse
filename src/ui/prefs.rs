@@ -58,6 +58,7 @@ pub const KEY_FACE_EMBEDDING_PATH: &str = "face.embedding_path";
 pub const KEY_FACE_EMBEDDING_DIM: &str = "face.embedding_dim";
 pub const KEY_FACE_MIN_SCORE: &str = "face.min_score";
 pub const KEY_FACE_CLUSTER_THRESHOLD: &str = "face.cluster_threshold";
+pub const KEY_FACE_CLUSTER_AGREEMENT: &str = "face.cluster_agreement";
 pub const KEY_FACE_CONCURRENCY: &str = "face.concurrency";
 
 /// Stylised face (anime/cartoon/furry) setting keys stored in `library.db`.
@@ -70,6 +71,12 @@ pub const KEY_STYLEFACE_EMBEDDING_PATH: &str = "styleface.embedding_path";
 pub const KEY_STYLEFACE_EMBEDDING_DIM: &str = "styleface.embedding_dim";
 pub const KEY_STYLEFACE_MIN_SCORE: &str = "styleface.min_score";
 pub const KEY_STYLEFACE_CLUSTER_EPSILON: &str = "styleface.cluster_epsilon";
+pub const KEY_STYLEFACE_CLUSTER_MAX_DIST: &str = "styleface.cluster_max_dist";
+pub const KEY_STYLEFACE_MIN_SAMPLES: &str = "styleface.min_samples";
+
+/// The marker for the one-time reset to the stricter grouping defaults. The
+/// value "1" means the reset is done.
+pub const KEY_GROUPING_DEFAULTS_V2: &str = "grouping.defaults_v2";
 pub const KEY_STYLEFACE_CONCURRENCY: &str = "styleface.concurrency";
 
 /// Immich setting keys stored in `library.db`.
@@ -271,6 +278,32 @@ pub fn bool_to_str(b: bool) -> &'static str {
     }
 }
 
+/// Write the stricter grouping defaults one time. The write replaces values
+/// that the user saved before. Returns true when the reset ran now, so the
+/// caller can start a regroup. Later calls do nothing and return false.
+pub fn apply_grouping_defaults_v2(lib: &Library) -> bool {
+    use crate::face::cluster as fc;
+    use crate::styleface::cluster as sc;
+    if lib.get_setting(KEY_GROUPING_DEFAULTS_V2, "").unwrap_or_default() == "1" {
+        return false;
+    }
+    let pairs = [
+        (KEY_FACE_CLUSTER_THRESHOLD, fc::DEFAULT_COSINE_THRESHOLD.to_string()),
+        (KEY_FACE_CLUSTER_AGREEMENT, fc::DEFAULT_AGREEMENT.to_string()),
+        (KEY_STYLEFACE_CLUSTER_EPSILON, sc::DEFAULT_EPSILON.to_string()),
+        (KEY_STYLEFACE_CLUSTER_MAX_DIST, sc::DEFAULT_MAX_DIST.to_string()),
+        (KEY_STYLEFACE_MIN_SAMPLES, sc::DEFAULT_MIN_SAMPLES.to_string()),
+    ];
+    for (k, v) in &pairs {
+        if let Err(e) = lib.set_setting(k, v) {
+            log::warn!("grouping defaults: set {k}: {e}");
+            return false;
+        }
+    }
+    let _ = lib.set_setting(KEY_GROUPING_DEFAULTS_V2, "1");
+    true
+}
+
 /// Read the face recognition configuration from the library database.
 pub fn load_face_config(lib: &Library) -> FaceConfig {
     let mut c = FaceConfig {
@@ -303,6 +336,11 @@ pub fn load_face_config(lib: &Library) -> FaceConfig {
     if let Ok(v) = lib.get_setting(KEY_FACE_CLUSTER_THRESHOLD, "") {
         if let Ok(n) = v.parse::<f32>() {
             c.cluster_threshold = n;
+        }
+    }
+    if let Ok(v) = lib.get_setting(KEY_FACE_CLUSTER_AGREEMENT, "") {
+        if let Ok(n) = v.parse::<f32>() {
+            c.cluster_agreement = n;
         }
     }
     if let Ok(v) = lib.get_setting(KEY_FACE_CONCURRENCY, "") {
@@ -348,6 +386,16 @@ pub fn load_styleface_config(lib: &Library) -> StyleFaceConfig {
     if let Ok(v) = lib.get_setting(KEY_STYLEFACE_CLUSTER_EPSILON, "") {
         if let Ok(n) = v.parse::<f32>() {
             c.cluster_epsilon = n;
+        }
+    }
+    if let Ok(v) = lib.get_setting(KEY_STYLEFACE_CLUSTER_MAX_DIST, "") {
+        if let Ok(n) = v.parse::<f32>() {
+            c.cluster_max_dist = n;
+        }
+    }
+    if let Ok(v) = lib.get_setting(KEY_STYLEFACE_MIN_SAMPLES, "") {
+        if let Ok(n) = v.parse::<usize>() {
+            c.min_samples = n;
         }
     }
     if let Ok(v) = lib.get_setting(KEY_STYLEFACE_CONCURRENCY, "") {

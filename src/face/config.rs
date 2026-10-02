@@ -3,7 +3,7 @@
 //! Values come from the `face.*` settings keys in `library.db`. The UI writes
 //! them. `AppState` holds a loaded copy. Face detection is off by default.
 
-use super::cluster::DEFAULT_COSINE_THRESHOLD;
+use super::cluster::{ClusterParams, DEFAULT_AGREEMENT, DEFAULT_COSINE_THRESHOLD};
 
 /// The face feature settings.
 #[derive(Debug, Clone)]
@@ -23,6 +23,8 @@ pub struct FaceConfig {
     pub min_score: f32,
     /// The cosine-similarity threshold for clustering.
     pub cluster_threshold: f32,
+    /// The member agreement for clustering, 0.0..1.0.
+    pub cluster_agreement: f32,
     /// The number of worker threads for a scan.
     pub concurrency: usize,
 }
@@ -37,6 +39,7 @@ impl Default for FaceConfig {
             embedding_dim: 0,
             min_score: 0.6,
             cluster_threshold: DEFAULT_COSINE_THRESHOLD,
+            cluster_agreement: DEFAULT_AGREEMENT,
             concurrency: 2,
         }
     }
@@ -57,11 +60,20 @@ impl FaceConfig {
         if self.cluster_threshold > 1.0 {
             self.cluster_threshold = 1.0;
         }
+        self.cluster_agreement = self.cluster_agreement.clamp(0.0, 1.0);
         if self.concurrency == 0 {
             self.concurrency = 1;
         }
         if self.concurrency > 8 {
             self.concurrency = 8;
+        }
+    }
+
+    /// The grouping parameters for `cluster::cluster`.
+    pub fn cluster_params(&self) -> ClusterParams {
+        ClusterParams {
+            threshold: self.cluster_threshold,
+            agreement: self.cluster_agreement,
         }
     }
 

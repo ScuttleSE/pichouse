@@ -161,6 +161,31 @@ Faces* and work the same way day-to-day (scan, review, name, browse), but
 they run independently: a photo can be grouped by one pipeline, both, or
 neither, depending on whether it contains real or drawn faces.
 
+### Grouping settings
+
+Each of *Settings → Faces* and *Settings → Characters* has a **Grouping**
+section. A value saves when you change it. The new values apply on the next
+scan, or when you click *Regroup now*. A regroup keeps the faces of named
+people and named characters.
+
+- **Faces**
+  - *Match strictness* (0.30–0.70, default 0.45). A higher value makes more,
+    smaller groups.
+  - *Group member agreement* (0–100 %, default 50). A new face must also match
+    this part of a group's sample faces. Zero turns the check off.
+- **Characters**
+  - *Match strictness* (0.05–0.30, default 0.15). This is the largest cosine
+    distance from a face to its group centre. A lower value makes more, smaller
+    groups and more unclear faces.
+  - *Group merging (epsilon)* (0.00–0.50, default 0.00). A higher value merges
+    near groups.
+  - *Minimum samples* (1–10, default 3). A higher value stops chains of similar
+    faces from linking two characters into one group.
+
+Older builds used looser defaults. On the first
+start after the update, pichouse writes the new defaults one time and regroups
+all faces.
+
 ### Managing face and character groups
 
 The People view and the Characters view show one tile per group. Both views add

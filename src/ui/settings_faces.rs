@@ -7,7 +7,9 @@
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use gtk4::{Box as GtkBox, Button, CheckButton, DropDown, Label, Orientation, Separator, StringList};
+use gtk4::{
+    Box as GtkBox, Button, CheckButton, DropDown, Label, Orientation, Scale, Separator, StringList,
+};
 
 use crate::face::models;
 
@@ -116,6 +118,9 @@ pub fn faces_pane(state: &Rc<AppState>) -> GtkBox {
     btn_row.append(&scan);
     root.append(&btn_row);
 
+    root.append(&Separator::new(Orientation::Horizontal));
+    root.append(&grouping_section(state));
+
     let hint = Label::new(Some(
         "Manage and name people in the People section of the Library sidebar.",
     ));
@@ -197,6 +202,107 @@ pub fn faces_pane(state: &Rc<AppState>) -> GtkBox {
     }
 
     root
+}
+
+/// Build the Grouping section: the match strictness slider, the member
+/// agreement slider, and the "Regroup now" button.
+fn grouping_section(state: &Rc<AppState>) -> GtkBox {
+    let bx = GtkBox::new(Orientation::Vertical, 4);
+    let title = Label::new(None);
+    title.set_markup("<b>Grouping</b>");
+    title.set_xalign(0.0);
+    bx.append(&title);
+
+    let cfg = state.face_config.borrow().clone();
+
+    let strict = slider(
+        &bx,
+        "Match strictness",
+        "Higher values make more, smaller groups. Lower values make fewer, \
+         larger groups that can mix people. Default: 0.45.",
+        0.30,
+        0.70,
+        0.01,
+        cfg.cluster_threshold as f64,
+    );
+    {
+        let state = state.clone();
+        strict.connect_value_changed(move |s| {
+            let v = s.value() as f32;
+            state.face_config.borrow_mut().cluster_threshold = v;
+            let _ = state
+                .lib
+                .set_setting(prefs::KEY_FACE_CLUSTER_THRESHOLD, &format!("{v:.2}"));
+        });
+    }
+
+    let agree = slider(
+        &bx,
+        "Group member agreement (%)",
+        "The part of a group's sample faces that must also match a new face. \
+         Higher values stop one face from pulling a different person into a \
+         group. Zero turns the check off. Default: 50.",
+        0.0,
+        100.0,
+        5.0,
+        (cfg.cluster_agreement * 100.0) as f64,
+    );
+    {
+        let state = state.clone();
+        agree.connect_value_changed(move |s| {
+            let v = (s.value() / 100.0) as f32;
+            state.face_config.borrow_mut().cluster_agreement = v;
+            let _ = state
+                .lib
+                .set_setting(prefs::KEY_FACE_CLUSTER_AGREEMENT, &format!("{v:.2}"));
+        });
+    }
+
+    let regroup = Button::with_label("Regroup now");
+    regroup.set_halign(gtk4::Align::Start);
+    regroup.set_tooltip_text(Some(
+        "Group all detected faces again with these values. Named people keep \
+         their faces.",
+    ));
+    {
+        let state = state.clone();
+        regroup.connect_clicked(move |_| {
+            super::facescan::recluster_now(&state);
+        });
+    }
+    bx.append(&regroup);
+    bx
+}
+
+/// Add a labelled slider with a help line to `parent`. Returns the slider.
+#[allow(clippy::too_many_arguments)]
+fn slider(
+    parent: &GtkBox,
+    label: &str,
+    help: &str,
+    min: f64,
+    max: f64,
+    step: f64,
+    value: f64,
+) -> Scale {
+    let row = GtkBox::new(Orientation::Horizontal, 6);
+    let l = Label::new(Some(label));
+    l.set_xalign(0.0);
+    l.set_width_chars(26);
+    row.append(&l);
+    let s = Scale::with_range(Orientation::Horizontal, min, max, step);
+    s.set_digits(if step < 1.0 { 2 } else { 0 });
+    s.set_draw_value(true);
+    s.set_hexpand(true);
+    s.set_value(value);
+    row.append(&s);
+    parent.append(&row);
+    let h = Label::new(Some(help));
+    h.set_xalign(0.0);
+    h.set_wrap(true);
+    h.add_css_class("dim-label");
+    parent.append(&h);
+    s
 }
 
 /// Clear every face, person, and grouping, plus the face-crop cache.

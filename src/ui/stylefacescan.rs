@@ -168,7 +168,7 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::styleface::Styl
             Arc::new(Mutex::new(ids.into_iter().collect()));
 
         let workers = cfg.concurrency.max(1);
-        let cfg_epsilon = cfg.cluster_epsilon;
+        let cfg_params = cfg.cluster_params();
         // Guard against two workers running a full recluster at the same time.
         // A recluster reads every face and re-groups it. Two at once waste CPU.
         let reclustering = Arc::new(AtomicBool::new(false));
@@ -209,7 +209,7 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::styleface::Styl
                         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
                         .is_ok()
                 {
-                    if let Err(e) = recluster(&lib, cfg_epsilon) {
+                    if let Err(e) = recluster(&lib, cfg_params) {
                         log::warn!("progressive style clustering: {e}");
                     }
                     reclustering.store(false, Ordering::Release);
@@ -222,7 +222,7 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::styleface::Styl
         }
 
         let _ = tx.send(Msg::Message("Grouping stylised faces…".into()));
-        if let Err(e) = recluster(&lib, cfg.cluster_epsilon) {
+        if let Err(e) = recluster(&lib, cfg.cluster_params()) {
             log::warn!("style clustering: {e}");
         }
 
@@ -294,10 +294,9 @@ fn scan_one_photo(lib: &Library, pipeline: &StyleFacePipeline, id: i64) -> bool 
 
 /// Re-cluster in the background after a manual correction, then refresh the
 /// sidebar and Characters view.
-#[allow(dead_code)]
 pub fn recluster_now(state: &Rc<AppState>) {
     let lib = state.lib.clone();
-    let epsilon = state.style_face_config.borrow().cluster_epsilon;
+    let params = state.style_face_config.borrow().cluster_params();
     let (tx, rx) = glib::MainContext::channel::<()>(glib::Priority::DEFAULT);
     {
         let state = state.clone();
@@ -311,14 +310,14 @@ pub fn recluster_now(state: &Rc<AppState>) {
         });
     }
     std::thread::spawn(move || {
-        let _ = recluster(&lib, epsilon);
+        let _ = recluster(&lib, params);
         let _ = tx.send(());
     });
 }
 
 /// Re-cluster every embedded stylised face in the library. Character-assigned
 /// faces anchor stable clusters. HDBSCAN groups the rest.
-fn recluster(lib: &Library, epsilon: f32) -> Result<(), String> {
+fn recluster(lib: &Library, params: cluster::ClusterParams) -> Result<(), String> {
     let rows = lib
         .style_faces_for_clustering()
         .map_err(|e| format!("read style faces: {e}"))?;
@@ -336,7 +335,7 @@ fn recluster(lib: &Library, epsilon: f32) -> Result<(), String> {
         })
         .collect();
     let next = 1i64;
-    let assignments = cluster::cluster(&items, epsilon, next);
+    let assignments = cluster::cluster(&items, params, next);
     let pairs: Vec<(i64, i64)> = assignments
         .into_iter()
         .map(|a| (a.face_id, a.cluster_id))

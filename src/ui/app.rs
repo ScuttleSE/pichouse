@@ -51,6 +51,9 @@ fn build_ui(app: &Application) {
 
     let prefs = Prefs::load(&lib);
     let ai_config = load_ai_config(&lib);
+    // A one-time reset to the stricter grouping defaults. It must run before
+    // the face configs load.
+    let regroup_after_reset = super::prefs::apply_grouping_defaults_v2(&lib);
     let face_config = load_face_config(&lib);
     let style_face_config = super::prefs::load_styleface_config(&lib);
     let shortcuts = Shortcuts::load(&lib);
@@ -253,7 +256,7 @@ fn build_ui(app: &Application) {
     window.add_controller(key_ctrl);
 
     // Populate the sidebar and select the first folder.
-    populate(&state);
+    populate(&state, regroup_after_reset);
 
     window.present();
 }
@@ -336,7 +339,9 @@ pub fn reload_folders_force(state: &Rc<AppState>) {
     }
 }
 
-fn populate(state: &Rc<AppState>) {
+/// `regroup` starts a background regroup of faces and characters after the
+/// window shows.
+fn populate(state: &Rc<AppState>, regroup: bool) {
     reload_folders(state);
 
     // Load Immich albums in the background so the sidebar section fills in.
@@ -360,6 +365,12 @@ fn populate(state: &Rc<AppState>) {
     let state = state.clone();
     glib::idle_add_local_once(move || {
         populate_deferred(&state);
+        if regroup {
+            // Apply the new grouping defaults to the existing faces. Named
+            // people and characters keep their faces.
+            super::facescan::recluster_now(&state);
+            super::stylefacescan::recluster_now(&state);
+        }
     });
 }
 
