@@ -60,6 +60,10 @@ pub struct AppState {
     pub enrich_job: Controller,
     /// The library-freshness reconciliation session (see `super::freshness`).
     pub reconcile_job: Controller,
+    /// True when the running reconciliation must report its result in the
+    /// status bar. Tools > Scan for New Folders sets it, also when it joins a
+    /// reconciliation that is already running.
+    pub reconcile_announce: std::cell::Cell<bool>,
     /// The Immich album upload session (see `super::immich`).
     pub immich_upload: Controller,
     /// The duplicate-finder scan session (see `super::dedup_scan`).

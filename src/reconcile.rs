@@ -124,18 +124,35 @@ impl DbSnapshot {
 /// no DB lock held, builds a `ReconcilePlan` in memory, then applies the plan
 /// in one short transaction. Stops promptly when `cancel` becomes true.
 pub fn reconcile_all(lib: &Library, cancel: &Arc<AtomicBool>) -> Report {
+    let started = std::time::Instant::now();
     let roots = lib.library_folders().unwrap_or_default();
     let snapshot = DbSnapshot::read(lib);
+    log::debug!(
+        "reconcile: snapshot read in {:.2?} ({} roots, {} folders)",
+        started.elapsed(),
+        roots.len(),
+        snapshot.folder_id_by_path.len()
+    );
     let mut plan = ReconcilePlan::default();
     let mut report = Report::default();
 
     for root in roots {
         if cancel.load(Ordering::Relaxed) {
+            log::debug!("reconcile: cancelled before root {}", root.path);
             break;
         }
+        log::info!("reconcile: walking root {}", root.path);
+        let walk_start = std::time::Instant::now();
         // Collect image files grouped by directory under this root (no lock).
         let mut by_dir: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
         collect(Path::new(&root.path), cancel, &mut by_dir);
+        log::info!(
+            "reconcile: root {} walked in {:.2?} ({} dirs, {} images)",
+            root.path,
+            walk_start.elapsed(),
+            by_dir.len(),
+            by_dir.values().map(Vec::len).sum::<usize>()
+        );
         for (dir, files) in &by_dir {
             if cancel.load(Ordering::Relaxed) {
                 break;
@@ -148,9 +165,24 @@ pub fn reconcile_all(lib: &Library, cancel: &Arc<AtomicBool>) -> Report {
     }
 
     // Apply the whole batch in one transaction. This is the only DB write.
-    if let Ok(added) = lib.apply_reconcile_plan(&plan) {
-        report.added = added;
+    if cancel.load(Ordering::Relaxed) {
+        log::debug!("reconcile: cancelled. The partial plan is applied.");
     }
+    let apply_start = std::time::Instant::now();
+    match lib.apply_reconcile_plan(&plan) {
+        Ok(added) => report.added = added,
+        Err(e) => log::warn!("reconcile: apply plan failed: {e}"),
+    }
+    log::debug!("reconcile: plan applied in {:.2?}", apply_start.elapsed());
+    log::info!(
+        "reconcile: done in {:.2?} ({} added, {} missing, {} back, {} moved, {} removed)",
+        started.elapsed(),
+        report.added.len(),
+        report.missing,
+        report.reappeared,
+        report.moved,
+        report.removed
+    );
     report
 }
 

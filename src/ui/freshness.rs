@@ -29,27 +29,33 @@ enum Msg {
 /// Run a full reconciliation in the background, then enqueue anything new for
 /// enrichment and refresh the view. No-op if a reconciliation is already
 /// running (avoids overlapping walks; the next timer tick will catch up).
-pub fn reconcile_now(state: &Rc<AppState>) {
-    run_reconcile(state, false);
+/// `trigger` names the caller in the log.
+pub fn reconcile_now(state: &Rc<AppState>, trigger: &str) {
+    run_reconcile(state, trigger, false);
 }
 
 /// Tools > Scan for New Folders: run the same reconciliation on demand. It
-/// shows a status message at the start and reports an empty result.
+/// shows a status message at the start and reports an empty result. If a
+/// reconciliation is already running, it joins that run and reports its result.
 pub fn scan_new_folders(state: &Rc<AppState>) {
-    run_reconcile(state, true);
+    run_reconcile(state, "manual", true);
 }
 
-/// Shared reconcile run. `announce` adds start and empty-result messages; the
+/// Shared reconcile run. `announce` adds start and empty-result messages. The
 /// periodic timer and "Refresh Library" stay silent when nothing changed.
-fn run_reconcile(state: &Rc<AppState>, announce: bool) {
+fn run_reconcile(state: &Rc<AppState>, trigger: &str, announce: bool) {
     if state.reconcile_job.running() {
+        log::debug!("reconcile ({trigger}): skipped, a reconcile is already running");
         if announce {
+            state.reconcile_announce.set(true);
             state
                 .status()
-                .set_message("A library scan is already running.");
+                .set_message("Library scan in progress. Results follow.");
         }
         return;
     }
+    log::info!("reconcile ({trigger}): start");
+    state.reconcile_announce.set(announce);
     if announce {
         state.status().set_message("Scanning for new folders");
     }
@@ -60,6 +66,7 @@ fn run_reconcile(state: &Rc<AppState>, announce: bool) {
         let state = state.clone();
         rx.attach(None, move |Msg::Done(report)| {
             state.reconcile_job.finish();
+            let announce = state.reconcile_announce.replace(false);
             if report.changed() {
                 super::app::reload_folders(&state);
                 state.grid().reload_from_source();
@@ -109,13 +116,21 @@ fn run_reconcile(state: &Rc<AppState>, announce: bool) {
             } else if announce {
                 state.status().set_message("No new folders or files found.");
             }
-            glib::ControlFlow::Continue
+            glib::ControlFlow::Break
         });
     }
 
     let lib = state.lib.clone();
     std::thread::spawn(move || {
-        let report = reconcile::reconcile_all(&lib, &cancel);
+        // Always send a result. If the walk panics, the UI must still clear
+        // the job state. Otherwise every later scan reports "already running".
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            reconcile::reconcile_all(&lib, &cancel)
+        }));
+        let report = result.unwrap_or_else(|_| {
+            log::error!("reconcile: worker thread panicked. The job state is cleared.");
+            Report::default()
+        });
         let _ = tx.send(Msg::Done(report));
     });
 }
@@ -125,7 +140,7 @@ fn run_reconcile(state: &Rc<AppState>, announce: bool) {
 pub fn start_periodic(state: &Rc<AppState>) {
     let state = state.clone();
     glib::timeout_add_local(PERIODIC, move || {
-        reconcile_now(&state);
+        reconcile_now(&state, "timer");
         glib::ControlFlow::Continue
     });
 }

@@ -653,7 +653,7 @@ pub fn sync_folder_down(state: &Rc<AppState>, folder_id: i64) {
                 "Downloaded {downloaded} photo(s) from Immich."
             ));
             // Reconcile so the new files become local photos and show in the grid.
-            super::freshness::reconcile_now(&state);
+            super::freshness::reconcile_now(&state, "immich download");
         }
         glib::ControlFlow::Break
     });

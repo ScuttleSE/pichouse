@@ -80,6 +80,7 @@ fn build_ui(app: &Application) {
         style_face_thumbs: RefCell::new(None),
         enrich_job: Controller::default(),
         reconcile_job: Controller::default(),
+        reconcile_announce: std::cell::Cell::new(false),
         immich_upload: Controller::default(),
         dedup_job: Controller::default(),
         scan_queue: std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new())),
@@ -398,7 +399,7 @@ fn populate_deferred(state: &Rc<AppState>) {
     // Reconcile against disk once at startup (catches files added or removed
     // while the app was closed, including on network drives), then keep a
     // periodic reconcile running as the reliable freshness path.
-    super::freshness::reconcile_now(state);
+    super::freshness::reconcile_now(state, "startup");
     super::freshness::start_periodic(state);
     super::immich::start_periodic_refresh(state);
     super::immich::sync_all_down(state);
