@@ -219,7 +219,9 @@ impl CharactersView {
             self.flow.remove(&child);
         }
         self.tiles.borrow_mut().clear();
+        let t = std::time::Instant::now();
         self.refresh();
+        log::debug!("charactersview.reload {:.2?}", t.elapsed());
     }
 
     /// Update the tiles in place. A new group appends at the end. An existing

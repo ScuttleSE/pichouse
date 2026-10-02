@@ -1020,6 +1020,16 @@ impl Sidebar {
     /// Rebuild the tree from the current database state.
     pub fn reload(self: &Rc<Self>) {
         let Some(state) = self.state() else { return };
+        // Lap timers for the debug log. Each `lap!` records the time since the
+        // previous lap under a name.
+        let mut laps: Vec<(&'static str, std::time::Duration)> = Vec::new();
+        let mut lap_t = std::time::Instant::now();
+        macro_rules! lap {
+            ($name:expr) => {{
+                laps.push(($name, lap_t.elapsed()));
+                lap_t = std::time::Instant::now();
+            }};
+        }
         // Skip the rebuild during a scan when nothing visible changed. The scan
         // fires a refresh on a timer; if no new folder or album appeared since
         // the last rebuild, the tree would be identical, so the full `TreeData`
@@ -1027,6 +1037,7 @@ impl Sidebar {
         // library. A user action (add/remove folder, album edit) is not a scan
         // tick, so it always rebuilds and refreshes the baseline below.
         let signature = state.lib.tree_signature().ok();
+        lap!("tree_signature");
         if state.scan.running() {
             if let (Some(sig), Some(last)) = (signature, self.last_tree_signature.get()) {
                 if sig == last {
@@ -1094,9 +1105,12 @@ impl Sidebar {
                 .unwrap_or(0)
         };
         let new_ms = t_new.elapsed();
+        lap!("folders+counts+albums+new");
 
         let missing_files_count = state.lib.missing_photo_count().unwrap_or(0);
+        lap!("missing_count");
         let banned_matches_count = state.lib.banned_dup_count().unwrap_or(0);
+        lap!("banned_count");
 
         folders.sort_by(|a, b| a.name.cmp(&b.name));
         // Show albums alphabetically at every level (case-insensitive). They are
@@ -1109,6 +1123,7 @@ impl Sidebar {
         } else {
             state.lib.folder_face_scan_counts().unwrap_or_default()
         };
+        lap!("face_scan_counts");
         let show_ignored = state
             .lib
             .get_setting(super::prefs::KEY_SIDEBAR_SHOW_IGNORED, "0")
@@ -1122,6 +1137,7 @@ impl Sidebar {
         } else {
             (0, 0)
         };
+        lap!("ignored_counts");
         let mut data = TreeData {
             counts,
             face_scan,
@@ -1153,12 +1169,14 @@ impl Sidebar {
             data.virtual_albums.insert(va.id, va.clone());
         }
         let va_ms = t_va.elapsed();
+        lap!("va");
         // Named people from facial recognition.
         for (person, count) in state.lib.persons().unwrap_or_default() {
             data.person_counts.insert(person.id, count);
             data.persons.push(person);
         }
         data.total_faces = state.lib.total_face_count().unwrap_or(0);
+        lap!("persons+total_faces");
         let mut person_groups = state.lib.person_groups().unwrap_or_default();
         person_groups.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
         for g in &person_groups {
@@ -1169,6 +1187,7 @@ impl Sidebar {
             data.person_groups.insert(g.id, g.clone());
         }
         data.person_group_members = state.lib.person_group_members().unwrap_or_default();
+        lap!("person_groups");
         for (&gid, members) in &data.person_group_members {
             for &pid in members {
                 data.person_memberships.entry(pid).or_default().push(gid);
@@ -1180,6 +1199,7 @@ impl Sidebar {
             data.characters.push(character);
         }
         data.total_style_faces = state.lib.total_style_face_count().unwrap_or(0);
+        lap!("characters+total_style");
         let mut character_groups = state.lib.character_groups().unwrap_or_default();
         character_groups.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
         for g in &character_groups {
@@ -1190,6 +1210,7 @@ impl Sidebar {
             data.character_groups.insert(g.id, g.clone());
         }
         data.character_group_members = state.lib.character_group_members().unwrap_or_default();
+        lap!("character_groups");
         for (&gid, members) in &data.character_group_members {
             for &cid in members {
                 data.character_memberships.entry(cid).or_default().push(gid);
@@ -1230,6 +1251,7 @@ impl Sidebar {
                 .collect();
             data.nf_tree = super::nftree::build(&unassigned_pairs, &assigned_paths, &root_paths);
         }
+        lap!("nftree");
 
         // Immich servers and their cached albums. The album cache is filled by
         // a background refresh in `super::immich::refresh_albums`.
@@ -1238,6 +1260,7 @@ impl Sidebar {
             data.immich_servers.push((s.id, s.name.clone()));
         }
         data.immich_linked_folders = state.lib.linked_immich_folders().unwrap_or_default();
+        lap!("immich");
         {
             let cache = state.immich_albums.borrow();
             for s in &servers {
@@ -1254,6 +1277,7 @@ impl Sidebar {
         }
 
         self.save_expansion();
+        lap!("save_expansion");
         // Apply pending reveal requests now: after `save_expansion` has resynced
         // `expanded` from the live (pre-rebuild) rows — which would otherwise drop
         // an id `mark_expanded` added for a row that was still collapsed at the
@@ -1328,6 +1352,7 @@ impl Sidebar {
                 .splice(common as u32, n - common as u32, &tail_refs);
         }
 
+        lap!("root_splice");
         // Refresh the child lists of already-expanded rows in place. Because the
         // root splice above no longer recreates every root each tick, an
         // expanded album's static child `StringList` would otherwise never gain
@@ -1335,12 +1360,15 @@ impl Sidebar {
         // for each expanded row, splice its child list to match `child_ids`.
         // Only the differing tail is spliced, so an unchanged subtree is free.
         self.refresh_expanded_children();
+        lap!("refresh_expanded_children");
 
         self.restore_expansion();
+        lap!("restore_expansion");
         self.suppress_expand_notify.set(false);
 
         // Update the label and the badge of rows that GTK did not bind again.
         self.refresh_row_widgets();
+        lap!("refresh_row_widgets");
 
         // Re-select whichever of the previously selected rows still exist, on
         // the freshly created row objects, without re-triggering navigation —
@@ -1374,6 +1402,7 @@ impl Sidebar {
         // The expansion set may have changed during this reload (e.g. a newly
         // created album's parent was marked expanded). Persist the final state.
         self.persist_expansion();
+        lap!("persist_expansion");
         log::debug!(
             "sidebar.reload {:.2?} (folder_counts {:.2?}, new_photos_count {:.2?}, va_counts {:.2?})",
             t_reload.elapsed(),
@@ -1381,6 +1410,9 @@ impl Sidebar {
             new_ms,
             va_ms
         );
+        let _ = lap_t;
+        let laps_txt: Vec<String> = laps.iter().map(|(n, d)| format!("{n} {d:.2?}")).collect();
+        log::debug!("sidebar.reload laps: {}", laps_txt.join(", "));
     }
 
     /// Update the child `StringList` of every currently-expanded row so it
