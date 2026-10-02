@@ -614,6 +614,60 @@ impl Library {
         Ok(())
     }
 
+    /// The ids in `photo_ids` that have a completed face scan. A photo counts
+    /// when the human scan or the stylised scan has state 2 (done).
+    pub fn face_scanned_ids(&self, photo_ids: &[i64]) -> Result<HashSet<i64>> {
+        let mut out = HashSet::new();
+        if photo_ids.is_empty() {
+            return Ok(out);
+        }
+        let conn = self.read_lock();
+        // Keep each query below the SQLite bound-parameter limit.
+        for chunk in photo_ids.chunks(900) {
+            let ph = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            let sql = format!(
+                "SELECT photo_id FROM face_scan WHERE state = 2 AND photo_id IN ({ph}) \
+                 UNION SELECT photo_id FROM style_face_scan WHERE state = 2 AND photo_id IN ({ph})"
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let ps: Vec<&dyn rusqlite::ToSql> = chunk
+                .iter()
+                .chain(chunk.iter())
+                .map(|p| p as &dyn rusqlite::ToSql)
+                .collect();
+            let rows = stmt.query_map(ps.as_slice(), |r| r.get::<_, i64>(0))?;
+            for row in rows {
+                out.insert(row?);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Per folder: (photo count, face-scanned photo count). Missing photos do
+    /// not count. A photo counts as scanned when the human scan or the
+    /// stylised scan has state 2 (done).
+    pub fn folder_face_scan_counts(&self) -> Result<HashMap<i64, (i64, i64)>> {
+        let conn = self.read_lock();
+        let mut stmt = conn.prepare(
+            "SELECT p.folder_id, COUNT(*), \
+                    SUM(CASE WHEN fs.state = 2 OR ss.state = 2 THEN 1 ELSE 0 END) \
+             FROM photos p \
+             LEFT JOIN face_scan fs ON fs.photo_id = p.id \
+             LEFT JOIN style_face_scan ss ON ss.photo_id = p.id \
+             WHERE p.missing = 0 \
+             GROUP BY p.folder_id",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok((r.get::<_, i64>(0)?, (r.get::<_, i64>(1)?, r.get::<_, i64>(2)?)))
+        })?;
+        let mut out = HashMap::new();
+        for row in rows {
+            let (fid, v) = row?;
+            out.insert(fid, v);
+        }
+        Ok(out)
+    }
+
     /// Set the face-scan state of a photo (0 pending, 1 scanning, 2 done,
     /// 3 error). Also mirrors the value into `photos.face_status`.
     pub fn set_face_scan_state(&self, photo_id: i64, state: i64) -> Result<()> {
@@ -890,5 +944,26 @@ mod tests {
         assert_eq!(n, 2);
         assert_eq!(lib.photos_of_person(a).unwrap().len(), 2);
     }
-}
 
+    #[test]
+    fn face_scan_marks_count_either_scan() {
+        let lib = temp_lib();
+        let p1 = add_photo(&lib, "s1");
+        let p2 = add_photo(&lib, "s2");
+        let p3 = add_photo(&lib, "s3");
+        let p4 = add_photo(&lib, "s4");
+        lib.set_face_scan_state(p1, 2).unwrap();
+        lib.set_style_face_scan_state(p2, 2).unwrap();
+        lib.set_face_scan_state(p3, 3).unwrap();
+        let got = lib.face_scanned_ids(&[p1, p2, p3, p4]).unwrap();
+        assert!(got.contains(&p1));
+        assert!(got.contains(&p2));
+        assert!(!got.contains(&p3));
+        assert!(!got.contains(&p4));
+        let counts = lib.folder_face_scan_counts().unwrap();
+        let folder_of = |pid: i64| lib.photo_by_id(pid).unwrap().unwrap().folder_id;
+        assert_eq!(counts.get(&folder_of(p1)), Some(&(1, 1)));
+        assert_eq!(counts.get(&folder_of(p2)), Some(&(1, 1)));
+        assert_eq!(counts.get(&folder_of(p3)), Some(&(1, 0)));
+    }
+}

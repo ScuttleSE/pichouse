@@ -132,6 +132,7 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::face::FaceConfi
                         sb.reload_deferred();
                     }
                     state.refresh_faces_if_active();
+                    state.grid().refresh_face_scanned();
                 }
                 Msg::Counts(c) => {
                     *state.face_group_new_counts.borrow_mut() = c;
@@ -143,6 +144,7 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::face::FaceConfi
                         sb.reload_deferred();
                     }
                     state.refresh_faces_if_active();
+                    state.grid().refresh_face_scanned();
                 }
             }
             glib::ControlFlow::Continue

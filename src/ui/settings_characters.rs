@@ -333,6 +333,7 @@ fn delete_all(state: &Rc<AppState>) {
     if let Some(sb) = state.sidebar.borrow().as_ref() {
         sb.reload_deferred();
     }
+    state.grid().refresh_face_scanned();
     super::state::show_message(
         state,
         "Stylised face data deleted",

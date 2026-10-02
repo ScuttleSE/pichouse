@@ -126,6 +126,7 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::styleface::Styl
                         sb.reload_deferred();
                     }
                     state.refresh_characters_if_active();
+                    state.grid().refresh_face_scanned();
                 }
                 Msg::Done => {
                     state.style_face_job.finish();
@@ -133,6 +134,7 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::styleface::Styl
                         sb.reload_deferred();
                     }
                     state.refresh_characters_if_active();
+                    state.grid().refresh_face_scanned();
                 }
             }
             glib::ControlFlow::Continue

@@ -59,6 +59,9 @@ const EXPANDED_SETTING_KEY: &str = "sidebar_expanded";
 struct TreeData {
     folders: HashMap<i64, Folder>,
     counts: HashMap<i64, i64>,
+    /// Per folder: (photo count, face-scanned photo count). Empty during a
+    /// library scan, so no face-scan badge shows then.
+    face_scan: HashMap<i64, (i64, i64)>,
     albums: HashMap<i64, Album>,
     album_children: HashMap<i64, Vec<i64>>,
     album_folders: HashMap<i64, Vec<i64>>,
@@ -204,8 +207,15 @@ impl Sidebar {
                 let icon = Image::from_icon_name("folder-symbolic");
                 let label = Label::new(None);
                 label.set_xalign(0.0);
+                // The face-scan badge: a small green face after the name.
+                let badge = Image::from_icon_name("face-smile-symbolic");
+                badge.set_pixel_size(12);
+                badge.add_css_class("face-scan-badge");
+                badge.set_tooltip_text(Some("Face scan done for all photos"));
+                badge.set_visible(false);
                 row.append(&icon);
                 row.append(&label);
+                row.append(&badge);
                 expander.set_child(Some(&row));
                 item.set_child(Some(&expander));
                 if let Some(sidebar) = weak_setup.upgrade() {
@@ -450,13 +460,20 @@ impl Sidebar {
             return;
         };
         let icon = box_.first_child().and_downcast::<Image>();
-        let label = box_.last_child().and_downcast::<Label>();
+        let label = box_
+            .first_child()
+            .and_then(|c| c.next_sibling())
+            .and_downcast::<Label>();
+        let badge = box_.last_child().and_downcast::<Image>();
         let (name, icon_name) = self.node_label(&id);
         if let Some(icon) = icon {
             icon.set_from_icon_name(Some(icon_name));
         }
         if let Some(label) = label {
             label.set_text(&name);
+        }
+        if let Some(badge) = badge {
+            badge.set_visible(self.face_scan_done(&id));
         }
 
         // Persist expansion changes immediately when the user expands/collapses
@@ -496,6 +513,20 @@ impl Sidebar {
         unsafe {
             item.set_data("expanded-handler", (weak_row, handler));
         }
+    }
+
+    /// Report whether every photo under an album or folder row has a completed
+    /// face scan. A row with no photos, or any other row kind, reports false.
+    fn face_scan_done(&self, id: &str) -> bool {
+        let data = self.data.borrow();
+        let (total, done) = if let Some(aid) = album_id_of(id) {
+            album_face_scan_totals(&data, aid, 0)
+        } else if let Some(fid) = folder_id_of(id) {
+            data.face_scan.get(&fid).copied().unwrap_or((0, 0))
+        } else {
+            return false;
+        };
+        total > 0 && done >= total
     }
 
     fn node_label(&self, id: &str) -> (String, &'static str) {
@@ -1007,8 +1038,14 @@ impl Sidebar {
         albums.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
         virtual_albums.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
+        let face_scan = if scanning {
+            std::collections::HashMap::new()
+        } else {
+            state.lib.folder_face_scan_counts().unwrap_or_default()
+        };
         let mut data = TreeData {
             counts,
+            face_scan,
             new_files_count,
             missing_files_count,
             banned_matches_count,
@@ -3531,4 +3568,26 @@ fn photo_ids_of(payload: &str) -> Option<Vec<i64>> {
         .filter_map(|s| s.parse().ok())
         .collect();
     Some(ids)
+}
+
+/// Sum (photo count, face-scanned count) over an album, its folders, and all
+/// its sub-albums. `depth` stops a cycle in a broken album tree.
+fn album_face_scan_totals(data: &TreeData, aid: i64, depth: u32) -> (i64, i64) {
+    if depth > 64 {
+        return (0, 0);
+    }
+    let mut total = 0;
+    let mut done = 0;
+    for fid in data.album_folders.get(&aid).into_iter().flatten() {
+        if let Some(&(t, d)) = data.face_scan.get(fid) {
+            total += t;
+            done += d;
+        }
+    }
+    for &child in data.album_children.get(&aid).into_iter().flatten() {
+        let (t, d) = album_face_scan_totals(data, child, depth + 1);
+        total += t;
+        done += d;
+    }
+    (total, done)
 }

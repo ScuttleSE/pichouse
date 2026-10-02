@@ -267,6 +267,9 @@ fn install_css() {
     let provider = gtk4::CssProvider::new();
     provider.load_from_data(
         "\
+        .face-scan-badge { \
+            color: #33bf4d; \
+        } \
         .dup-x { \
             color: #ffffff; \
             background-color: rgba(200, 30, 30, 0.85); \

@@ -129,6 +129,9 @@ pub struct Grid {
     /// only queuing that specific widget does. Held weakly since these
     /// widgets are owned by the list view, not the grid.
     face_areas: RefCell<Vec<glib::WeakRef<DrawingArea>>>,
+    /// Ids of the shown photos that have a completed face scan (human or
+    /// stylised). Each such cell draws a small green face badge.
+    face_scanned: RefCell<std::collections::HashSet<i64>>,
     /// The "show face boxes" toggle button, visible only for a face source.
     faces_btn: Button,
     /// The header dropdown that selects the sort order.
@@ -582,6 +585,7 @@ impl Grid {
             show_faces: std::cell::Cell::new(false),
             face_boxes: RefCell::new(HashMap::new()),
             face_areas: RefCell::new(Vec::new()),
+            face_scanned: RefCell::new(std::collections::HashSet::new()),
             faces_btn,
             sort_dropdown,
             on_activate: RefCell::new(None),
@@ -1196,6 +1200,26 @@ impl Grid {
         )
     }
 
+    /// Re-read which shown photos have a completed face scan, then redraw the
+    /// badges. One bulk query. Call it after a face scan changes the state.
+    pub fn refresh_face_scanned(&self) {
+        let ids: Vec<i64> = self.all_photos.borrow().iter().map(|p| p.id).collect();
+        let set = self.lib.face_scanned_ids(&ids).unwrap_or_default();
+        *self.face_scanned.borrow_mut() = set;
+        self.redraw_face_areas();
+    }
+
+    /// Queue a redraw on every live face-box `DrawingArea`.
+    fn redraw_face_areas(&self) {
+        self.face_areas.borrow_mut().retain(|w| match w.upgrade() {
+            Some(area) => {
+                area.queue_draw();
+                true
+            }
+            None => false,
+        });
+    }
+
     /// Bulk-load every face detected in `photos` (any person/character, not
     /// just the one this view is scoped to) into `face_boxes`, keyed by photo
     /// id, for the face-box overlay. `style` selects the stylised vs. human
@@ -1504,6 +1528,7 @@ impl Grid {
         self.sort_photos(&mut photos);
         *self.all_photos.borrow_mut() = photos;
         *self.title.borrow_mut() = title.to_string();
+        self.refresh_face_scanned();
         self.rebuild();
     }
 
@@ -1524,6 +1549,7 @@ impl Grid {
         self.sort_photos(&mut photos);
         *self.all_photos.borrow_mut() = photos;
         *self.title.borrow_mut() = title.to_string();
+        self.refresh_face_scanned();
 
         let filtered = self.filtered_photos();
         // Compare the incoming (filtered) set to the current store by path/order.
@@ -1942,19 +1968,24 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
             let Some(grid) = grid_for_draw.upgrade() else {
                 return;
             };
-            if !grid.show_faces.get() {
-                return;
-            }
             let Some(image) = image_weak.upgrade() else {
                 return;
             };
             let photo_id: i64 =
                 unsafe { area.data::<i64>("photo-id").map(|p| *p.as_ref()).unwrap_or(0) };
-            let boxes = grid.face_boxes.borrow();
-            let Some(rects) = boxes.get(&photo_id) else {
+            let Some((ix, iy, iw, ih)) = image_rect(&image, w, h) else {
                 return;
             };
-            let Some((ix, iy, iw, ih)) = image_rect(&image, w, h) else {
+            // The face-scan badge: a small green face in the bottom-right
+            // corner of the thumbnail. It shows in every view.
+            if grid.face_scanned.borrow().contains(&photo_id) {
+                draw_face_badge(cr, ix + iw, iy + ih);
+            }
+            if !grid.show_faces.get() {
+                return;
+            }
+            let boxes = grid.face_boxes.borrow();
+            let Some(rects) = boxes.get(&photo_id) else {
                 return;
             };
             // The face this view is scoped to (if any) draws thicker, so it
@@ -2138,6 +2169,31 @@ fn overlay_parts(overlay: &Overlay) -> (Image, Label) {
         .and_downcast::<Image>()
         .unwrap();
     (image, label)
+}
+
+/// Draw a small green face whose bottom-right corner is near `(right, bottom)`.
+fn draw_face_badge(cr: &gtk4::cairo::Context, right: f64, bottom: f64) {
+    use std::f64::consts::PI;
+    let r = 7.0;
+    let cx = right - r - 3.0;
+    let cy = bottom - r - 3.0;
+    // Head: a green disc with a dark rim, so it shows on light and dark photos.
+    cr.arc(cx, cy, r, 0.0, 2.0 * PI);
+    cr.set_source_rgba(0.20, 0.75, 0.30, 0.95);
+    let _ = cr.fill_preserve();
+    cr.set_source_rgba(0.0, 0.0, 0.0, 0.6);
+    cr.set_line_width(1.0);
+    let _ = cr.stroke();
+    // Eyes.
+    cr.set_source_rgba(0.0, 0.2, 0.05, 1.0);
+    cr.arc(cx - 2.5, cy - 1.8, 1.0, 0.0, 2.0 * PI);
+    let _ = cr.fill();
+    cr.arc(cx + 2.5, cy - 1.8, 1.0, 0.0, 2.0 * PI);
+    let _ = cr.fill();
+    // Smile.
+    cr.set_line_width(1.2);
+    cr.arc(cx, cy + 0.5, 3.5, 0.2 * PI, 0.8 * PI);
+    let _ = cr.stroke();
 }
 
 /// The displayed rect of `image`'s texture inside a `(w, h)` area, honouring

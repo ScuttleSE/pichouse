@@ -1,8 +1,8 @@
 {
   "Cargo.toml": {
-    "mtime": 1790961516.7277362,
-    "seen": 1790962443.010013,
-    "ast_hash": "c56f33aff9917b584101f616fdcab490",
+    "mtime": 1790962455.397356,
+    "seen": 1790967365.7241952,
+    "ast_hash": "f0fdca720944e1ebd51957208b484424",
     "semantic_hash": ""
   },
   "src/ai/client.rs": {
@@ -66,8 +66,8 @@
     "semantic_hash": "b465341a79c87c8ea0c428e32d47ea92"
   },
   "src/db/faces.rs": {
-    "mtime": 1790962437.8334749,
-    "seen": 1790962443.0103576,
+    "mtime": 1790962455.4453557,
+    "seen": 1790967365.7245393,
     "ast_hash": "454ba684cb0740e1422f8b2067f6b975",
     "semantic_hash": ""
   },
@@ -114,8 +114,8 @@
     "semantic_hash": "ce6ca831049eb954d59952bbcf0e4dcb"
   },
   "src/db/style_faces.rs": {
-    "mtime": 1790962437.8374748,
-    "seen": 1790962443.0105724,
+    "mtime": 1790962455.4453557,
+    "seen": 1790967365.7247555,
     "ast_hash": "114772e043b7b91a05aecefd042c8f51",
     "semantic_hash": ""
   },
@@ -150,16 +150,16 @@
     "semantic_hash": "068c350b148dc5485e1e4296a7f0fdea"
   },
   "src/face/cluster.rs": {
-    "mtime": 1787905149.3151333,
-    "seen": 1787995271.4017777,
-    "ast_hash": "4f6ec2286082f7c517294999861c922d",
-    "semantic_hash": "4f6ec2286082f7c517294999861c922d"
+    "mtime": 1790967207.025843,
+    "seen": 1790967365.724909,
+    "ast_hash": "53e6c3d230dd7854b4a594cae36f8fa3",
+    "semantic_hash": ""
   },
   "src/face/config.rs": {
-    "mtime": 1787896454.9680305,
-    "seen": 1787995271.4017785,
-    "ast_hash": "6788bfd1e33dea8058e4b9f6bb52db3f",
-    "semantic_hash": "6788bfd1e33dea8058e4b9f6bb52db3f"
+    "mtime": 1790967215.0697901,
+    "seen": 1790967365.7249107,
+    "ast_hash": "030d34afc74c8c7101e01bdc01f92ddb",
+    "semantic_hash": ""
   },
   "src/face/detector.rs": {
     "mtime": 1787897109.9556608,
@@ -240,16 +240,16 @@
     "semantic_hash": ""
   },
   "src/styleface/cluster.rs": {
-    "mtime": 1787928529.6854696,
-    "seen": 1787995271.401788,
-    "ast_hash": "6384313c59e9b98e3fe33d3387bd8a8e",
-    "semantic_hash": "6384313c59e9b98e3fe33d3387bd8a8e"
+    "mtime": 1790967247.6855757,
+    "seen": 1790967365.7252927,
+    "ast_hash": "6fd86ac48f383306362bdbdddfa4916c",
+    "semantic_hash": ""
   },
   "src/styleface/config.rs": {
-    "mtime": 1787907800.5816905,
-    "seen": 1787995271.4017885,
-    "ast_hash": "9dddd57309ce04229ef3f107a2276a01",
-    "semantic_hash": "9dddd57309ce04229ef3f107a2276a01"
+    "mtime": 1790967258.1695068,
+    "seen": 1790967365.725294,
+    "ast_hash": "1836ae3314b79d1fb770197f559eebfb",
+    "semantic_hash": ""
   },
   "src/styleface/detector.rs": {
     "mtime": 1787907800.5816905,
@@ -306,9 +306,9 @@
     "semantic_hash": ""
   },
   "src/ui/app.rs": {
-    "mtime": 1790956925.0225618,
-    "seen": 1790962443.011477,
-    "ast_hash": "0c85403b7f26b9673af673a2dfe9c5a3",
+    "mtime": 1790967317.2131183,
+    "seen": 1790967365.7255678,
+    "ast_hash": "a162e79e1da0e13cf49287920efe7f0a",
     "semantic_hash": ""
   },
   "src/ui/characters.rs": {
@@ -360,9 +360,9 @@
     "semantic_hash": "30558136dc7d029e122f1293131c3b98"
   },
   "src/ui/facescan.rs": {
-    "mtime": 1788079381.8099587,
-    "seen": 1788080155.592551,
-    "ast_hash": "eb1dee5c1b7e95cd3fd8e396fcadf0bd",
+    "mtime": 1790967215.0697901,
+    "seen": 1790967365.7258132,
+    "ast_hash": "35ca15fc1d61591c0e19fddb3676aab0",
     "semantic_hash": ""
   },
   "src/ui/facesview.rs": {
@@ -420,9 +420,9 @@
     "semantic_hash": "62945d2460bf9f37d9a9dfecbfc94850"
   },
   "src/ui/prefs.rs": {
-    "mtime": 1788010353.5422814,
-    "seen": 1788010494.7229028,
-    "ast_hash": "4e15ee2a68155e9f43fe1c4748591617",
+    "mtime": 1790967275.9013903,
+    "seen": 1790967365.726127,
+    "ast_hash": "5776b56b0e1fa7d68666a5309f7bd866",
     "semantic_hash": ""
   },
   "src/ui/properties.rs": {
@@ -444,16 +444,16 @@
     "semantic_hash": "9702feaeb368105f8ca99e182d65eaff"
   },
   "src/ui/settings_characters.rs": {
-    "mtime": 1787907800.5856905,
-    "seen": 1787995271.401812,
-    "ast_hash": "14ea7572aa35cc1ae7e532da13f3d02a",
-    "semantic_hash": "14ea7572aa35cc1ae7e532da13f3d02a"
+    "mtime": 1790967304.2892034,
+    "seen": 1790967365.7262204,
+    "ast_hash": "cbbb132f535f1f048f47601e1c3cc7c9",
+    "semantic_hash": ""
   },
   "src/ui/settings_faces.rs": {
-    "mtime": 1787903359.27617,
-    "seen": 1787995271.4018128,
-    "ast_hash": "bdef63295a4efa18ee5724327b1d2aa4",
-    "semantic_hash": "bdef63295a4efa18ee5724327b1d2aa4"
+    "mtime": 1790967304.2892034,
+    "seen": 1790967365.7262216,
+    "ast_hash": "502163be9263b43347582d8d2728d624",
+    "semantic_hash": ""
   },
   "src/ui/settings_immich.rs": {
     "mtime": 1787817219.8737037,
@@ -474,8 +474,8 @@
     "semantic_hash": ""
   },
   "src/ui/state.rs": {
-    "mtime": 1790962437.8374748,
-    "seen": 1790962443.012264,
+    "mtime": 1790962455.4453557,
+    "seen": 1790967365.7263165,
     "ast_hash": "075454d0a770123394ee969feac6b0aa",
     "semantic_hash": ""
   },
@@ -486,10 +486,10 @@
     "semantic_hash": ""
   },
   "src/ui/stylefacescan.rs": {
-    "mtime": 1787936577.6530774,
-    "seen": 1787995271.401817,
-    "ast_hash": "ece8ea46aea7513f3921da239b70bd03",
-    "semantic_hash": "ece8ea46aea7513f3921da239b70bd03"
+    "mtime": 1790967258.1695068,
+    "seen": 1790967365.7263494,
+    "ast_hash": "414653ed38cea4791d84beac71547dfa",
+    "semantic_hash": ""
   },
   "src/ui/tagmanager.rs": {
     "mtime": 1787758931.4625533,
@@ -558,9 +558,9 @@
     "semantic_hash": ""
   },
   "AGENTS.md": {
-    "mtime": 1788333717.6520028,
-    "seen": 1788336184.0584416,
-    "ast_hash": "85db542ddcd7a22e2578dcbff20990a8",
+    "mtime": 1790967363.1128159,
+    "seen": 1790967365.7266803,
+    "ast_hash": "793f37d47f5e5b22550dcc0ef0f61dca",
     "semantic_hash": ""
   },
   "HANDOFF.md": {
@@ -570,10 +570,10 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1787990086.6656864,
-    "seen": 1787995271.4018278,
-    "ast_hash": "94926be1f1878dd5213a78f03229fa33",
-    "semantic_hash": "94926be1f1878dd5213a78f03229fa33"
+    "mtime": 1790967363.1168158,
+    "seen": 1790967365.726729,
+    "ast_hash": "60600d6c7ad4fd62b33e703a07db64f7",
+    "semantic_hash": ""
   },
   "ROADMAP.md": {
     "mtime": 1787985500.3043442,

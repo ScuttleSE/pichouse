@@ -161,6 +161,19 @@ Faces* and work the same way day-to-day (scan, review, name, browse), but
 they run independently: a photo can be grouped by one pipeline, both, or
 neither, depending on whether it contains real or drawn faces.
 
+### Face scan badges
+
+A small green face shows when the face scan is done:
+
+- **Photo:** at the bottom-right corner of the thumbnail. The human face scan
+  or the stylised face scan must be done for the photo.
+- **Folder and album:** after the name in the sidebar. Every photo in the
+  folder or album must have the badge. For an album, this includes all the
+  photos in its sub-albums. A "Do not scan" photo or a failed photo blocks the
+  album badge. Missing files do not count.
+
+The sidebar does not show the album badges while a library scan runs.
+
 ### Grouping settings
 
 Each of *Settings → Faces* and *Settings → Characters* has a **Grouping**

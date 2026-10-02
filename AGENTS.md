@@ -340,6 +340,18 @@ Both systems take a `ClusterParams` struct. The config builds it with
 - The Grouping sections are `grouping_section` in `settings_faces.rs` and
   `settings_characters.rs`. "Regroup now" calls `recluster_now`.
 
+### Face scan badges
+
+- A photo is face-scanned when `face_scan.state = 2` or
+  `style_face_scan.state = 2`. `Library::face_scanned_ids` and
+  `Library::folder_face_scan_counts` are in `src/db/faces.rs`.
+- The grid holds `face_scanned`. `set_photos` and `set_photos_preserving` fill
+  it. The face-box `DrawingArea` draws the badge with `draw_face_badge`. The
+  scan modules call `Grid::refresh_face_scanned` on `Refresh` and `Done`.
+- The sidebar row is `[icon, label, badge]`. `TreeData.face_scan` holds the
+  folder counts. `album_face_scan_totals` sums them over the sub-albums.
+  `face_scan_done` sets the badge visibility in `bind_row`.
+
 ### Background HTTP pattern
 
 The AI backend is the template for background HTTP work. `src/ai/client.rs`
