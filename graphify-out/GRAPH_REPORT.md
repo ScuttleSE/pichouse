@@ -1,7 +1,7 @@
-# Graph Report - pichouse  (2026-09-02)
+# Graph Report - pichouse  (2026-10-02)
 
 ## Corpus Check
-- 103 files · ~156,926 words
+- 103 files · ~157,158 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -10,7 +10,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `2857a945`
+- Built from commit: `87a53006`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -158,9 +158,9 @@
   README.md → ROADMAP.md
 
 ## Import Cycles
+- 2-file cycle: `src/ui/properties.rs -> src/ui/state.rs -> src/ui/properties.rs`
 - 2-file cycle: `src/ui/state.rs -> src/ui/viewer.rs -> src/ui/state.rs`
 - 2-file cycle: `src/ui/state.rs -> src/ui/status.rs -> src/ui/state.rs`
-- 2-file cycle: `src/ui/properties.rs -> src/ui/state.rs -> src/ui/properties.rs`
 - 3-file cycle: `src/ui/editor.rs -> src/ui/state.rs -> src/ui/properties.rs -> src/ui/editor.rs`
 - 4-file cycle: `src/ui/grid.rs -> src/ui/photo_object.rs -> src/ui/properties.rs -> src/ui/state.rs -> src/ui/grid.rs`
 - 5-file cycle: `src/ui/editor.rs -> src/ui/state.rs -> src/ui/grid.rs -> src/ui/photo_object.rs -> src/ui/properties.rs -> src/ui/editor.rs`
@@ -497,7 +497,7 @@ Nodes (4): delete_all_face_data(), faces_pane(), GtkBox, Rc
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `AppState` connect `AppState` to `Sidebar`, `Generator`, `EditPanel`, `Viewer`, `stylefacescan.rs`, `PhotoEdit`, `Library`, `db/mod.rs`, `facescan.rs`, `Properties`, `CharactersView`, `settings.rs`, `Grid`, `NewFilesView`, `app.rs`, `Config`, `dedup.rs`, `vrules.rs`, `show_message`, `ui/immich.rs`, `Rc`, `FolderTree`, `Controller`, `vmenu.rs`, `Prefs`, `enrich.rs`, `StatusBar`, `characters.rs`, `model.rs`, `actions.rs`, `FacesView`, `name_cluster_dialog`, `FaceConfig`, `StyleFaceConfig`, `immich_pane`, `toolbar.rs`, `freshness.rs`, `spin_row`, `settings_characters.rs`, `settings_faces.rs`?**
-  _High betweenness centrality (0.334) - this node is a cross-community bridge._
+  _High betweenness centrality (0.333) - this node is a cross-community bridge._
 - **Why does `Photo` connect `Photo` to `Library`, `EditPanel`, `Viewer`, `PhotoEdit`, `scan.rs`, `Library`, `Library`, `AppState`, `Properties`, `Grid`, `NewFilesView`, `dedup.rs`, `vrules.rs`, `Folder`, `show_message`, `Library`, `ui/immich.rs`, `Vec`, `PhotoObject`, `vmenu.rs`, `model.rs`, `grid.rs`, `Self`, `.show_duplicates`?**
   _High betweenness centrality (0.166) - this node is a cross-community bridge._
 - **Why does `Grid` connect `Grid` to `grid.rs`, `.new`, `Vec`, `PhotoObject`, `vmenu.rs`, `build_factory`, `AppState`, `Photo`, `TextureCache`, `.show_duplicates`, `Rc`?**

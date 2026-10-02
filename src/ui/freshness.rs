@@ -83,6 +83,10 @@ fn run_reconcile(state: &Rc<AppState>, trigger: &str, announce: bool, preempt: b
             }
             state.reconcile_job.finish();
             let announce = state.reconcile_announce.replace(false);
+            if session.load(std::sync::atomic::Ordering::Relaxed) {
+                state.status().set_message_transient("Library scan cancelled.", 5);
+                return glib::ControlFlow::Break;
+            }
             if report.changed() {
                 super::app::reload_folders(&state);
                 state.grid().reload_from_source();
