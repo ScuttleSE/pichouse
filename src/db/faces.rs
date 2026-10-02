@@ -517,15 +517,23 @@ impl Library {
         Ok(())
     }
 
-    /// Remove one photo from an unnamed cluster. Every face of that photo in
-    /// the cluster loses its cluster id. A later re-cluster may group it again.
-    pub fn remove_photo_from_cluster(&self, photo_id: i64, cluster_id: i64) -> Result<()> {
-        let conn = self.lock();
-        conn.execute(
-            "UPDATE faces SET cluster_id = NULL WHERE photo_id = ?1 AND cluster_id = ?2",
-            params![photo_id, cluster_id],
-        )?;
-        Ok(())
+    /// Move the faces of the given photos out of an unnamed cluster into one
+    /// new unnamed cluster. Returns the new cluster id.
+    pub fn move_photos_to_new_cluster(&self, photo_ids: &[i64], cluster_id: i64) -> Result<i64> {
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        let max: Option<i64> =
+            tx.query_row("SELECT MAX(cluster_id) FROM faces", [], |r| r.get(0))?;
+        let new_id = max.unwrap_or(0).max(0) + 1;
+        for pid in photo_ids {
+            tx.execute(
+                "UPDATE faces SET cluster_id = ?3 \
+                 WHERE photo_id = ?1 AND cluster_id = ?2 AND person_id IS NULL",
+                params![pid, cluster_id, new_id],
+            )?;
+        }
+        tx.commit()?;
+        Ok(new_id)
     }
 
     // --- Face scan state ---
@@ -934,6 +942,35 @@ mod tests {
             face_counts_full(lib),
             "after {step}"
         );
+    }
+
+    #[test]
+    fn removed_faces_move_to_a_new_cluster() {
+        let lib = temp_lib();
+        let a = add_photo(&lib, "ra");
+        let b = add_photo(&lib, "rb");
+        let face = |photo_id, score| Face {
+            photo_id,
+            cluster_id: 5,
+            det_score: score,
+            embedding: vec![1.0],
+            ..Default::default()
+        };
+        let fa = lib.insert_face(&face(a, 0.9)).unwrap();
+        let fb = lib.insert_face(&face(b, 0.5)).unwrap();
+        // Face A is the cover of cluster 5.
+        let cover = |cl| lib.unassigned_faces_in_cluster(cl).unwrap()[0].id;
+        assert_eq!(cover(5), fa);
+
+        let new_id = lib.move_photos_to_new_cluster(&[a], 5).unwrap();
+        assert_ne!(new_id, 5);
+        assert_eq!(cover(5), fb);
+        assert_eq!(cover(new_id), fa);
+        let mut cl = lib.unnamed_clusters().unwrap();
+        cl.sort();
+        let mut want = vec![(5, 1), (new_id, 1)];
+        want.sort();
+        assert_eq!(cl, want);
     }
 
     #[test]

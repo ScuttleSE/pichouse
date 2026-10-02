@@ -204,11 +204,13 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
             let Some(cluster_id) = grid.current_cluster() else {
                 return;
             };
-            for id in local_photo_ids(&grid) {
-                if let Err(e) = state.lib.remove_photo_from_cluster(id, cluster_id) {
-                    show_error(&state, &e.to_string());
-                    return;
-                }
+            let ids = local_photo_ids(&grid);
+            if ids.is_empty() {
+                return;
+            }
+            if let Err(e) = state.lib.move_photos_to_new_cluster(&ids, cluster_id) {
+                show_error(&state, &e.to_string());
+                return;
             }
             grid.reload_from_source();
         });
@@ -226,11 +228,13 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
             let Some(cluster_id) = grid.current_style_cluster() else {
                 return;
             };
-            for id in local_photo_ids(&grid) {
-                if let Err(e) = state.lib.remove_photo_from_style_cluster(id, cluster_id) {
-                    show_error(&state, &e.to_string());
-                    return;
-                }
+            let ids = local_photo_ids(&grid);
+            if ids.is_empty() {
+                return;
+            }
+            if let Err(e) = state.lib.move_photos_to_new_style_cluster(&ids, cluster_id) {
+                show_error(&state, &e.to_string());
+                return;
             }
             grid.reload_from_source();
         });

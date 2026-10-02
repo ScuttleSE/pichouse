@@ -46,6 +46,8 @@ struct TileEntry {
     root: GtkBox,
     count_label: Label,
     name: String,
+    /// The cover face id that the tile shows. A change rebuilds the tile.
+    face_id: i64,
 }
 
 /// The Characters view widget and its rebuild logic.
@@ -322,12 +324,26 @@ impl CharactersView {
         // Add new tiles and update existing ones. New tiles append at the end,
         // so an existing tile never changes position.
         for (key, name, count) in wanted {
+            let face_id = match key {
+                TileKey::Group(gid) => all_groups
+                    .iter()
+                    .find(|g| g.id == gid)
+                    .map(|g| g.cover_face_id)
+                    .unwrap_or(0),
+                TileKey::Named(cid) => state.lib.character_representative_face(cid).unwrap_or(0),
+                TileKey::Cluster(clid) => state.lib.cluster_representative_face(clid).unwrap_or(0),
+            };
             let existing = self
                 .tiles
                 .borrow()
                 .iter()
                 .position(|t| t.key == key);
-            if let Some(idx) = existing {
+            // A tile whose cover face changed is built again at the same index.
+            let rebuild_at = match existing {
+                Some(idx) if self.tiles.borrow()[idx].face_id != face_id => Some(idx),
+                _ => None,
+            };
+            if let (Some(idx), None) = (existing, rebuild_at) {
                 let mut tiles = self.tiles.borrow_mut();
                 let entry = &mut tiles[idx];
                 if entry.name != name {
@@ -339,29 +355,31 @@ impl CharactersView {
             } else {
                 let (tile_root, count_label) = match key {
                     TileKey::Group(gid) => {
-                        let cover = all_groups
-                            .iter()
-                            .find(|g| g.id == gid)
-                            .map(|g| g.cover_face_id)
-                            .unwrap_or(0);
-                        self.build_group_tile(&state, &name, count, gid, cover, tile_px)
+                        self.build_group_tile(&state, &name, count, gid, face_id, tile_px)
                     }
                     TileKey::Named(cid) => {
-                        let face_id = state.lib.character_representative_face(cid).unwrap_or(0);
                         self.build_tile(&state, face_id, &name, count, true, cid, 0, tile_px)
                     }
                     TileKey::Cluster(clid) => {
-                        let face_id = state.lib.cluster_representative_face(clid).unwrap_or(0);
                         self.build_tile(&state, face_id, &name, count, false, 0, clid, tile_px)
                     }
                 };
-                self.flow.append(&tile_root);
-                self.tiles.borrow_mut().push(TileEntry {
+                let entry = TileEntry {
                     key,
                     root: tile_root,
                     count_label,
                     name,
-                });
+                    face_id,
+                };
+                if let Some(idx) = rebuild_at {
+                    let mut tiles = self.tiles.borrow_mut();
+                    self.flow.remove(&tiles[idx].root);
+                    self.flow.insert(&entry.root, idx as i32);
+                    tiles[idx] = entry;
+                } else {
+                    self.flow.append(&entry.root);
+                    self.tiles.borrow_mut().push(entry);
+                }
             }
         }
 

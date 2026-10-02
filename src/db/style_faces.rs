@@ -652,6 +652,26 @@ impl Library {
         Ok(())
     }
 
+    /// Move the faces of the given photos out of an unnamed style cluster into
+    /// one new unnamed cluster. Returns the new cluster id. The new id is 0 or
+    /// higher, so it never uses the noise id (-1).
+    pub fn move_photos_to_new_style_cluster(&self, photo_ids: &[i64], cluster_id: i64) -> Result<i64> {
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        let max: Option<i64> =
+            tx.query_row("SELECT MAX(cluster_id) FROM style_faces", [], |r| r.get(0))?;
+        let new_id = max.unwrap_or(-1).max(-1) + 1;
+        for pid in photo_ids {
+            tx.execute(
+                "UPDATE style_faces SET cluster_id = ?3 \
+                 WHERE photo_id = ?1 AND cluster_id = ?2 AND character_id IS NULL",
+                params![pid, cluster_id, new_id],
+            )?;
+        }
+        tx.commit()?;
+        Ok(new_id)
+    }
+
     /// Clear the name from a character. Every face keeps its cluster id and
     /// loses the character link. The character row is deleted. The old cluster
     /// reappears as an unnamed group. No re-scan is needed.
@@ -847,6 +867,28 @@ mod tests {
         // Already covered: a later merge's fallback must not replace it.
         lib.set_character_cover_if_unset(a, f2).unwrap();
         assert_eq!(lib.character_representative_face(a).unwrap(), f1);
+    }
+
+    #[test]
+    fn removed_style_faces_move_to_a_new_cluster() {
+        let lib = temp_lib();
+        let a = add_photo(&lib, "ra");
+        let b = add_photo(&lib, "rb");
+        let face = |photo_id, score| StyleFace {
+            photo_id,
+            cluster_id: 3,
+            det_score: score,
+            embedding: vec![1.0],
+            ..Default::default()
+        };
+        let fa = lib.insert_style_face(&face(a, 0.9)).unwrap();
+        let fb = lib.insert_style_face(&face(b, 0.5)).unwrap();
+        assert_eq!(lib.cluster_representative_face(3).unwrap(), fa);
+
+        let new_id = lib.move_photos_to_new_style_cluster(&[a], 3).unwrap();
+        assert!(new_id >= 0 && new_id != 3);
+        assert_eq!(lib.cluster_representative_face(3).unwrap(), fb);
+        assert_eq!(lib.cluster_representative_face(new_id).unwrap(), fa);
     }
 
     #[test]
