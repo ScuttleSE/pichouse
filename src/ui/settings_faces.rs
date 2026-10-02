@@ -6,6 +6,7 @@
 
 use std::rc::Rc;
 
+use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{
     Box as GtkBox, Button, CheckButton, DropDown, Label, Orientation, Scale, Separator, StringList,
@@ -120,6 +121,7 @@ pub fn faces_pane(state: &Rc<AppState>) -> GtkBox {
 
     root.append(&Separator::new(Orientation::Horizontal));
     root.append(&grouping_section(state));
+    root.append(&show_ignored_check(state));
 
     let hint = Label::new(Some(
         "Manage and name people in the People section of the Library sidebar.",
@@ -272,6 +274,53 @@ fn grouping_section(state: &Rc<AppState>) -> GtkBox {
     }
     bx.append(&regroup);
     bx
+}
+
+thread_local! {
+    /// Every live "Show ignored faces" check box. The Faces pane and the
+    /// Characters pane each have one. Both write one setting, so a toggle on
+    /// one updates the other.
+    static IGNORED_CHECKS: std::cell::RefCell<Vec<glib::WeakRef<CheckButton>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Build the "Show ignored faces in the sidebar" check box. The setting is
+/// `sidebar.show_ignored`. It is off by default.
+pub fn show_ignored_check(state: &Rc<AppState>) -> CheckButton {
+    let on = state
+        .lib
+        .get_setting(prefs::KEY_SIDEBAR_SHOW_IGNORED, "0")
+        .map(|v| v == "1")
+        .unwrap_or(false);
+    let check = CheckButton::with_label("Show ignored faces in the sidebar");
+    check.set_active(on);
+    check.set_tooltip_text(Some(
+        "Show the \"Ignored\" section in the Library sidebar. Use it to un-ignore faces.",
+    ));
+    IGNORED_CHECKS.with(|v| v.borrow_mut().push(check.downgrade()));
+    let state = state.clone();
+    check.connect_toggled(move |b| {
+        let on = b.is_active();
+        let _ = state
+            .lib
+            .set_setting(prefs::KEY_SIDEBAR_SHOW_IGNORED, prefs::bool_to_str(on));
+        // Collect first. Then release the borrow, because `set_active` runs
+        // the other check box's handler, which reads the list again.
+        let others: Vec<CheckButton> = IGNORED_CHECKS.with(|v| {
+            let mut v = v.borrow_mut();
+            v.retain(|w| w.upgrade().is_some());
+            v.iter().filter_map(|w| w.upgrade()).collect()
+        });
+        for other in others {
+            if other.is_active() != on {
+                other.set_active(on);
+            }
+        }
+        if let Some(sb) = state.sidebar.borrow().as_ref() {
+            sb.reload_deferred();
+        }
+    });
+    check
 }
 
 /// Add a labelled slider with a help line to `parent`. Returns the slider.

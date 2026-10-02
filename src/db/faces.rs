@@ -119,7 +119,7 @@ impl Library {
 
     /// All faces detected in one photo.
     pub fn faces_for_photo(&self, photo_id: i64) -> Result<Vec<Face>> {        let conn = self.lock();
-        let sql = format!("SELECT {FACE_COLS} FROM faces WHERE photo_id = ?1 ORDER BY id");
+        let sql = format!("SELECT {FACE_COLS} FROM faces WHERE photo_id = ?1 AND ignored = 0 ORDER BY id");
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(params![photo_id], map_face)?;
         let mut v = Vec::new();
@@ -138,7 +138,7 @@ impl Library {
         }
         let conn = self.lock();
         let placeholders = photo_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        let sql = format!("SELECT {FACE_COLS} FROM faces WHERE photo_id IN ({placeholders})");
+        let sql = format!("SELECT {FACE_COLS} FROM faces WHERE photo_id IN ({placeholders}) AND ignored = 0");
         let mut stmt = conn.prepare(&sql)?;
         let ps: Vec<&dyn rusqlite::ToSql> = photo_ids.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
         let rows = stmt.query_map(ps.as_slice(), map_face)?;
@@ -167,7 +167,7 @@ impl Library {
         let conn = self.lock();
         let mut stmt = conn.prepare(
             "SELECT id, cluster_id, person_id, embedding FROM faces \
-             WHERE embedding IS NOT NULL AND embedding_dim > 0",
+             WHERE embedding IS NOT NULL AND embedding_dim > 0 AND ignored = 0",
         )?;
         let rows = stmt.query_map([], |r| {
             let cluster = r.get::<_, Option<i64>>(1)?.unwrap_or(0);
@@ -440,7 +440,7 @@ impl Library {
     /// The total number of detected faces in the library.
     pub fn total_face_count(&self) -> Result<i64> {
         let conn = self.read_lock();
-        let n: i64 = conn.query_row("SELECT COUNT(*) FROM faces", [], |r| r.get(0))?;
+        let n: i64 = conn.query_row("SELECT COUNT(*) FROM faces WHERE ignored = 0", [], |r| r.get(0))?;
         Ok(n)
     }
 
@@ -538,7 +538,7 @@ impl Library {
         let mut stmt = conn.prepare(
             "SELECT p.id FROM photos p \
              LEFT JOIN face_scan fs ON fs.photo_id = p.id \
-             WHERE p.missing = 0 AND p.scan_state = 2 AND p.skip_face_scan = 0 \
+             WHERE p.missing = 0 AND p.scan_state = 2 \
                AND (fs.state IS NULL OR fs.state <> 2) \
              ORDER BY p.added_at DESC LIMIT ?1",
         )?;
@@ -562,7 +562,7 @@ impl Library {
         let sql = format!(
             "SELECT p.id FROM photos p \
              LEFT JOIN face_scan fs ON fs.photo_id = p.id \
-             WHERE p.missing = 0 AND p.scan_state = 2 AND p.skip_face_scan = 0 \
+             WHERE p.missing = 0 AND p.scan_state = 2 \
                AND (fs.state IS NULL OR fs.state <> 2) \
                AND p.folder_id IN ({placeholders}) \
              ORDER BY p.added_at DESC LIMIT ?"
@@ -668,6 +668,50 @@ impl Library {
         Ok(out)
     }
 
+    /// Ignore the faces of a group. `person_id` selects a named person.
+    /// Otherwise `cluster_id` selects an unnamed cluster. When `photo_ids` is
+    /// set, only faces in those photos change.
+    pub fn ignore_faces(
+        &self,
+        person_id: Option<i64>,
+        cluster_id: Option<i64>,
+        photo_ids: Option<&[i64]>,
+    ) -> Result<()> {
+        let conn = self.lock();
+        ignore_group(&conn, "faces", "person_id", person_id, cluster_id, photo_ids)
+    }
+
+    /// Un-ignore every ignored face in the given photos.
+    pub fn unignore_faces_in_photos(&self, photo_ids: &[i64]) -> Result<()> {
+        let conn = self.lock();
+        unignore_in(&conn, "faces", photo_ids)
+    }
+
+    /// Photos that have one or more ignored faces.
+    pub fn photos_with_ignored_faces(&self) -> Result<Vec<Photo>> {
+        let conn = self.lock();
+        photos_with_ignored(&conn, "faces")
+    }
+
+    /// The number of photos with one or more ignored faces.
+    pub fn ignored_face_photo_count(&self) -> Result<i64> {
+        let conn = self.read_lock();
+        ignored_photo_count(&conn, "faces")
+    }
+
+    /// The boxes (x, y, w, h, per mille) of the ignored faces in a photo. A
+    /// re-scan reads them before it clears the faces.
+    pub fn ignored_face_boxes(&self, photo_id: i64) -> Result<Vec<(i32, i32, i32, i32)>> {
+        let conn = self.lock();
+        ignored_boxes(&conn, "faces", photo_id)
+    }
+
+    /// Mark one face as ignored.
+    pub fn set_face_ignored(&self, face_id: i64) -> Result<()> {
+        let conn = self.lock();
+        set_ignored(&conn, "faces", "person_id", face_id)
+    }
+
     /// Set the face-scan state of a photo (0 pending, 1 scanning, 2 done,
     /// 3 error). Also mirrors the value into `photos.face_status`.
     pub fn set_face_scan_state(&self, photo_id: i64, state: i64) -> Result<()> {
@@ -700,6 +744,133 @@ impl Library {
         )?;
         Ok(())
     }
+}
+
+// --- Ignored faces: shared by `faces` and `style_faces` ---
+//
+// An ignored face keeps its row and its embedding. It has no owner (person or
+// character) and no cluster. Every group query reads the owner or the cluster,
+// so an ignored face shows in no group. The box and clustering queries also
+// filter `ignored = 0`.
+
+/// Ignore the faces of one group. See `Library::ignore_faces`.
+pub(super) fn ignore_group(
+    conn: &rusqlite::Connection,
+    table: &str,
+    owner_col: &str,
+    owner: Option<i64>,
+    cluster: Option<i64>,
+    photo_ids: Option<&[i64]>,
+) -> Result<()> {
+    let (cond, key) = match (owner, cluster) {
+        (Some(o), _) => (format!("{owner_col} = ?1"), o),
+        (None, Some(c)) => (format!("cluster_id = ?1 AND {owner_col} IS NULL"), c),
+        (None, None) => return Ok(()),
+    };
+    let base = format!(
+        "UPDATE {table} SET ignored = 1, {owner_col} = NULL, cluster_id = NULL, confirmed = 0 \
+         WHERE {cond}"
+    );
+    match photo_ids {
+        None => {
+            conn.execute(&base, params![key])?;
+        }
+        Some(ids) => {
+            let mut stmt = conn.prepare(&format!("{base} AND photo_id = ?2"))?;
+            for pid in ids {
+                stmt.execute(params![key, pid])?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Un-ignore every ignored face of `table` in the given photos. The faces have
+/// no cluster. The next regroup groups them again.
+pub(super) fn unignore_in(conn: &rusqlite::Connection, table: &str, photo_ids: &[i64]) -> Result<()> {
+    let mut stmt =
+        conn.prepare(&format!("UPDATE {table} SET ignored = 0 WHERE photo_id = ?1 AND ignored = 1"))?;
+    for pid in photo_ids {
+        stmt.execute(params![pid])?;
+    }
+    Ok(())
+}
+
+/// Photos with one or more ignored faces in `table`.
+pub(super) fn photos_with_ignored(conn: &rusqlite::Connection, table: &str) -> Result<Vec<Photo>> {
+    let sql = format!(
+        "SELECT {PHOTO_COLS} FROM photos WHERE id IN \
+         (SELECT DISTINCT photo_id FROM {table} WHERE ignored = 1) ORDER BY taken_at DESC, filename"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map([], map_photo)?;
+    let mut v = Vec::new();
+    for row in rows {
+        v.push(row?);
+    }
+    Ok(v)
+}
+
+/// The number of photos with one or more ignored faces in `table`.
+pub(super) fn ignored_photo_count(conn: &rusqlite::Connection, table: &str) -> Result<i64> {
+    let n = conn.query_row(
+        &format!("SELECT COUNT(DISTINCT photo_id) FROM {table} WHERE ignored = 1"),
+        [],
+        |r| r.get(0),
+    )?;
+    Ok(n)
+}
+
+/// The boxes of the ignored faces of `table` in one photo.
+pub(super) fn ignored_boxes(
+    conn: &rusqlite::Connection,
+    table: &str,
+    photo_id: i64,
+) -> Result<Vec<(i32, i32, i32, i32)>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT bbox_x, bbox_y, bbox_w, bbox_h FROM {table} WHERE photo_id = ?1 AND ignored = 1"
+    ))?;
+    let rows = stmt.query_map(params![photo_id], |r| {
+        Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+    })?;
+    let mut v = Vec::new();
+    for row in rows {
+        v.push(row?);
+    }
+    Ok(v)
+}
+
+/// Mark one face of `table` as ignored.
+pub(super) fn set_ignored(
+    conn: &rusqlite::Connection,
+    table: &str,
+    owner_col: &str,
+    face_id: i64,
+) -> Result<()> {
+    conn.execute(
+        &format!(
+            "UPDATE {table} SET ignored = 1, {owner_col} = NULL, cluster_id = NULL, confirmed = 0 \
+             WHERE id = ?1"
+        ),
+        params![face_id],
+    )?;
+    Ok(())
+}
+
+/// Report whether two boxes overlap by at least half the area of the smaller
+/// box. Boxes are (x, y, w, h). A re-scan uses this to find a new face at the place of an
+/// ignored face.
+pub fn box_matches(a: (i32, i32, i32, i32), b: (i32, i32, i32, i32)) -> bool {
+    let ix = (a.0 + a.2).min(b.0 + b.2) - a.0.max(b.0);
+    let iy = (a.1 + a.3).min(b.1 + b.3) - a.1.max(b.1);
+    if ix <= 0 || iy <= 0 {
+        return false;
+    }
+    let inter = ix as i64 * iy as i64;
+    let area_a = a.2 as i64 * a.3 as i64;
+    let area_b = b.2 as i64 * b.3 as i64;
+    let smaller = area_a.min(area_b);
+    smaller > 0 && inter * 2 >= smaller
 }
 
 #[cfg(test)]
@@ -965,5 +1136,85 @@ mod tests {
         assert_eq!(counts.get(&folder_of(p1)), Some(&(1, 1)));
         assert_eq!(counts.get(&folder_of(p2)), Some(&(1, 1)));
         assert_eq!(counts.get(&folder_of(p3)), Some(&(1, 0)));
+    }
+
+    #[test]
+    fn ignore_and_unignore_faces() {
+        let lib = temp_lib();
+        let p1 = add_photo(&lib, "i1");
+        let p2 = add_photo(&lib, "i2");
+        let mk = |pid: i64| {
+            lib.insert_face(&Face {
+                photo_id: pid,
+                cluster_id: 5,
+                embedding: vec![1.0, 0.0],
+                ..Default::default()
+            })
+            .unwrap()
+        };
+        mk(p1);
+        mk(p2);
+        lib.set_face_scan_state(p1, 2).unwrap();
+        lib.ignore_faces(None, Some(5), Some(&[p1])).unwrap();
+        // The ignored face leaves the group, the boxes, and clustering.
+        let ids: Vec<i64> = lib.photos_in_cluster(5).unwrap().iter().map(|p| p.id).collect();
+        assert_eq!(ids, vec![p2]);
+        assert!(lib.faces_for_photo(p1).unwrap().is_empty());
+        assert_eq!(lib.faces_for_clustering().unwrap().len(), 1);
+        assert_eq!(lib.total_face_count().unwrap(), 1);
+        // The photo stays face-scanned.
+        assert!(lib.face_scanned_ids(&[p1]).unwrap().contains(&p1));
+        assert_eq!(lib.ignored_face_photo_count().unwrap(), 1);
+        assert_eq!(lib.photos_with_ignored_faces().unwrap()[0].id, p1);
+        assert_eq!(lib.ignored_face_boxes(p1).unwrap().len(), 1);
+        lib.unignore_faces_in_photos(&[p1]).unwrap();
+        assert_eq!(lib.faces_for_clustering().unwrap().len(), 2);
+        assert_eq!(lib.ignored_face_photo_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn ignore_whole_style_group() {
+        let lib = temp_lib();
+        let p1 = add_photo(&lib, "j1");
+        let ch = lib.create_character("Hero").unwrap();
+        let f = lib
+            .insert_style_face(&crate::model::StyleFace {
+                photo_id: p1,
+                embedding: vec![1.0, 0.0],
+                ..Default::default()
+            })
+            .unwrap();
+        lib.set_style_face_character(f, ch).unwrap();
+        lib.ignore_style_faces(Some(ch), None, None).unwrap();
+        assert_eq!(lib.character_photo_count(ch).unwrap(), 0);
+        assert!(lib.style_faces_for_photo(p1).unwrap().is_empty());
+        assert_eq!(lib.ignored_style_face_photo_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn box_match_needs_half_overlap() {
+        assert!(box_matches((0, 0, 100, 100), (10, 10, 100, 100)));
+        assert!(!box_matches((0, 0, 100, 100), (80, 80, 100, 100)));
+        assert!(!box_matches((0, 0, 10, 10), (500, 500, 10, 10)));
+    }
+
+    #[test]
+    fn skip_flag_migration_clears_scan_state() {
+        let mut path = std::env::temp_dir();
+        path.push(format!("pichouse-skipmig-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let pid = {
+            let lib = Library::open_at(&path).unwrap();
+            let pid = add_photo(&lib, "k1");
+            lib.set_face_scan_state(pid, 2).unwrap();
+            lib.lock()
+                .execute("UPDATE photos SET skip_face_scan = 1 WHERE id = ?1", params![pid])
+                .unwrap();
+            pid
+        };
+        let lib = Library::open_at(&path).unwrap();
+        assert!(!lib.photo_by_id(pid).unwrap().unwrap().skip_face_scan);
+        assert!(lib.face_scanned_ids(&[pid]).unwrap().is_empty());
+        let _ = std::fs::remove_file(&path);
     }
 }

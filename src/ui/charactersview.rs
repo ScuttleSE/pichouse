@@ -98,9 +98,8 @@ impl CharactersView {
         let sel_label = Label::new(None);
         sel_label.set_xalign(1.0);
         sel_bar.append(&sel_label);
-        let skip_btn = Button::with_label("Do not scan selected");
-        skip_btn.add_css_class("destructive-action");
-        sel_bar.append(&skip_btn);
+        let skip_btn = Button::with_label("Ignore selected");
+                sel_bar.append(&skip_btn);
         let clear_btn = Button::with_label("Clear selection");
         sel_bar.append(&clear_btn);
         sel_bar.set_opacity(0.0);
@@ -659,8 +658,7 @@ impl CharactersView {
         }
     }
 
-    /// Mark every photo in every selected group as "do not scan". This excludes
-    /// the photos from every future face scan and removes them from every group.
+    /// Ignore the faces of every selected group. The photos stay face-scanned.
     fn skip_selected(self: &Rc<Self>) {
         let keys: Vec<TileKey> = self.selected.borrow().clone();
         if keys.is_empty() {
@@ -669,7 +667,8 @@ impl CharactersView {
         self.skip_keys(&keys);
     }
 
-    /// Mark every photo in the given groups as "do not scan", then refresh.
+    /// Ignore every face of the given groups, then refresh. The photos stay
+    /// face-scanned. The faces show in the "Ignored Characters" view.
     fn skip_keys(self: &Rc<Self>, keys: &[TileKey]) {
         let Some(state) = self.state.borrow().clone() else {
             return;
@@ -677,23 +676,17 @@ impl CharactersView {
         if keys.is_empty() {
             return;
         }
-        let mut ids: Vec<i64> = Vec::new();
         for key in keys {
-            let group_ids = match key {
-                TileKey::Named(cid) => state.lib.photo_ids_of_character(*cid),
-                TileKey::Cluster(clid) => state.lib.photo_ids_in_style_cluster(*clid),
-                // A sub-group tile is a navigation folder, never selectable
-                // for a skip action.
-                TileKey::Group(_) => Ok(Vec::new()),
+            let res = match key {
+                TileKey::Named(cid) => state.lib.ignore_style_faces(Some(*cid), None, None),
+                TileKey::Cluster(clid) => state.lib.ignore_style_faces(None, Some(*clid), None),
+                // A sub-group tile is a navigation folder, never selectable.
+                TileKey::Group(_) => Ok(()),
+            };
+            if let Err(e) = res {
+                super::state::show_error(&state, &e.to_string());
+                return;
             }
-            .unwrap_or_default();
-            ids.extend(group_ids);
-        }
-        ids.sort_unstable();
-        ids.dedup();
-        if let Err(e) = state.lib.set_photos_skip_face_scan(&ids, true) {
-            super::state::show_error(&state, &e.to_string());
-            return;
         }
         self.selected.borrow_mut().clear();
         *self.anchor.borrow_mut() = None;
@@ -705,8 +698,7 @@ impl CharactersView {
     }
 
     /// Show the right-click menu for one tile. Named tiles offer rename, clear
-    /// name, delete, and "do not scan this group". Unnamed tiles offer name and
-    /// "do not scan this group". While browsing inside a character group, a
+    /// name, delete, and "Ignore". Unnamed tiles offer name and "Ignore". While browsing inside a character group, a
     /// tile with a face also offers "Set face as thumbnail" for that group.
     #[allow(clippy::too_many_arguments)]
     fn show_tile_menu(
@@ -735,7 +727,12 @@ impl CharactersView {
         if scope != 0 && face_id != 0 {
             menu.append(Some("Set face as thumbnail"), Some("char.set-thumb"));
         }
-        menu.append(Some("Do not scan selected"), Some("char.skip"));
+        let ignore_label = if self.selected.borrow().len() > 1 {
+            "Ignore selected"
+        } else {
+            "Ignore this group"
+        };
+        menu.append(Some(ignore_label), Some("char.skip"));
 
         let add = |act_name: &str, cb: Box<dyn Fn()>| {
             let a = gio::SimpleAction::new(act_name, None);

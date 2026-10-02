@@ -324,6 +324,9 @@ fn scan_one_photo(lib: &Library, pipeline: &FacePipeline, id: i64) -> bool {
     };
 
     // Replace any prior faces for this photo, then insert the new ones.
+    // Keep ignored faces ignored: read their boxes before the clear. A new
+    // face at the same place is ignored again.
+    let ignored = lib.ignored_face_boxes(id).unwrap_or_default();
     let _ = lib.clear_faces_for_photo(id);
     for f in &faces {
         let row = Face {
@@ -337,7 +340,13 @@ fn scan_one_photo(lib: &Library, pipeline: &FacePipeline, id: i64) -> bool {
             det_score: f.det_score,
             ..Default::default()
         };
-        let _ = lib.insert_face(&row);
+        let Ok(face_id) = lib.insert_face(&row) else {
+            continue;
+        };
+        let b = (f.bbox_x, f.bbox_y, f.bbox_w, f.bbox_h);
+        if ignored.iter().any(|&ib| crate::db::faces::box_matches(b, ib)) {
+            let _ = lib.set_face_ignored(face_id);
+        }
     }
     let _ = lib.set_face_scan_state(id, 2);
     true

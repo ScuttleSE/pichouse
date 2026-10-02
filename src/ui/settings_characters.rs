@@ -129,6 +129,7 @@ pub fn characters_pane(state: &Rc<AppState>) -> GtkBox {
 
     root.append(&Separator::new(Orientation::Horizontal));
     root.append(&grouping_section(state));
+    root.append(&super::settings_faces::show_ignored_check(state));
 
     let hint = Label::new(Some(
         "Manage and name characters in the Characters section of the Library \

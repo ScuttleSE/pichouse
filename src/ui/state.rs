@@ -459,6 +459,16 @@ impl AppState {
             .set_message(&format!("Banned Matches — {n} pairs will not group again"));
     }
 
+    /// Show the photos with ignored faces. `style` selects stylised faces.
+    pub fn show_ignored(self: &Rc<Self>, style: bool) {
+        *self.current_folder.borrow_mut() = 0;
+        self.grid().show_ignored(style);
+        self.show_grid();
+        self.status().set_message(
+            "Ignored faces — right-click a photo and choose \"Un-ignore these faces\"",
+        );
+    }
+
     /// Show the top-level Faces view in the center, rebuilding its group tiles.
     pub fn show_faces(self: &Rc<Self>) {
         *self.current_folder.borrow_mut() = 0;

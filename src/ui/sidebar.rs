@@ -25,6 +25,13 @@ const NEW_FOLDERS_ID: &str = "newfolders";
 const NEW_FILES_ID: &str = "newfiles";
 const MISSING_FILES_ID: &str = "missingfiles";
 const BANNED_MATCHES_ID: &str = "bannedmatches";
+/// Header row of the "Ignored" section. The section shows only when the
+/// `sidebar.show_ignored` setting is on.
+const IGNORED_HEADER_ID: &str = "ignoredheader";
+/// Leaf row: photos with ignored human faces.
+const IGNORED_FACES_ID: &str = "ignoredfaces";
+/// Leaf row: photos with ignored stylised faces.
+const IGNORED_CHARS_ID: &str = "ignoredchars";
 const ALBUM_PREFIX: &str = "album:";
 const FOLDER_PREFIX: &str = "folder:";
 const VALBUM_PREFIX: &str = "valbum:";
@@ -71,6 +78,10 @@ struct TreeData {
     /// Count of photos gone from disk (for the Missing Files row).
     missing_files_count: i64,
     banned_matches_count: i64,
+    /// Photo counts for the "Ignored" section, and the section switch.
+    ignored_faces_count: i64,
+    ignored_chars_count: i64,
+    show_ignored: bool,
     /// Virtual albums by id, plus the parent→children adjacency and per-album
     /// photo counts.
     virtual_albums: HashMap<i64, VirtualAlbum>,
@@ -318,7 +329,9 @@ impl Sidebar {
     /// The child node-id strings for a node id.
     fn child_ids(&self, id: &str) -> Vec<String> {
         let data = self.data.borrow();
-        if id == VIRTUAL_HEADER_ID {
+        if id == IGNORED_HEADER_ID {
+            vec![IGNORED_FACES_ID.to_string(), IGNORED_CHARS_ID.to_string()]
+        } else if id == VIRTUAL_HEADER_ID {
             data.valbum_children
                 .get(&0)
                 .into_iter()
@@ -546,6 +559,18 @@ impl Sidebar {
                 format!("Banned Matches ({})", data.banned_matches_count),
                 "action-unavailable-symbolic",
             )
+        } else if id == IGNORED_HEADER_ID {
+            ("Ignored".to_string(), "view-conceal-symbolic")
+        } else if id == IGNORED_FACES_ID {
+            (
+                format!("Ignored Faces ({})", data.ignored_faces_count),
+                "avatar-default-symbolic",
+            )
+        } else if id == IGNORED_CHARS_ID {
+            (
+                format!("Ignored Characters ({})", data.ignored_chars_count),
+                "face-smile-symbolic",
+            )
         } else if id == VIRTUAL_HEADER_ID {
             ("Virtual Albums".to_string(), "starred-symbolic")
         } else if id == PEOPLE_HEADER_ID {
@@ -697,6 +722,12 @@ impl Sidebar {
             if id == BANNED_MATCHES_ID {
                 if let Some(state) = self.state() {
                     state.show_banned_matches();
+                    return;
+                }
+            }
+            if id == IGNORED_FACES_ID || id == IGNORED_CHARS_ID {
+                if let Some(state) = self.state() {
+                    state.show_ignored(id == IGNORED_CHARS_ID);
                     return;
                 }
             }
@@ -1043,9 +1074,25 @@ impl Sidebar {
         } else {
             state.lib.folder_face_scan_counts().unwrap_or_default()
         };
+        let show_ignored = state
+            .lib
+            .get_setting(super::prefs::KEY_SIDEBAR_SHOW_IGNORED, "0")
+            .map(|v| v == "1")
+            .unwrap_or(false);
+        let (ignored_faces_count, ignored_chars_count) = if show_ignored {
+            (
+                state.lib.ignored_face_photo_count().unwrap_or(0),
+                state.lib.ignored_style_face_photo_count().unwrap_or(0),
+            )
+        } else {
+            (0, 0)
+        };
         let mut data = TreeData {
             counts,
             face_scan,
+            show_ignored,
+            ignored_faces_count,
+            ignored_chars_count,
             new_files_count,
             missing_files_count,
             banned_matches_count,
@@ -1210,6 +1257,10 @@ impl Sidebar {
             }
             for &aid in data.album_children.get(&0).into_iter().flatten() {
                 roots.push(format!("{ALBUM_PREFIX}{aid}"));
+            }
+            // Ignored section, off by default (Settings -> Faces).
+            if data.show_ignored {
+                roots.push(IGNORED_HEADER_ID.to_string());
             }
             // Immich section, shown below normal albums, only when the user has
             // added at least one server.
@@ -3012,6 +3063,7 @@ impl Sidebar {
                 || person_group_id_of(&id).is_some()
                 || character_group_id_of(&id).is_some()
                 || id == VIRTUAL_HEADER_ID
+                || id == IGNORED_HEADER_ID
                 || id == PEOPLE_HEADER_ID
                 || id == CHARACTERS_HEADER_ID
                 || id == IMMICH_HEADER_ID

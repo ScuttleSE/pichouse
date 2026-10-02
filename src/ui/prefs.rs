@@ -74,6 +74,9 @@ pub const KEY_STYLEFACE_CLUSTER_EPSILON: &str = "styleface.cluster_epsilon";
 pub const KEY_STYLEFACE_CLUSTER_MAX_DIST: &str = "styleface.cluster_max_dist";
 pub const KEY_STYLEFACE_MIN_SAMPLES: &str = "styleface.min_samples";
 
+/// Show the "Ignored" section in the sidebar. "1" is on. Off by default.
+pub const KEY_SIDEBAR_SHOW_IGNORED: &str = "sidebar.show_ignored";
+
 /// The marker for the one-time reset to the stricter grouping defaults. The
 /// value "1" means the reset is done.
 pub const KEY_GROUPING_DEFAULTS_V2: &str = "grouping.defaults_v2";

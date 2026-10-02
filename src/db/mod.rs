@@ -9,7 +9,7 @@ mod config;
 mod duplicates;
 mod edits;
 mod face_thumbs;
-mod faces;
+pub mod faces;
 mod immich;
 mod immich_thumbs;
 mod library;

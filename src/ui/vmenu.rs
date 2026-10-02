@@ -411,10 +411,10 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
         group.add_action(&act);
     }
 
-    // Mark selected photos unimportant. A skipped photo is excluded from every
-    // future face scan and leaves every face group at once.
+    // Ignore the faces of the current group in the selected photos. The
+    // photos stay face-scanned. The faces leave the group.
     {
-        let act = gio::SimpleAction::new("skip-face-scan", None);
+        let act = gio::SimpleAction::new("ignore-faces", None);
         let state = state.clone();
         let grid = grid.clone();
         let pop = pop.clone();
@@ -424,11 +424,61 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
             if ids.is_empty() {
                 return;
             }
-            if let Err(e) = state.lib.set_photos_skip_face_scan(&ids, true) {
+            let res = if let Some(pid) = grid.current_person() {
+                state.lib.ignore_faces(Some(pid), None, Some(&ids))
+            } else if let Some(cid) = grid.current_cluster() {
+                state.lib.ignore_faces(None, Some(cid), Some(&ids))
+            } else if let Some(chid) = grid.current_character() {
+                state.lib.ignore_style_faces(Some(chid), None, Some(&ids))
+            } else if let Some(cid) = grid.current_style_cluster() {
+                state.lib.ignore_style_faces(None, Some(cid), Some(&ids))
+            } else {
+                return;
+            };
+            if let Err(e) = res {
                 show_error(&state, &e.to_string());
                 return;
             }
             grid.reload_from_source();
+            if let Some(sb) = state.sidebar.borrow().as_ref() {
+                sb.reload_deferred();
+            }
+            state.refresh_faces_if_active();
+            state.refresh_characters_if_active();
+        });
+        group.add_action(&act);
+    }
+
+    // Un-ignore the ignored faces in the selected photos, then regroup so the
+    // faces join groups again.
+    {
+        let act = gio::SimpleAction::new("unignore-faces", None);
+        let state = state.clone();
+        let grid = grid.clone();
+        let pop = pop.clone();
+        act.connect_activate(move |_, _| {
+            dismiss(&pop);
+            let ids = local_photo_ids(&grid);
+            let Some(style) = grid.current_ignored() else {
+                return;
+            };
+            if ids.is_empty() {
+                return;
+            }
+            let res = if style {
+                state.lib.unignore_style_faces_in_photos(&ids)
+            } else {
+                state.lib.unignore_faces_in_photos(&ids)
+            };
+            if let Err(e) = res {
+                show_error(&state, &e.to_string());
+                return;
+            }
+            if style {
+                super::stylefacescan::recluster_now(&state);
+            } else {
+                super::facescan::recluster_now(&state);
+            }
         });
         group.add_action(&act);
     }
@@ -630,8 +680,8 @@ fn build_menu(state: &Rc<AppState>, grid: &Rc<Grid>) -> gio::Menu {
     }
     menu.append_section(None, &tools);
 
-    // Group actions apply to local photos in a face-group view. "Do not scan"
-    // applies in any view.
+    // Group actions apply to local photos in a face-group view or in an
+    // ignored-faces view.
     let group_tools = gio::Menu::new();
     if selected_local == 1 && (grid.current_person().is_some() || grid.current_character().is_some()) {
         group_tools.append(
@@ -676,10 +726,12 @@ fn build_menu(state: &Rc<AppState>, grid: &Rc<Grid>) -> gio::Menu {
                 Some("grid.assign-to-character"),
             );
         }
-        group_tools.append(
-            Some("Do not scan these (mark unimportant)"),
-            Some("grid.skip-face-scan"),
-        );
+        if grid.is_face_source() {
+            group_tools.append(Some("Ignore these faces"), Some("grid.ignore-faces"));
+        }
+        if grid.current_ignored().is_some() {
+            group_tools.append(Some("Un-ignore these faces"), Some("grid.unignore-faces"));
+        }
     }
     if group_tools.n_items() > 0 {
         menu.append_section(None, &group_tools);

@@ -281,6 +281,8 @@ enum Source {
     Character(i64, String),
     /// An unnamed stylised face cluster (id, display name).
     StyleCluster(i64, String),
+    /// The photos with ignored faces. True means stylised faces.
+    Ignored(bool),
     /// An Immich album (server id, album uuid, display name). Not re-queryable
     /// from the local database; a reload refetches over HTTP through the caller.
     #[allow(dead_code)] // Fields document the album payload.
@@ -1318,6 +1320,30 @@ impl Grid {
         self.set_photos(name, photos);
     }
 
+    /// Show every photo with one or more ignored faces. `style` selects the
+    /// stylised faces.
+    pub fn show_ignored(&self, style: bool) {
+        *self.source.borrow_mut() = Source::Ignored(style);
+        let photos = self.load_ignored(style);
+        self.set_photos(ignored_title(style), photos);
+    }
+
+    fn load_ignored(&self, style: bool) -> Vec<Photo> {
+        if style {
+            self.lib.photos_with_ignored_style_faces().unwrap_or_default()
+        } else {
+            self.lib.photos_with_ignored_faces().unwrap_or_default()
+        }
+    }
+
+    /// The ignored-faces view the grid shows, if any. True means stylised.
+    pub fn current_ignored(&self) -> Option<bool> {
+        match &*self.source.borrow() {
+            Source::Ignored(style) => Some(*style),
+            _ => None,
+        }
+    }
+
     /// Show an Immich album's assets. The caller passes the already-fetched    /// photos (each with an `immich://<server_id>/<asset_id>` path). The grid
     /// downloads each thumbnail over HTTP through the Immich worker pool.
     pub fn show_immich_album(&self, server_id: i64, album_id: &str, name: &str, photos: Vec<Photo>) {
@@ -1418,6 +1444,10 @@ impl Grid {
             Source::StyleCluster(id, name) => {
                 let photos = self.lib.photos_in_style_cluster(id).unwrap_or_default();
                 self.set_photos_preserving(&name, photos);
+            }
+            Source::Ignored(style) => {
+                let photos = self.load_ignored(style);
+                self.set_photos_preserving(ignored_title(style), photos);
             }
             Source::None => {}
             // Immich albums refetch over HTTP. The grid keeps the last-shown
@@ -2169,6 +2199,15 @@ fn overlay_parts(overlay: &Overlay) -> (Image, Label) {
         .and_downcast::<Image>()
         .unwrap();
     (image, label)
+}
+
+/// The grid title of an ignored-faces view.
+fn ignored_title(style: bool) -> &'static str {
+    if style {
+        "Ignored Characters"
+    } else {
+        "Ignored Faces"
+    }
 }
 
 /// Draw a small green face whose bottom-right corner is near `(right, bottom)`.

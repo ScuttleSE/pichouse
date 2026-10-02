@@ -169,8 +169,8 @@ A small green face shows when the face scan is done:
   or the stylised face scan must be done for the photo.
 - **Folder and album:** after the name in the sidebar. Every photo in the
   folder or album must have the badge. For an album, this includes all the
-  photos in its sub-albums. A "Do not scan" photo or a failed photo blocks the
-  album badge. Missing files do not count.
+  photos in its sub-albums. A photo whose scan failed blocks the album badge.
+  Missing files do not count.
 
 The sidebar does not show the album badges while a library scan runs.
 
@@ -210,25 +210,38 @@ You manage a group in two places:
 - **Group tile (double-click, single-click, right-click).** A double-click opens
   the group's photos. A single click selects the group. Select more groups with
   more single clicks. A shift-click selects every group between the last clicked
-  group and the shift-clicked group. A selection bar then shows *Do not scan
-  selected* and
-  *Clear selection*. *Do not scan selected* marks every photo in the selected
-  groups unimportant. A right-click on a tile opens a menu. A named tile offers
-  *Rename*, *Clear name*, *Delete character*, and *Do not scan this group*.
+  group and the shift-clicked group. A selection bar then shows *Ignore
+  selected* and *Clear selection*. *Ignore selected* ignores every face of the
+  selected groups. A right-click on a tile opens a menu. A named tile offers
+  *Rename*, *Clear name*, *Delete character*, and *Ignore this group*.
   *Clear name* makes the group unnamed again and keeps its members. An unnamed
-  tile offers *Name this group* and *Do not scan this group*. When more than one
+  tile offers *Name this group* and *Ignore this group*. When more than one
   unnamed group is selected, *Name this group* names every selected group as one
   new character.
 - **Photo grid (right-click).** Open a group, then right-click one or more
   photos. In a character group you can *Remove from this character* or
   *Not this character (ban)*. A ban records a rejection, so a re-scan never adds
   the photo to that character again. In an unnamed group you can
-  *Remove from this group*.
+  *Remove from this group*. In every person, character, or unnamed group you
+  can *Ignore these faces*.
 
-*Do not scan these (mark unimportant)* marks the selected photos unimportant.
-pichouse then excludes these photos from every future face scan, both human and
-stylised. It also removes them from every face group at once. The mark is stored
-in `photos.skip_face_scan`.
+### Ignored faces
+
+*Ignore these faces* ignores the faces of the open group in the selected
+photos. Other faces in the same photos do not change. An ignored face shows in
+no group, has no face box, and is not grouped again. The photo stays
+face-scanned, so it keeps its green badge. A re-scan of the photo ignores a new
+face again when it overlaps an ignored face by at least half.
+
+To see or undo ignored faces, turn on *Show ignored faces in the sidebar* in
+*Settings → Faces* or *Settings → Characters*. It is off by default. The
+sidebar then shows an **Ignored** section with *Ignored Faces* and *Ignored
+Characters*. Open one, select photos, right-click, and choose *Un-ignore these
+faces*. pichouse then regroups the faces.
+
+The old *Do not scan* action is gone. On the first start after the update,
+pichouse clears the old marks. The next face scan finds the faces of those
+photos again.
 
 
 ### Controlling CPU/GPU load

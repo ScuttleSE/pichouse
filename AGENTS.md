@@ -352,6 +352,22 @@ Both systems take a `ClusterParams` struct. The config builds it with
   folder counts. `album_face_scan_totals` sums them over the sub-albums.
   `face_scan_done` sets the badge visibility in `bind_row`.
 
+### Ignored faces
+
+- `faces.ignored` and `style_faces.ignored` mark an ignored face. `migrate`
+  adds the columns. An ignored face has no owner (person or character) and no
+  cluster, so every group query leaves it out. The box, count, and clustering
+  queries filter `ignored = 0`.
+- The shared helpers are at the end of `src/db/faces.rs` (`ignore_group`,
+  `unignore_in`, `photos_with_ignored`, `ignored_boxes`, `box_matches`).
+- `scan_one_photo` in `facescan.rs` and `stylefacescan.rs` reads the ignored
+  boxes before it clears a photo. It ignores a new face that matches a box.
+- The grid source `Source::Ignored(style)` shows the photos. The sidebar
+  section `IGNORED_HEADER_ID` shows only when `sidebar.show_ignored` is "1".
+- The "Do not scan" action is removed. `migrate` clears every
+  `photos.skip_face_scan` flag and the scan state of those photos. The column
+  stays for old databases. No query reads it.
+
 ### Background HTTP pattern
 
 The AI backend is the template for background HTTP work. `src/ai/client.rs`

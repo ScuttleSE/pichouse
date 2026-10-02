@@ -153,6 +153,35 @@ fn migrate(conn: &Connection) -> Result<()> {
             "ALTER TABLE photos ADD COLUMN skip_face_scan INTEGER NOT NULL DEFAULT 0;",
         )?;
     }
+    // The "Do not scan" action is gone. It deleted the faces of the marked
+    // photos. Clear the flag and the scan state, so the next face scan finds
+    // the faces again. This runs on each open, but it changes rows only once.
+    conn.execute_batch(
+        "DELETE FROM face_scan WHERE photo_id IN \
+             (SELECT id FROM photos WHERE skip_face_scan = 1); \
+         DELETE FROM style_face_scan WHERE photo_id IN \
+             (SELECT id FROM photos WHERE skip_face_scan = 1); \
+         UPDATE photos SET skip_face_scan = 0, face_status = 0, style_face_status = 0 \
+             WHERE skip_face_scan = 1;",
+    )?;
+    // faces.ignored and style_faces.ignored: 1 when the user ignores the face.
+    // An ignored face keeps its row, so the photo stays face-scanned. It has no
+    // person, character, or cluster, and clustering leaves it out.
+    for table in ["faces", "style_faces"] {
+        let mut cols: std::collections::HashSet<String> = std::collections::HashSet::new();
+        {
+            let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+            let rows = stmt.query_map([], |r| r.get::<_, String>(1))?;
+            for name in rows {
+                cols.insert(name?);
+            }
+        }
+        if !cols.contains("ignored") {
+            conn.execute_batch(&format!(
+                "ALTER TABLE {table} ADD COLUMN ignored INTEGER NOT NULL DEFAULT 0;"
+            ))?;
+        }
+    }
     // photos.phash: 64-bit perceptual hash (dHash) for the duplicate finder,
     // stored as a signed INTEGER bit-cast from u64. 0 means not yet computed.
     // Existing rows are backfilled lazily on the first duplicate scan.

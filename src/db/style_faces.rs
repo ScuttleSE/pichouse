@@ -104,7 +104,7 @@ impl Library {
     /// All stylised faces detected in one photo.
     pub fn style_faces_for_photo(&self, photo_id: i64) -> Result<Vec<StyleFace>> {
         let conn = self.lock();
-        let sql = format!("SELECT {FACE_COLS} FROM style_faces WHERE photo_id = ?1 ORDER BY id");
+        let sql = format!("SELECT {FACE_COLS} FROM style_faces WHERE photo_id = ?1 AND ignored = 0 ORDER BY id");
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(params![photo_id], map_style_face)?;
         let mut v = Vec::new();
@@ -123,7 +123,7 @@ impl Library {
         }
         let conn = self.lock();
         let placeholders = photo_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        let sql = format!("SELECT {FACE_COLS} FROM style_faces WHERE photo_id IN ({placeholders})");
+        let sql = format!("SELECT {FACE_COLS} FROM style_faces WHERE photo_id IN ({placeholders}) AND ignored = 0");
         let mut stmt = conn.prepare(&sql)?;
         let ps: Vec<&dyn rusqlite::ToSql> = photo_ids.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
         let rows = stmt.query_map(ps.as_slice(), map_style_face)?;
@@ -152,7 +152,7 @@ impl Library {
         let conn = self.lock();
         let mut stmt = conn.prepare(
             "SELECT id, cluster_id, character_id, embedding FROM style_faces \
-             WHERE embedding IS NOT NULL AND embedding_dim > 0",
+             WHERE embedding IS NOT NULL AND embedding_dim > 0 AND ignored = 0",
         )?;
         let rows = stmt.query_map([], |r| {
             let cluster = r.get::<_, Option<i64>>(1)?.unwrap_or(0);
@@ -406,7 +406,7 @@ impl Library {
     /// The total number of detected stylised faces in the library.
     pub fn total_style_face_count(&self) -> Result<i64> {
         let conn = self.read_lock();
-        let n: i64 = conn.query_row("SELECT COUNT(*) FROM style_faces", [], |r| r.get(0))?;
+        let n: i64 = conn.query_row("SELECT COUNT(*) FROM style_faces WHERE ignored = 0", [], |r| r.get(0))?;
         Ok(n)
     }
 
@@ -480,7 +480,7 @@ impl Library {
         let mut stmt = conn.prepare(
             "SELECT p.id FROM photos p \
              LEFT JOIN style_face_scan fs ON fs.photo_id = p.id \
-             WHERE p.missing = 0 AND p.scan_state = 2 AND p.skip_face_scan = 0 \
+             WHERE p.missing = 0 AND p.scan_state = 2 \
                AND (fs.state IS NULL OR fs.state <> 2) \
              ORDER BY p.added_at DESC LIMIT ?1",
         )?;
@@ -507,7 +507,7 @@ impl Library {
         let sql = format!(
             "SELECT p.id FROM photos p \
              LEFT JOIN style_face_scan fs ON fs.photo_id = p.id \
-             WHERE p.missing = 0 AND p.scan_state = 2 AND p.skip_face_scan = 0 \
+             WHERE p.missing = 0 AND p.scan_state = 2 \
                AND (fs.state IS NULL OR fs.state <> 2) \
                AND p.folder_id IN ({placeholders}) \
              ORDER BY p.added_at DESC LIMIT ?"
@@ -663,30 +663,55 @@ impl Library {
         Ok(())
     }
 
-    /// Mark photos as unimportant. A skipped photo is excluded from every future
-    /// face scan (human and stylised). Setting skip on also deletes the photos'
-    /// human and stylised face rows, so the photos leave every face group at
-    /// once.
-    pub fn set_photos_skip_face_scan(&self, photo_ids: &[i64], skip: bool) -> Result<()> {
-        if photo_ids.is_empty() {
-            return Ok(());
-        }
-        let mut conn = self.lock();
-        let tx = conn.transaction()?;
-        {
-            let mut set = tx.prepare("UPDATE photos SET skip_face_scan = ?2 WHERE id = ?1")?;
-            let mut del_style = tx.prepare("DELETE FROM style_faces WHERE photo_id = ?1")?;
-            let mut del_face = tx.prepare("DELETE FROM faces WHERE photo_id = ?1")?;
-            for &pid in photo_ids {
-                set.execute(params![pid, skip as i64])?;
-                if skip {
-                    del_style.execute(params![pid])?;
-                    del_face.execute(params![pid])?;
-                }
-            }
-        }
-        tx.commit()?;
-        Ok(())
+    /// Ignore the stylised faces of a group. `character_id` selects a named
+    /// character. Otherwise `cluster_id` selects an unnamed cluster. When
+    /// `photo_ids` is set, only faces in those photos change.
+    pub fn ignore_style_faces(
+        &self,
+        character_id: Option<i64>,
+        cluster_id: Option<i64>,
+        photo_ids: Option<&[i64]>,
+    ) -> Result<()> {
+        let conn = self.lock();
+        super::faces::ignore_group(
+            &conn,
+            "style_faces",
+            "character_id",
+            character_id,
+            cluster_id,
+            photo_ids,
+        )
+    }
+
+    /// Un-ignore every ignored stylised face in the given photos.
+    pub fn unignore_style_faces_in_photos(&self, photo_ids: &[i64]) -> Result<()> {
+        let conn = self.lock();
+        super::faces::unignore_in(&conn, "style_faces", photo_ids)
+    }
+
+    /// Photos that have one or more ignored stylised faces.
+    pub fn photos_with_ignored_style_faces(&self) -> Result<Vec<Photo>> {
+        let conn = self.lock();
+        super::faces::photos_with_ignored(&conn, "style_faces")
+    }
+
+    /// The number of photos with one or more ignored stylised faces.
+    pub fn ignored_style_face_photo_count(&self) -> Result<i64> {
+        let conn = self.read_lock();
+        super::faces::ignored_photo_count(&conn, "style_faces")
+    }
+
+    /// The boxes (x, y, w, h, per mille) of the ignored stylised faces in a
+    /// photo. A re-scan reads them before it clears the faces.
+    pub fn ignored_style_face_boxes(&self, photo_id: i64) -> Result<Vec<(i32, i32, i32, i32)>> {
+        let conn = self.lock();
+        super::faces::ignored_boxes(&conn, "style_faces", photo_id)
+    }
+
+    /// Mark one stylised face as ignored.
+    pub fn set_style_face_ignored(&self, face_id: i64) -> Result<()> {
+        let conn = self.lock();
+        super::faces::set_ignored(&conn, "style_faces", "character_id", face_id)
     }
 
     /// Photo ids that have a face of the given character.
