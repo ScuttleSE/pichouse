@@ -67,38 +67,32 @@ impl Library {
     /// Insert one detected stylised face. Returns its id.
     pub fn insert_style_face(&self, face: &StyleFace) -> Result<i64> {
         let conn = self.lock();
-        let character = if face.character_id == 0 {
-            None
-        } else {
-            Some(face.character_id)
-        };
-        let cluster = if face.cluster_id == 0 {
-            None
-        } else {
-            Some(face.cluster_id)
-        };
-        conn.execute(
-            "INSERT INTO style_faces(\
-                photo_id, character_id, cluster_id, bbox_x, bbox_y, bbox_w, bbox_h, \
-                embedding, embedding_dim, det_score, confirmed, source, created_at) \
-             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
-            params![
-                face.photo_id,
-                character,
-                cluster,
-                face.bbox_x,
-                face.bbox_y,
-                face.bbox_w,
-                face.bbox_h,
-                floats_to_blob(&face.embedding),
-                face.embedding.len() as i64,
-                (face.det_score * 1000.0) as i64,
-                face.confirmed as i64,
-                face.source,
-                now(),
-            ],
+        insert_style_face_row(&conn, face)
+    }
+
+    /// Replace the faces of one photo with `faces` and mark the photo as
+    /// scanned (state 2), in one transaction. An earlier ignored face keeps a
+    /// new face at the same place ignored.
+    pub fn replace_style_faces_for_photo(&self, photo_id: i64, faces: &[StyleFace]) -> Result<()> {
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        let ignored = super::faces::ignored_boxes(&tx, "style_faces", photo_id)?;
+        tx.execute("DELETE FROM style_faces WHERE photo_id = ?1", params![photo_id])?;
+        for f in faces {
+            let id = insert_style_face_row(&tx, f)?;
+            let b = (f.bbox_x, f.bbox_y, f.bbox_w, f.bbox_h);
+            if ignored.iter().any(|&ib| super::faces::box_matches(b, ib)) {
+                super::faces::set_ignored(&tx, "style_faces", "character_id", id)?;
+            }
+        }
+        tx.execute(
+            "INSERT INTO style_face_scan(photo_id, state, scanned_at) VALUES(?1, 2, ?2) \
+             ON CONFLICT(photo_id) DO UPDATE SET state = 2, scanned_at = ?2",
+            params![photo_id, now()],
         )?;
-        Ok(conn.last_insert_rowid())
+        tx.execute("UPDATE photos SET style_face_status = 2 WHERE id = ?1", params![photo_id])?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// All stylised faces detected in one photo.
@@ -920,4 +914,40 @@ mod tests {
         assert_eq!(n, 2);
         assert_eq!(lib.photos_of_character(a).unwrap().len(), 2);
     }
+}
+
+/// Insert one face row on `conn`. Returns its id.
+fn insert_style_face_row(conn: &rusqlite::Connection, face: &StyleFace) -> Result<i64> {
+    let character = if face.character_id == 0 {
+        None
+    } else {
+        Some(face.character_id)
+    };
+    let cluster = if face.cluster_id == 0 {
+        None
+    } else {
+        Some(face.cluster_id)
+    };
+    conn.prepare_cached(
+        "INSERT INTO style_faces(\
+            photo_id, character_id, cluster_id, bbox_x, bbox_y, bbox_w, bbox_h, \
+            embedding, embedding_dim, det_score, confirmed, source, created_at) \
+         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+    )?
+    .execute(params![
+        face.photo_id,
+        character,
+        cluster,
+        face.bbox_x,
+        face.bbox_y,
+        face.bbox_w,
+        face.bbox_h,
+        floats_to_blob(&face.embedding),
+        face.embedding.len() as i64,
+        (face.det_score * 1000.0) as i64,
+        face.confirmed as i64,
+        face.source,
+        now(),
+    ])?;
+    Ok(conn.last_insert_rowid())
 }

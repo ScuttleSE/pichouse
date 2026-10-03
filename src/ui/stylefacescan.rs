@@ -256,8 +256,6 @@ fn scan_one_photo(lib: &Library, pipeline: &StyleFacePipeline, id: i64) -> bool 
         Ok(Some(p)) => p,
         _ => return false,
     };
-    let _ = lib.set_style_face_scan_state(id, 1);
-
     let (rgb, w, h) =
         match crate::thumb::decode_oriented_rgb(std::path::Path::new(&p.path), p.orientation, 1600) {
             Ok(v) => v,
@@ -278,10 +276,9 @@ fn scan_one_photo(lib: &Library, pipeline: &StyleFacePipeline, id: i64) -> bool 
 
     // Keep ignored faces ignored: read their boxes before the clear. A new
     // face at the same place is ignored again.
-    let ignored = lib.ignored_style_face_boxes(id).unwrap_or_default();
-    let _ = lib.clear_style_faces_for_photo(id);
-    for f in &faces {
-        let row = StyleFace {
+    let rows: Vec<StyleFace> = faces
+        .iter()
+        .map(|f| StyleFace {
             photo_id: id,
             bbox_x: f.bbox_x,
             bbox_y: f.bbox_y,
@@ -290,16 +287,13 @@ fn scan_one_photo(lib: &Library, pipeline: &StyleFacePipeline, id: i64) -> bool 
             embedding: f.embedding.clone(),
             det_score: f.det_score,
             ..Default::default()
-        };
-        let Ok(face_id) = lib.insert_style_face(&row) else {
-            continue;
-        };
-        let b = (f.bbox_x, f.bbox_y, f.bbox_w, f.bbox_h);
-        if ignored.iter().any(|&ib| crate::db::faces::box_matches(b, ib)) {
-            let _ = lib.set_style_face_ignored(face_id);
-        }
+        })
+        .collect();
+    if let Err(e) = lib.replace_style_faces_for_photo(id, &rows) {
+        log::warn!("store faces {}: {e}", p.filename);
+        let _ = lib.set_style_face_scan_state(id, 3);
+        return false;
     }
-    let _ = lib.set_style_face_scan_state(id, 2);
     true
 }
 

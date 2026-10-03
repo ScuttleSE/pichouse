@@ -78,43 +78,38 @@ fn map_person(r: &Row) -> rusqlite::Result<Person> {
 impl Library {
     // --- Faces ---
 
+    /// Used by the tests and the benchmarks only.
+    #[cfg(test)]
     /// Insert one detected face. Returns its id.
     #[allow(clippy::too_many_arguments)]
     pub fn insert_face(&self, face: &Face) -> Result<i64> {
         let conn = self.lock();
-        let person = if face.person_id == 0 {
-            None
-        } else {
-            Some(face.person_id)
-        };
-        let cluster = if face.cluster_id == 0 {
-            None
-        } else {
-            Some(face.cluster_id)
-        };
-        conn.execute(
-            "INSERT INTO faces(\
-                photo_id, person_id, cluster_id, bbox_x, bbox_y, bbox_w, bbox_h, \
-                landmarks, embedding, embedding_dim, det_score, confirmed, source, created_at) \
-             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
-            params![
-                face.photo_id,
-                person,
-                cluster,
-                face.bbox_x,
-                face.bbox_y,
-                face.bbox_w,
-                face.bbox_h,
-                floats_to_blob(&face.landmarks),
-                floats_to_blob(&face.embedding),
-                face.embedding.len() as i64,
-                (face.det_score * 1000.0) as i64,
-                face.confirmed as i64,
-                face.source,
-                now(),
-            ],
+        insert_face_row(&conn, face)
+    }
+
+    /// Replace the faces of one photo with `faces` and mark the photo as
+    /// scanned (state 2), in one transaction. An earlier ignored face keeps a
+    /// new face at the same place ignored.
+    pub fn replace_faces_for_photo(&self, photo_id: i64, faces: &[Face]) -> Result<()> {
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        let ignored = ignored_boxes(&tx, "faces", photo_id)?;
+        tx.execute("DELETE FROM faces WHERE photo_id = ?1", params![photo_id])?;
+        for f in faces {
+            let id = insert_face_row(&tx, f)?;
+            let b = (f.bbox_x, f.bbox_y, f.bbox_w, f.bbox_h);
+            if ignored.iter().any(|&ib| box_matches(b, ib)) {
+                set_ignored(&tx, "faces", "person_id", id)?;
+            }
+        }
+        tx.execute(
+            "INSERT INTO face_scan(photo_id, state, scanned_at) VALUES(?1, 2, ?2) \
+             ON CONFLICT(photo_id) DO UPDATE SET state = 2, scanned_at = ?2",
+            params![photo_id, now()],
         )?;
-        Ok(conn.last_insert_rowid())
+        tx.execute("UPDATE photos SET face_status = 2 WHERE id = ?1", params![photo_id])?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// All faces detected in one photo.
@@ -498,6 +493,8 @@ impl Library {
         Ok(n)
     }
 
+    /// Used by the tests and the benchmarks only.
+    #[cfg(test)]
     /// A representative face id for a person: the cover face if set, else the
     /// highest-scoring assigned face. Returns 0 when the person has no face.
     pub fn person_representative_face(&self, id: i64) -> Result<i64> {
@@ -803,6 +800,8 @@ impl Library {
         ignored_photo_count(&conn, "faces")
     }
 
+    /// Used by the tests and the benchmarks only.
+    #[cfg(test)]
     /// The boxes (x, y, w, h, per mille) of the ignored faces in a photo. A
     /// re-scan reads them before it clears the faces.
     pub fn ignored_face_boxes(&self, photo_id: i64) -> Result<Vec<(i32, i32, i32, i32)>> {
@@ -810,6 +809,8 @@ impl Library {
         ignored_boxes(&conn, "faces", photo_id)
     }
 
+    /// Used by the tests and the benchmarks only.
+    #[cfg(test)]
     /// Mark one face as ignored.
     pub fn set_face_ignored(&self, face_id: i64) -> Result<()> {
         let conn = self.lock();
@@ -832,6 +833,8 @@ impl Library {
         Ok(())
     }
 
+    /// Used by the tests and the benchmarks only.
+    #[cfg(test)]
     /// Delete all detected faces for a photo before a re-scan.
     pub fn clear_faces_for_photo(&self, photo_id: i64) -> Result<()> {
         let conn = self.lock();
@@ -1268,6 +1271,34 @@ mod tests {
     }
 
     #[test]
+    fn replace_faces_keeps_ignored_boxes_and_marks_done() {
+        let lib = temp_lib();
+        let p1 = add_photo(&lib, "r");
+        {
+            let conn = lib.lock();
+            conn.execute("UPDATE photos SET scan_state = 2 WHERE id = ?1", params![p1])
+                .unwrap();
+        }
+        let at = |x: i32| Face {
+            photo_id: p1,
+            bbox_x: x,
+            bbox_w: 100,
+            bbox_h: 100,
+            embedding: vec![1.0],
+            ..Default::default()
+        };
+        let old = lib.insert_face(&at(0)).unwrap();
+        lib.set_face_ignored(old).unwrap();
+        lib.replace_faces_for_photo(p1, &[at(10), at(500)]).unwrap();
+        // The old row is gone. The face at the ignored place is ignored.
+        let live = lib.faces_for_photo(p1).unwrap();
+        assert_eq!(live.len(), 1);
+        assert_eq!(live[0].bbox_x, 500);
+        assert_eq!(lib.ignored_face_boxes(p1).unwrap().len(), 1);
+        assert!(lib.photos_needing_face_scan(10).unwrap().is_empty());
+    }
+
+    #[test]
     fn delete_all_clears_everything() {
         let lib = temp_lib();
         let p1 = add_photo(&lib, "f");
@@ -1446,4 +1477,41 @@ mod tests {
         assert!(lib.face_scanned_ids(&[pid]).unwrap().is_empty());
         let _ = std::fs::remove_file(&path);
     }
+}
+
+/// Insert one face row on `conn`. Returns its id.
+fn insert_face_row(conn: &rusqlite::Connection, face: &Face) -> Result<i64> {
+    let person = if face.person_id == 0 {
+        None
+    } else {
+        Some(face.person_id)
+    };
+    let cluster = if face.cluster_id == 0 {
+        None
+    } else {
+        Some(face.cluster_id)
+    };
+    conn.prepare_cached(
+        "INSERT INTO faces(\
+            photo_id, person_id, cluster_id, bbox_x, bbox_y, bbox_w, bbox_h, \
+            landmarks, embedding, embedding_dim, det_score, confirmed, source, created_at) \
+         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
+    )?
+    .execute(params![
+        face.photo_id,
+        person,
+        cluster,
+        face.bbox_x,
+        face.bbox_y,
+        face.bbox_w,
+        face.bbox_h,
+        floats_to_blob(&face.landmarks),
+        floats_to_blob(&face.embedding),
+        face.embedding.len() as i64,
+        (face.det_score * 1000.0) as i64,
+        face.confirmed as i64,
+        face.source,
+        now(),
+    ])?;
+    Ok(conn.last_insert_rowid())
 }

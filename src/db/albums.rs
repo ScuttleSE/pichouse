@@ -143,6 +143,8 @@ impl Library {
         Ok(1)
     }
 
+    /// Used by the tests and the benchmarks only.
+    #[cfg(test)]
     /// The album id a photo belongs to through its folder, or 0 when the photo's
     /// folder is in no album.
     pub fn album_of_photo(&self, photo_id: i64) -> Result<i64> {
@@ -159,6 +161,8 @@ impl Library {
         Ok(aid.unwrap_or(0))
     }
 
+    /// Used by the tests and the benchmarks only.
+    #[cfg(test)]
     /// The effective face kind for one photo: 1 = Photo, 2 = Art. A photo whose
     /// folder is in no album defaults to Photo.
     pub fn photo_effective_face_kind(&self, photo_id: i64) -> Result<i64> {
@@ -169,6 +173,8 @@ impl Library {
         self.album_effective_kind(aid)
     }
 
+    /// Used by the tests and the benchmarks only.
+    #[cfg(test)]
     /// The effective face kind for a folder: the effective kind of the album
     /// it belongs to (Inherit resolved up the chain), or Photo (1) if the
     /// folder is in no album. Routes a folder-scoped face scan to the right

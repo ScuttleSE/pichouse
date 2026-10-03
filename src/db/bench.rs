@@ -331,4 +331,22 @@ fn bench_all() {
         lib.set_face_scan_state(id, 2).unwrap();
     }
     println!("{:<40} {:>10.2?}", "H5 scan writes, 1000 photos", t.elapsed());
+
+    let t = Instant::now();
+    for &id in &ids {
+        let _ = lib.photo_by_id(id);
+        let rows: Vec<Face> = (0..3)
+            .map(|k| Face {
+                photo_id: id,
+                bbox_x: k * 100,
+                bbox_w: 50,
+                bbox_h: 50,
+                embedding: emb.clone(),
+                det_score: 0.9,
+                ..Default::default()
+            })
+            .collect();
+        lib.replace_faces_for_photo(id, &rows).unwrap();
+    }
+    println!("{:<40} {:>10.2?}", "H5new scan writes, 1000 photos", t.elapsed());
 }
