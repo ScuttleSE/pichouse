@@ -308,7 +308,8 @@ fn migrate(conn: &Connection) -> Result<()> {
     )?;
     // The composite indexes in SCHEMA replace these single-column indexes.
     conn.execute_batch(
-        "DROP INDEX IF EXISTS idx_faces_person;
+        "DROP INDEX IF EXISTS idx_photos_folder;
+         DROP INDEX IF EXISTS idx_faces_person;
          DROP INDEX IF EXISTS idx_faces_cluster;
          DROP INDEX IF EXISTS idx_style_faces_character;
          DROP INDEX IF EXISTS idx_style_faces_cluster;",
@@ -989,6 +990,19 @@ impl Library {
             }
         }
         Ok(out)
+    }
+
+    /// Report whether a folder has a photo that still needs Phase 2
+    /// enrichment. It stops at the first match and loads no id list.
+    pub fn folder_needs_enrichment(&self, folder_id: i64) -> Result<bool> {
+        let conn = self.read_lock();
+        let b: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM photos \
+             WHERE folder_id = ?1 AND (scan_state < 2 OR scan_state > 2) AND missing = 0)",
+            params![folder_id],
+            |r| r.get(0),
+        )?;
+        Ok(b)
     }
 
     /// Ids of photos still needing Phase 2 enrichment under one library root

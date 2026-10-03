@@ -92,22 +92,31 @@ pub fn find_duplicates(state: &Rc<AppState>, scope: Scope, threshold: u32) {
             .map(|(i, _)| i)
             .collect();
         let total = need.len();
+        // Store the new hashes in batches, one transaction for each batch.
+        const PHASH_BATCH: usize = 256;
+        let mut pending: Vec<(i64, u64)> = Vec::with_capacity(PHASH_BATCH);
         for (done, &i) in need.iter().enumerate() {
             if cancel.load(Ordering::Relaxed) {
+                let _ = lib.set_photo_phashes(&pending);
                 let _ = tx.send(Msg::Done(Vec::new()));
                 return;
             }
             let p = &photos[i];
             let ph = crate::phash::dhash_file(std::path::Path::new(&p.path), p.orientation);
             if ph != 0 {
-                let _ = lib.set_photo_phash(p.id, ph);
+                pending.push((p.id, ph));
                 photos[i].phash = ph;
+                if pending.len() >= PHASH_BATCH {
+                    let _ = lib.set_photo_phashes(&pending);
+                    pending.clear();
+                }
             }
             if total > 0 && done % 16 == 0 {
                 let _ = tx.send(Msg::Progress(done as f64 / total as f64));
                 let _ = tx.send(Msg::Message(format!("Hashing {}/{}…", done + 1, total)));
             }
         }
+        let _ = lib.set_photo_phashes(&pending);
 
         let _ = tx.send(Msg::Message("Comparing…".into()));
         let groups = dedup::find_duplicates(&photos, threshold, &banned, &cancel);

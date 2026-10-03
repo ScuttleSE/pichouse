@@ -52,7 +52,9 @@ CREATE TABLE IF NOT EXISTS photos (
     skip_face_scan INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE INDEX IF NOT EXISTS idx_photos_folder ON photos(folder_id);
+-- Folder lookups. scan_state lets the "folder needs enrichment" check
+-- read the index only.
+CREATE INDEX IF NOT EXISTS idx_photos_folder_state ON photos(folder_id, scan_state);
 -- idx_photos_scan_added (created in migrate) serves the scan_state filters.
 -- Fast selection of recently added photos for the New Files view.
 CREATE INDEX IF NOT EXISTS idx_photos_added_at ON photos(added_at);

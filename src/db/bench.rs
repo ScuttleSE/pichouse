@@ -287,6 +287,20 @@ fn bench_all() {
         lib.photo_index_all().unwrap().values().map(|m| m.len()).sum::<usize>()
     });
 
+    // M5: the "folder done" check after each enriched photo.
+    let big: i64 = lib
+        .lock()
+        .query_row(
+            "SELECT folder_id FROM photos GROUP BY folder_id ORDER BY COUNT(*) DESC LIMIT 1",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    time("M5 folder done check (old)", || {
+        lib.photos_needing_enrichment(Some(big)).unwrap().len()
+    });
+    time("M5new folder done check", || lib.folder_needs_enrichment(big).unwrap());
+
     // Sidebar counts.
     time("sidebar missing_photo_count", || lib.missing_photo_count().unwrap());
     time("sidebar ignored face count", || lib.ignored_face_photo_count().unwrap());

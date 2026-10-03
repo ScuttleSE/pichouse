@@ -313,11 +313,7 @@ fn start_workers(state: &Rc<AppState>) {
                 // If this folder now has no more photos needing enrichment,
                 // announce it once so its year is refined.
                 if folder_id != 0 {
-                    let remaining = lib
-                        .photos_needing_enrichment(Some(folder_id))
-                        .map(|v| v.len())
-                        .unwrap_or(1);
-                    if remaining == 0 {
+                    if !lib.folder_needs_enrichment(folder_id).unwrap_or(true) {
                         let first = {
                             let mut seen = folder_seen.lock().unwrap();
                             seen.insert(folder_id)

@@ -124,13 +124,18 @@ impl Library {
         Ok(conn.execute("DELETE FROM dup_bans", [])?)
     }
 
-    /// Store a computed perceptual hash for a photo (backfill path).
-    pub fn set_photo_phash(&self, id: i64, phash: u64) -> Result<()> {
-        let conn = self.lock();
-        conn.execute(
-            "UPDATE photos SET phash = ?1 WHERE id = ?2",
-            params![phash as i64, id],
-        )?;
+    /// Store computed perceptual hashes as (photo id, hash) pairs, in one
+    /// transaction (backfill path).
+    pub fn set_photo_phashes(&self, rows: &[(i64, u64)]) -> Result<()> {
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        {
+            let mut stmt = tx.prepare("UPDATE photos SET phash = ?1 WHERE id = ?2")?;
+            for &(id, phash) in rows {
+                stmt.execute(params![phash as i64, id])?;
+            }
+        }
+        tx.commit()?;
         Ok(())
     }
 
