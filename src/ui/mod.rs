@@ -4,6 +4,7 @@ mod actions;
 mod aitag;
 mod albumscan;
 mod albumtree;
+mod altpreview;
 mod app;
 mod pathtip;
 mod characters;

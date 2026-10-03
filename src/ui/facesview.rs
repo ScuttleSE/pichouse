@@ -374,6 +374,17 @@ impl FacesView {
         img_btn.set_child(Some(&image));
         img_btn.add_css_class("flat");
         {
+            // Hold Alt while hovering to preview random group photos.
+            let lib = state.lib.clone();
+            super::altpreview::attach(&img_btn, &image, state.gen.clone(), move || {
+                if named {
+                    lib.photos_of_person(person_id).unwrap_or_default()
+                } else {
+                    lib.photos_in_cluster(cluster_id).unwrap_or_default()
+                }
+            });
+        }
+        {
             let state = state.clone();
             let name = name.to_string();
             img_btn.connect_clicked(move |_| {

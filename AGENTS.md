@@ -233,7 +233,7 @@ virtual albums when these tables are empty.
                          tagmanager, shortcuts, dialogs, actions, controller,
                          groupsort,
                          prefs, photo_object, util, enrich, freshness, watcher,
-                         newfiles, vrules, vmenu, dedup_scan, pathtip)
+                         newfiles, vrules, vmenu, dedup_scan, pathtip, altpreview)
     .gitea/workflows/    CI (build/test/release on push to main)
 
 ## Architecture patterns

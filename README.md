@@ -67,6 +67,9 @@ a thumbnail grid in the center, and a properties panel on the right.
 - **Path tooltip.** Hover a thumbnail to see its filename. Hold Shift to add the
   parent folder. The tooltip adds one more folder after each interval, up to the
   library root folder. Set the interval in Settings → Appearance.
+- **Alt preview in Faces and Characters.** Hover a tile and hold Alt. The tile
+  shows a random photo of that person or character. A new photo shows every
+  second. Release Alt or move the pointer away to see the face again.
 
 ## AI-based tagging (local, optional)
 

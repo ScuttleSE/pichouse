@@ -490,6 +490,17 @@ impl CharactersView {
         image.set_size_request(tile_px, tile_px);
         image.set_icon_name(Some("avatar-default-symbolic"));
         fill_style_crop(state, &image, face_id);
+        {
+            // Hold Alt while hovering to preview random group photos.
+            let lib = state.lib.clone();
+            super::altpreview::attach(&tile, &image, state.gen.clone(), move || {
+                if named {
+                    lib.photos_of_character(character_id).unwrap_or_default()
+                } else {
+                    lib.photos_in_style_cluster(cluster_id).unwrap_or_default()
+                }
+            });
+        }
 
         let label_text = format!("{name} ({count})");
         let count_label = Label::new(Some(&label_text));
