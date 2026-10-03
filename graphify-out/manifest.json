@@ -1,8 +1,8 @@
 {
   "Cargo.toml": {
-    "mtime": 1790969734.7809174,
-    "seen": 1790971041.6399133,
-    "ast_hash": "f1e327927f3a7c9247de87d30d786839",
+    "mtime": 1790974975.2978938,
+    "seen": 1791004655.5426102,
+    "ast_hash": "b876cfc9d682b0a6dd60f8a9feaf486c",
     "semantic_hash": ""
   },
   "src/ai/client.rs": {
@@ -66,9 +66,9 @@
     "semantic_hash": "b465341a79c87c8ea0c428e32d47ea92"
   },
   "src/db/faces.rs": {
-    "mtime": 1790969734.8449168,
-    "seen": 1790971041.6402686,
-    "ast_hash": "31761617302698bc90738a4def8ac99b",
+    "mtime": 1790974975.3178937,
+    "seen": 1791004655.5429335,
+    "ast_hash": "d3d48ea2e74ed2be7402d7d8bf541729",
     "semantic_hash": ""
   },
   "src/db/immich.rs": {
@@ -84,9 +84,9 @@
     "semantic_hash": "33a68a5681737ab28a720e2031859771"
   },
   "src/db/library.rs": {
-    "mtime": 1790969734.8489168,
-    "seen": 1790971041.6403327,
-    "ast_hash": "1206557b1b6a821a63ca4c91020a5ef7",
+    "mtime": 1790973336.9048946,
+    "seen": 1790974963.8162267,
+    "ast_hash": "3cfc23999a04598f64eb7fcad34e99b4",
     "semantic_hash": ""
   },
   "src/db/mod.rs": {
@@ -114,9 +114,9 @@
     "semantic_hash": "ce6ca831049eb954d59952bbcf0e4dcb"
   },
   "src/db/style_faces.rs": {
-    "mtime": 1790969734.8489168,
-    "seen": 1790971041.640431,
-    "ast_hash": "7d8f0ad269a2db2ba090cf332ed8994d",
+    "mtime": 1790974975.3178937,
+    "seen": 1791004655.5431182,
+    "ast_hash": "4df0c97ea668b88dab1959b6bac891de",
     "semantic_hash": ""
   },
   "src/db/tags.rs": {
@@ -318,9 +318,9 @@
     "semantic_hash": ""
   },
   "src/ui/charactersview.rs": {
-    "mtime": 1790969734.8489168,
-    "seen": 1790971041.641449,
-    "ast_hash": "ea9bb8402e5c40df1ba8b68731e4bc6e",
+    "mtime": 1791004633.7232578,
+    "seen": 1791004655.5441132,
+    "ast_hash": "fe110ab77755626019674012da0d9cde",
     "semantic_hash": ""
   },
   "src/ui/controller.rs": {
@@ -366,9 +366,9 @@
     "semantic_hash": ""
   },
   "src/ui/facesview.rs": {
-    "mtime": 1788110884.0437229,
-    "seen": 1788111689.267319,
-    "ast_hash": "e72b0fc8d99646c5b27bad415652a386",
+    "mtime": 1791004610.9554121,
+    "seen": 1791004655.5443244,
+    "ast_hash": "11d15efc8b4418de7c1e2347a0a7f7d3",
     "semantic_hash": ""
   },
   "src/ui/foldertree.rs": {
@@ -396,9 +396,9 @@
     "semantic_hash": ""
   },
   "src/ui/mod.rs": {
-    "mtime": 1788331809.4610279,
-    "seen": 1788333707.3319557,
-    "ast_hash": "cb43be96c09cbcc378ed11855f67a594",
+    "mtime": 1791004528.2799718,
+    "seen": 1791004655.5444455,
+    "ast_hash": "03a1b2a27ed528c9d8454c0dad8424c2",
     "semantic_hash": ""
   },
   "src/ui/newfiles.rs": {
@@ -468,9 +468,9 @@
     "semantic_hash": "1d6427d13c23fc72c0b413776ccd6cce"
   },
   "src/ui/sidebar.rs": {
-    "mtime": 1790970999.3364341,
-    "seen": 1790971041.6420996,
-    "ast_hash": "8e06c7c3316a4dd6aca3d1cb82cef135",
+    "mtime": 1790972128.26499,
+    "seen": 1790973336.2585654,
+    "ast_hash": "b1f600db6171d9f3a23c6abae0171c1f",
     "semantic_hash": ""
   },
   "src/ui/state.rs": {
@@ -522,9 +522,9 @@
     "semantic_hash": ""
   },
   "src/ui/vmenu.rs": {
-    "mtime": 1790969734.8489168,
-    "seen": 1790971041.6422892,
-    "ast_hash": "d82ca38b4ad100712841acffa54988cf",
+    "mtime": 1790974975.3178937,
+    "seen": 1791004655.5450814,
+    "ast_hash": "c284c42794dd120f11292bc7f88ca5ef",
     "semantic_hash": ""
   },
   "src/ui/vrules.rs": {
@@ -606,15 +606,15 @@
     "semantic_hash": ""
   },
   "src/db/character_groups.rs": {
-    "mtime": 1788110884.039723,
-    "seen": 1788111689.2657394,
-    "ast_hash": "57b8fd43ca1626c42e84b671a0d108e3",
+    "mtime": 1791004501.784151,
+    "seen": 1791004655.5428011,
+    "ast_hash": "00ccc587292d61996cc78787742d047c",
     "semantic_hash": ""
   },
   "src/db/person_groups.rs": {
-    "mtime": 1788110884.039723,
-    "seen": 1788111689.2660024,
-    "ast_hash": "f8277ff45a456767c55e652a16f2e795",
+    "mtime": 1791004506.972116,
+    "seen": 1791004655.5430558,
+    "ast_hash": "c1d34c4212bfcd431aa333fa1ff47fda",
     "semantic_hash": ""
   },
   ".claude/settings.local.json": {
@@ -627,6 +627,12 @@
     "mtime": 1788331809.4610279,
     "seen": 1788333707.331993,
     "ast_hash": "f6825e9ba2f4ea30b74eb5e3c147dc85",
+    "semantic_hash": ""
+  },
+  "src/ui/mosaic.rs": {
+    "mtime": 1791004528.259972,
+    "seen": 1791004655.5444477,
+    "ast_hash": "947da67491f9ac36e01f02d584bccba2",
     "semantic_hash": ""
   }
 }

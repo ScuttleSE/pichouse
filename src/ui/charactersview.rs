@@ -46,8 +46,8 @@ struct TileEntry {
     root: GtkBox,
     count_label: Label,
     name: String,
-    /// The cover face id that the tile shows. A change rebuilds the tile.
-    face_id: i64,
+    /// The face ids that the tile shows. A change rebuilds the tile.
+    faces: Vec<i64>,
 }
 
 /// The Characters view widget and its rebuild logic.
@@ -324,23 +324,24 @@ impl CharactersView {
         // Add new tiles and update existing ones. New tiles append at the end,
         // so an existing tile never changes position.
         for (key, name, count) in wanted {
-            let face_id = match key {
-                TileKey::Group(gid) => all_groups
-                    .iter()
-                    .find(|g| g.id == gid)
-                    .map(|g| g.cover_face_id)
-                    .unwrap_or(0),
-                TileKey::Named(cid) => state.lib.character_representative_face(cid).unwrap_or(0),
-                TileKey::Cluster(clid) => state.lib.cluster_representative_face(clid).unwrap_or(0),
+            let faces: Vec<i64> = match key {
+                TileKey::Group(gid) => character_folder_faces(&state, gid),
+                TileKey::Named(cid) => {
+                    vec![state.lib.character_representative_face(cid).unwrap_or(0)]
+                }
+                TileKey::Cluster(clid) => {
+                    vec![state.lib.cluster_representative_face(clid).unwrap_or(0)]
+                }
             };
+            let face_id = faces.first().copied().unwrap_or(0);
             let existing = self
                 .tiles
                 .borrow()
                 .iter()
                 .position(|t| t.key == key);
-            // A tile whose cover face changed is built again at the same index.
+            // A tile whose faces changed is built again at the same index.
             let rebuild_at = match existing {
-                Some(idx) if self.tiles.borrow()[idx].face_id != face_id => Some(idx),
+                Some(idx) if self.tiles.borrow()[idx].faces != faces => Some(idx),
                 _ => None,
             };
             if let (Some(idx), None) = (existing, rebuild_at) {
@@ -355,7 +356,7 @@ impl CharactersView {
             } else {
                 let (tile_root, count_label) = match key {
                     TileKey::Group(gid) => {
-                        self.build_group_tile(&state, &name, count, gid, face_id, tile_px)
+                        self.build_group_tile(&state, &name, count, gid, &faces, tile_px)
                     }
                     TileKey::Named(cid) => {
                         self.build_tile(&state, face_id, &name, count, true, cid, 0, tile_px)
@@ -369,7 +370,7 @@ impl CharactersView {
                     root: tile_root,
                     count_label,
                     name,
-                    face_id,
+                    faces,
                 };
                 if let Some(idx) = rebuild_at {
                     let mut tiles = self.tiles.borrow_mut();
@@ -431,40 +432,7 @@ impl CharactersView {
         image.set_pixel_size(tile_px);
         image.set_size_request(tile_px, tile_px);
         image.set_icon_name(Some("avatar-default-symbolic"));
-        if face_id != 0 {
-            if let Some(jpeg) = state.style_face_crop_cached(face_id) {
-                if let Some(tex) = texture_from_bytes(&jpeg) {
-                    image.set_paintable(Some(&tex));
-                }
-            } else if let Some((path, orientation, bbox)) =
-                state.style_face_crop_inputs(face_id)
-            {
-                // Render the crop off the main thread, then fill the image. This
-                // keeps the view fast to open during a scan, when many crops are
-                // not yet cached.
-                let thumbs = state.style_face_thumbs();
-                let (tx, rx) = glib::MainContext::channel::<Option<Vec<u8>>>(
-                    glib::Priority::DEFAULT,
-                );
-                queue_crop_job(CropJob {
-                    face_id,
-                    path,
-                    orientation,
-                    bbox,
-                    thumbs,
-                    reply: tx,
-                });
-                let image_weak = image.downgrade();
-                rx.attach(None, move |jpeg| {
-                    if let (Some(image), Some(jpeg)) = (image_weak.upgrade(), jpeg) {
-                        if let Some(tex) = texture_from_bytes(&jpeg) {
-                            image.set_paintable(Some(&tex));
-                        }
-                    }
-                    glib::ControlFlow::Break
-                });
-            }
-        }
+        fill_style_crop(state, &image, face_id);
 
         let label_text = format!("{name} ({count})");
         let count_label = Label::new(Some(&label_text));
@@ -549,35 +517,31 @@ impl CharactersView {
     }
 
     /// Build one sub-group ("folder") tile. A single click drills into that
-    /// group's own scope; unlike a character/cluster tile it is never
+    /// group's own scope. Unlike a character/cluster tile it is never
     /// selectable and has no right-click menu (group management lives in the
-    /// sidebar). Shows the group's chosen cover face when set (via "Set face
-    /// as thumbnail" on a member's tile), else a plain folder icon.
+    /// sidebar). It shows a 3x3 mosaic of `faces`, else a plain folder icon.
     fn build_group_tile(
         self: &Rc<Self>,
         state: &Rc<AppState>,
         name: &str,
         count: i64,
         group_id: i64,
-        cover_face_id: i64,
+        faces: &[i64],
         tile_px: i32,
     ) -> (GtkBox, Label) {
         let tile = GtkBox::new(Orientation::Vertical, 4);
         tile.set_width_request(tile_px + 12);
         tile.add_css_class("character-tile");
 
-        let image = Image::new();
-        image.set_pixel_size(tile_px);
-        image.set_size_request(tile_px, tile_px);
-        if cover_face_id != 0 {
-            if let Some(jpeg) = state.style_face_crop_cached(cover_face_id) {
-                if let Some(tex) = texture_from_bytes(&jpeg) {
-                    image.set_paintable(Some(&tex));
-                }
-            }
-        }
-        if image.paintable().is_none() {
+        if faces.is_empty() {
+            let image = Image::new();
+            image.set_pixel_size(tile_px);
+            image.set_size_request(tile_px, tile_px);
             image.set_icon_name(Some("folder-new-symbolic"));
+            tile.append(&image);
+        } else {
+            let grid = super::mosaic::build(tile_px, faces, |img, f| fill_style_crop(state, img, f));
+            tile.append(&grid);
         }
 
         let label_text = format!("{name} ({count})");
@@ -594,7 +558,6 @@ impl CharactersView {
         }
         tile.add_controller(click);
 
-        tile.append(&image);
         tile.append(&count_label);
         (tile, count_label)
     }
@@ -710,7 +673,19 @@ impl CharactersView {
         }
         self.selected.borrow_mut().clear();
         *self.anchor.borrow_mut() = None;
-        self.reload();
+        // Update in place and keep the scroll position. A full reload removes
+        // the focused tile, and GTK then scrolls back to the top.
+        let adj = self
+            .flow
+            .ancestor(ScrolledWindow::static_type())
+            .and_downcast::<ScrolledWindow>()
+            .map(|s| s.vadjustment());
+        let pos = adj.as_ref().map(|a| a.value());
+        self.refresh();
+        if let (Some(adj), Some(pos)) = (adj, pos) {
+            adj.set_value(pos);
+            glib::idle_add_local_once(move || adj.set_value(pos));
+        }
         let sb = state.sidebar.borrow().as_ref().cloned();
         if let Some(sb) = sb {
             sb.reload_deferred();
@@ -728,7 +703,7 @@ impl CharactersView {
         named: bool,
         character_id: i64,
         cluster_id: i64,
-        face_id: i64,
+        _face_id: i64,
         name: &str,
         x: f64,
         y: f64,
@@ -743,10 +718,6 @@ impl CharactersView {
         } else {
             menu.append(Some("Name this group…"), Some("char.name"));
         }
-        let scope = *self.scope.borrow();
-        if scope != 0 && face_id != 0 {
-            menu.append(Some("Set face as thumbnail"), Some("char.set-thumb"));
-        }
         let ignore_label = if self.selected.borrow().len() > 1 {
             "Ignore selected"
         } else {
@@ -759,21 +730,6 @@ impl CharactersView {
             a.connect_activate(move |_, _| cb());
             group.add_action(&a);
         };
-
-        if scope != 0 && face_id != 0 {
-            let this = self.clone();
-            let state = state.clone();
-            add(
-                "set-thumb",
-                Box::new(move || {
-                    if let Err(e) = state.lib.set_character_group_cover(scope, face_id) {
-                        super::state::show_error(&state, &e.to_string());
-                        return;
-                    }
-                    this.reload();
-                }),
-            );
-        }
 
         if named {
             {
@@ -904,4 +860,51 @@ impl CharactersView {
         popover.set_pointing_to(Some(&rect));
         popover.popup();
     }
+}
+
+/// Load the crop of one stylised face into an image. A cached crop shows at
+/// once. An uncached crop renders off the main thread and shows when ready.
+fn fill_style_crop(state: &Rc<AppState>, image: &Image, face_id: i64) {
+    if face_id == 0 {
+        return;
+    }
+    if let Some(jpeg) = state.style_face_crop_cached(face_id) {
+        if let Some(tex) = texture_from_bytes(&jpeg) {
+            image.set_paintable(Some(&tex));
+        }
+        return;
+    }
+    let Some((path, orientation, bbox)) = state.style_face_crop_inputs(face_id) else {
+        return;
+    };
+    let thumbs = state.style_face_thumbs();
+    let (tx, rx) = glib::MainContext::channel::<Option<Vec<u8>>>(glib::Priority::DEFAULT);
+    queue_crop_job(CropJob {
+        face_id,
+        path,
+        orientation,
+        bbox,
+        thumbs,
+        reply: tx,
+    });
+    let image_weak = image.downgrade();
+    rx.attach(None, move |jpeg| {
+        if let (Some(image), Some(jpeg)) = (image_weak.upgrade(), jpeg) {
+            if let Some(tex) = texture_from_bytes(&jpeg) {
+                image.set_paintable(Some(&tex));
+            }
+        }
+        glib::ControlFlow::Break
+    });
+}
+
+/// The mosaic face ids for one character folder.
+fn character_folder_faces(state: &Rc<AppState>, group_id: i64) -> Vec<i64> {
+    let owners = state.lib.characters_under_group(group_id).unwrap_or_default();
+    let pool = state.lib.style_faces_of_characters(&owners).unwrap_or_default();
+    let reps: std::collections::HashMap<i64, i64> = owners
+        .iter()
+        .map(|c| (*c, state.lib.character_representative_face(*c).unwrap_or(0)))
+        .collect();
+    super::mosaic::pick_faces(group_id, &owners, &reps, &pool)
 }

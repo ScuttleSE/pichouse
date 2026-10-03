@@ -203,6 +203,24 @@ impl Library {
         Ok(characters)
     }
 
+    /// Every non-ignored stylised face of the given characters, as
+    /// `(character_id, face_id)` pairs in a stable order. The folder mosaic
+    /// uses this list.
+    pub fn style_faces_of_characters(&self, ids: &[i64]) -> Result<Vec<(i64, i64)>> {
+        let conn = self.read_lock();
+        let mut stmt = conn.prepare(
+            "SELECT character_id, id FROM style_faces \
+             WHERE character_id = ?1 AND ignored = 0 ORDER BY id ASC",
+        )?;
+        let mut out = Vec::new();
+        for id in ids {
+            let rows = stmt.query_map(params![id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            for row in rows {
+                out.push(row?);
+            }
+        }
+        Ok(out)
+    }
 }
 
 #[cfg(test)]

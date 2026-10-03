@@ -19,6 +19,7 @@ mod foldertree;
 mod freshness;
 mod grid;
 mod immich;
+mod mosaic;
  mod newfiles;
  mod nftree;
  mod people;
