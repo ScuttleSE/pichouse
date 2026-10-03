@@ -1522,6 +1522,10 @@ mod tests {
             lib.lock()
                 .execute("UPDATE photos SET skip_face_scan = 1 WHERE id = ?1", params![pid])
                 .unwrap();
+            // An old database has no marker, so the migration runs again.
+            lib.lock()
+                .execute("DELETE FROM settings WHERE key = 'migrate.skip_face_scan_cleared'", [])
+                .unwrap();
             pid
         };
         let lib = Library::open_at(&path).unwrap();

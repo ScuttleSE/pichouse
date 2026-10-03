@@ -155,15 +155,28 @@ fn migrate(conn: &Connection) -> Result<()> {
     }
     // The "Do not scan" action is gone. It deleted the faces of the marked
     // photos. Clear the flag and the scan state, so the next face scan finds
-    // the faces again. This runs on each open, but it changes rows only once.
-    conn.execute_batch(
-        "DELETE FROM face_scan WHERE photo_id IN \
-             (SELECT id FROM photos WHERE skip_face_scan = 1); \
-         DELETE FROM style_face_scan WHERE photo_id IN \
-             (SELECT id FROM photos WHERE skip_face_scan = 1); \
-         UPDATE photos SET skip_face_scan = 0, face_status = 0, style_face_status = 0 \
-             WHERE skip_face_scan = 1;",
-    )?;
+    // the faces again. No code sets the flag now, so this runs one time only.
+    // Each run reads the full photos table 3 times.
+    let skip_cleared: bool = conn
+        .query_row(
+            "SELECT 1 FROM settings WHERE key = 'migrate.skip_face_scan_cleared'",
+            [],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if !skip_cleared {
+        conn.execute_batch(
+            "DELETE FROM face_scan WHERE photo_id IN \
+                 (SELECT id FROM photos WHERE skip_face_scan = 1); \
+             DELETE FROM style_face_scan WHERE photo_id IN \
+                 (SELECT id FROM photos WHERE skip_face_scan = 1); \
+             UPDATE photos SET skip_face_scan = 0, face_status = 0, style_face_status = 0 \
+                 WHERE skip_face_scan = 1; \
+             INSERT OR REPLACE INTO settings(key, value) \
+                 VALUES('migrate.skip_face_scan_cleared', '1');",
+        )?;
+    }
     // faces.ignored and style_faces.ignored: 1 when the user ignores the face.
     // An ignored face keeps its row, so the photo stays face-scanned. It has no
     // person, character, or cluster, and clustering leaves it out.
