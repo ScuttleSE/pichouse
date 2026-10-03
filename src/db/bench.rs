@@ -164,6 +164,37 @@ fn bench_all() {
             .filter(|&&f| lib.folder_effective_face_kind(f).unwrap() == 2)
             .count()
     });
+    time("H1new autoscan route (face)", || {
+        lib.photos_needing_scan_of_kind(false, false, 100_000).unwrap().len()
+    });
+    time("H1new autoscan route (art)", || {
+        lib.photos_needing_scan_of_kind(true, true, 100_000).unwrap().len()
+    });
+    time("H1new folder kinds (all folders)", || lib.art_folder_ids().unwrap().len());
+    if want("H1check") {
+        // The new SQL routing must give the same ids as the old loop.
+        for (style, art) in [(false, false), (false, true), (true, false), (true, true)] {
+            let all = if style {
+                lib.photos_needing_style_face_scan(i64::MAX).unwrap()
+            } else {
+                lib.photos_needing_face_scan(i64::MAX).unwrap()
+            };
+            let mut old: Vec<i64> = all
+                .into_iter()
+                .filter(|&id| (lib.photo_effective_face_kind(id).unwrap() == 2) == art)
+                .collect();
+            let mut new = lib.photos_needing_scan_of_kind(style, art, i64::MAX).unwrap();
+            old.sort();
+            new.sort();
+            assert_eq!(old, new, "style={style} art={art}");
+            println!("H1check style={style} art={art}: {} ids match", new.len());
+        }
+        let art = lib.art_folder_ids().unwrap();
+        for &f in &folders {
+            assert_eq!(lib.folder_effective_face_kind(f).unwrap() == 2, art.contains(&f));
+        }
+        println!("H1check folders: {} art of {}", art.len(), folders.len());
+    }
 
     // H2: virtual album counts.
     let vas = lib.virtual_albums().unwrap();

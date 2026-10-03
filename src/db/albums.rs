@@ -6,6 +6,21 @@ use crate::model::Album;
 
 use super::{Library, Result};
 
+/// A recursive CTE `album_kind(id, k)` with the effective face kind of every
+/// album. An explicit Photo (1) or Art (2) kind wins. An Inherit (0) album
+/// takes the kind of its parent. A top-level Inherit album is Photo (1). This
+/// gives the same result as `album_effective_kind`.
+const ALBUM_KIND_CTE: &str = "WITH RECURSIVE album_kind(id, k) AS ( \
+     SELECT id, CASE WHEN kind IN (1, 2) THEN kind ELSE 1 END \
+       FROM albums WHERE parent_id IS NULL \
+     UNION ALL \
+     SELECT a.id, CASE WHEN a.kind IN (1, 2) THEN a.kind ELSE ak.k END \
+       FROM albums a JOIN album_kind ak ON a.parent_id = ak.id)";
+
+/// The folder ids with the effective kind Art. Use it after `ALBUM_KIND_CTE`.
+const ART_FOLDERS_SQL: &str = "SELECT af.folder_id FROM album_folders af \
+     JOIN album_kind ak ON ak.id = af.album_id WHERE ak.k = 2";
+
 impl Library {
     /// Insert a new album. `parent_id` of 0 creates a top-level album.
     pub fn create_album(&self, name: &str, parent_id: i64) -> Result<i64> {
@@ -173,6 +188,44 @@ impl Library {
             Some(aid) => self.album_effective_kind(aid),
             None => Ok(1),
         }
+    }
+
+    /// The ids of the folders whose effective face kind is Art (2). A folder
+    /// that is not in the set is Photo (1). One query resolves the kind of
+    /// every album.
+    pub fn art_folder_ids(&self) -> Result<std::collections::HashSet<i64>> {
+        let conn = self.read_lock();
+        let sql = format!("{ALBUM_KIND_CTE} {ART_FOLDERS_SQL}");
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map([], |r| r.get::<_, i64>(0))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Photo ids that still need a face pass, routed by the effective face
+    /// kind of their album. `style` selects the stylised scan table. `art`
+    /// selects the Art photos (kind 2). Otherwise it selects the Photo photos
+    /// (kind 1). The newest photos come first.
+    pub fn photos_needing_scan_of_kind(
+        &self,
+        style: bool,
+        art: bool,
+        limit: i64,
+    ) -> Result<Vec<i64>> {
+        let scan = if style { "style_face_scan" } else { "face_scan" };
+        let op = if art { "IN" } else { "NOT IN" };
+        let sql = format!(
+            "{ALBUM_KIND_CTE} \
+             SELECT p.id FROM photos p \
+             LEFT JOIN {scan} fs ON fs.photo_id = p.id \
+             WHERE p.scan_state = 2 AND p.missing = 0 \
+               AND (fs.state IS NULL OR fs.state <> 2) \
+               AND p.folder_id {op} ({ART_FOLDERS_SQL}) \
+             ORDER BY p.added_at DESC LIMIT ?1"
+        );
+        let conn = self.read_lock();
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![limit], |r| r.get::<_, i64>(0))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
     /// All folder ids under an album and its sub-albums (the album subtree).

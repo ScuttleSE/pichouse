@@ -56,13 +56,14 @@ pub fn scan_album_faces(state: &Rc<AppState>, album_id: i64, rescan: bool) {
 /// album-scoped scan: un-enriched photos are enriched (generating their
 /// thumbnails) first, then scanned.
 pub fn scan_folder_faces(state: &Rc<AppState>, folder_ids: &[i64], rescan: bool) {
+    let art = state.lib.art_folder_ids().unwrap_or_default();
     let mut photo_folders: Vec<i64> = Vec::new();
     let mut art_folders: Vec<i64> = Vec::new();
     for &fid in folder_ids {
         if fid == 0 {
             continue;
         }
-        if state.lib.folder_effective_face_kind(fid).unwrap_or(1) == 2 {
+        if art.contains(&fid) {
             art_folders.push(fid);
         } else {
             photo_folders.push(fid);
@@ -238,33 +239,24 @@ pub fn autoscan_routed(state: &Rc<AppState>, want_face: bool, want_art: bool) {
         return;
     }
 
-    // Collect the union of photos needing either pass, then route each by kind.
-    let mut photo_ids: Vec<i64> = Vec::new();
-    let mut art_ids: Vec<i64> = Vec::new();
-
-    if face_on {
-        for id in state
+    // SQL routes each photo by the effective kind of its album. A Photo
+    // photo goes to the face pass. An Art photo goes to the stylised pass.
+    let photo_ids = if face_on {
+        state
             .lib
-            .photos_needing_face_scan(SCAN_BATCH)
+            .photos_needing_scan_of_kind(false, false, SCAN_BATCH)
             .unwrap_or_default()
-        {
-            match state.lib.photo_effective_face_kind(id).unwrap_or(1) {
-                2 => {}
-                _ => photo_ids.push(id),
-            }
-        }
-    }
-    if style_on {
-        for id in state
+    } else {
+        Vec::new()
+    };
+    let art_ids = if style_on {
+        state
             .lib
-            .photos_needing_style_face_scan(SCAN_BATCH)
+            .photos_needing_scan_of_kind(true, true, SCAN_BATCH)
             .unwrap_or_default()
-        {
-            if state.lib.photo_effective_face_kind(id).unwrap_or(1) == 2 {
-                art_ids.push(id);
-            }
-        }
-    }
+    } else {
+        Vec::new()
+    };
 
     if face_on && !photo_ids.is_empty() {
         super::facescan::run_scan(state, photo_ids, face_cfg);
