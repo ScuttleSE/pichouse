@@ -101,11 +101,10 @@ impl DbSnapshot {
     /// Read the whole snapshot under one brief lock.
     fn read(lib: &Library) -> DbSnapshot {
         let mut folder_id_by_path = HashMap::new();
-        let mut index_by_folder = HashMap::new();
+        let mut index_by_folder = lib.photo_index_all().unwrap_or_default();
         for f in lib.folders().unwrap_or_default() {
             folder_id_by_path.insert(f.path.clone(), f.id);
-            index_by_folder
-                .insert(f.id, lib.photo_index_for_folder(f.id).unwrap_or_default());
+            index_by_folder.entry(f.id).or_default();
         }
         DbSnapshot {
             folder_id_by_path,

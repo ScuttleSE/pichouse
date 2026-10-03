@@ -1284,6 +1284,26 @@ impl Library {
         Ok(p)
     }
 
+    /// The photo index of every folder, in one query: folder id -> (file path
+    /// -> (photo id, size, missing)). Reconciliation reads it one time.
+    #[allow(clippy::type_complexity)]
+    pub fn photo_index_all(
+        &self,
+    ) -> Result<std::collections::HashMap<i64, std::collections::HashMap<String, (i64, i64, bool)>>> {
+        let conn = self.read_lock();
+        let mut stmt = conn.prepare("SELECT folder_id, path, id, size, missing FROM photos")?;
+        let mut rows = stmt.query([])?;
+        let mut out: std::collections::HashMap<i64, std::collections::HashMap<String, (i64, i64, bool)>> = std::collections::HashMap::new();
+        while let Some(r) = rows.next()? {
+            out.entry(r.get(0)?)
+                .or_default()
+                .insert(r.get(1)?, (r.get(2)?, r.get(3)?, r.get::<_, i64>(4)? != 0));
+        }
+        Ok(out)
+    }
+
+    /// Used by the benchmarks only.
+    #[cfg(test)]
     /// A map of file path to (photo id, size, missing) for every photo in a
     /// folder. Used by reconciliation to diff disk against the database.
     pub fn photo_index_for_folder(

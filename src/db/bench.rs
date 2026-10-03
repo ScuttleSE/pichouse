@@ -283,6 +283,9 @@ fn bench_all() {
         }
         n
     });
+    time("M1new reconcile snapshot", || {
+        lib.photo_index_all().unwrap().values().map(|m| m.len()).sum::<usize>()
+    });
 
     // Sidebar counts.
     time("sidebar missing_photo_count", || lib.missing_photo_count().unwrap());
