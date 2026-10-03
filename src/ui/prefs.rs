@@ -35,6 +35,10 @@ pub const KEY_SORT_ORDER: &str = "grid.sort_order";
 /// Whether the grid shows a filename caption under each thumbnail.
 pub const KEY_SHOW_FILENAMES: &str = "grid.show_filenames";
 
+/// The interval (milliseconds) after which the Shift tooltip adds one more
+/// parent folder. Default 1000.
+pub const KEY_TOOLTIP_PATH_STEP_MS: &str = "grid.tooltip_path_step_ms";
+
 /// AI setting keys stored in `library.db`.
 pub const KEY_AI_ENABLED: &str = "ai.enabled";
 pub const KEY_AI_HOST: &str = "ai.host";

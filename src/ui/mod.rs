@@ -5,6 +5,7 @@ mod aitag;
 mod albumscan;
 mod albumtree;
 mod app;
+mod pathtip;
 mod characters;
 mod charactersview;
 mod controller;

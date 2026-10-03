@@ -555,6 +555,27 @@ fn appearance_pane(state: &Rc<AppState>) -> GtkBox {
     hint.add_css_class("dim-label");
     root.append(&hint);
 
+    // Shift tooltip step interval.
+    let row = GtkBox::new(gtk4::Orientation::Horizontal, 8);
+    let lbl = Label::new(Some("Shift tooltip: add one parent folder every (seconds)"));
+    lbl.set_xalign(0.0);
+    let spin = SpinButton::with_range(0.2, 5.0, 0.1);
+    spin.set_digits(1);
+    spin.set_value(super::pathtip::step_ms() as f64 / 1000.0);
+    {
+        let state = state.clone();
+        spin.connect_value_changed(move |s| {
+            let ms = (s.value() * 1000.0).round() as u32;
+            super::pathtip::set_step_ms(ms);
+            let _ = state
+                .lib
+                .set_setting(prefs::KEY_TOOLTIP_PATH_STEP_MS, &ms.to_string());
+        });
+    }
+    row.append(&lbl);
+    row.append(&spin);
+    root.append(&row);
+
     root
 }
 

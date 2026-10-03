@@ -64,6 +64,9 @@ a thumbnail grid in the center, and a properties panel on the right.
   a live, draggable histogram per channel and a one-click Auto levels (from the
   histogram) to fix color casts. Save named levels presets and apply a preset to
   a whole folder at once.
+- **Path tooltip.** Hover a thumbnail to see its filename. Hold Shift to add the
+  parent folder. The tooltip adds one more folder after each interval, up to the
+  library root folder. Set the interval in Settings → Appearance.
 
 ## AI-based tagging (local, optional)
 

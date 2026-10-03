@@ -350,6 +350,13 @@ impl Grid {
             .get_setting(super::prefs::KEY_SORT_ORDER, "date")
             .unwrap_or_else(|_| "date".to_string());
         let sort_order = SortOrder::from_setting(&sort_setting);
+        if let Some(ms) = lib
+            .get_setting(super::prefs::KEY_TOOLTIP_PATH_STEP_MS, "")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok())
+        {
+            super::pathtip::set_step_ms(ms);
+        }
         let show_filenames = lib
             .get_setting(super::prefs::KEY_SHOW_FILENAMES, "0")
             .map(|v| v == "1")
@@ -2073,6 +2080,18 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
 
         // A vertical cell: the thumbnail overlay on top and an optional filename
         // caption below. The caption is hidden unless "Show filenames" is on.
+        // Filename tooltip. Hold Shift to add parent folders step by step.
+        {
+            let grid_for_tip = grid_setup.clone();
+            super::pathtip::attach(&overlay, move || {
+                grid_for_tip
+                    .upgrade()
+                    .and_then(|g| g.lib.library_folders().ok())
+                    .map(|v| v.into_iter().map(|f| f.path).collect())
+                    .unwrap_or_default()
+            });
+        }
+
         let cell = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
         cell.append(&overlay);
         let caption = Label::new(None);
@@ -2123,12 +2142,11 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
             caption.set_text(&photo.filename());
             caption.set_visible(show_names);
         }
-        overlay.set_tooltip_text(Some(&photo.filename()));
+        super::pathtip::bind(&overlay, photo.path(), photo.missing());
 
         // Dim the cell when the underlying file is missing from disk.
         if photo.missing() {
             overlay.add_css_class("dim-label");
-            overlay.set_tooltip_text(Some("File missing from disk"));
         } else {
             overlay.remove_css_class("dim-label");
         }
