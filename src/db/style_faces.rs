@@ -97,7 +97,7 @@ impl Library {
 
     /// All stylised faces detected in one photo.
     pub fn style_faces_for_photo(&self, photo_id: i64) -> Result<Vec<StyleFace>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let sql = format!("SELECT {FACE_COLS} FROM style_faces WHERE photo_id = ?1 AND ignored = 0 ORDER BY id");
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(params![photo_id], map_style_face)?;
@@ -115,7 +115,7 @@ impl Library {
         if photo_ids.is_empty() {
             return Ok(Vec::new());
         }
-        let conn = self.lock();
+        let conn = self.read_lock();
         let placeholders = photo_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let sql = format!("SELECT {FACE_COLS} FROM style_faces WHERE photo_id IN ({placeholders}) AND ignored = 0");
         let mut stmt = conn.prepare(&sql)?;
@@ -130,7 +130,7 @@ impl Library {
 
     /// One stylised face by id, or `None`.
     pub fn style_face_by_id(&self, face_id: i64) -> Result<Option<StyleFace>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let sql = format!("SELECT {FACE_COLS} FROM style_faces WHERE id = ?1");
         let mut stmt = conn.prepare(&sql)?;
         let mut rows = stmt.query_map(params![face_id], map_style_face)?;
@@ -261,7 +261,7 @@ impl Library {
     /// cluster id, with the noise cluster (-1) last. A stable order stops the
     /// Characters grid from re-ordering while a scan adds faces.
     pub fn unnamed_style_clusters(&self) -> Result<Vec<(i64, i64)>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let mut stmt = conn.prepare(
             "SELECT cluster_id, COUNT(DISTINCT photo_id) AS n FROM style_faces \
              WHERE character_id IS NULL AND cluster_id IS NOT NULL \
@@ -380,7 +380,7 @@ impl Library {
 
     /// The number of distinct photos that contain a face of a character.
     pub fn character_photo_count(&self, id: i64) -> Result<i64> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let n: i64 = conn.query_row(
             "SELECT COUNT(DISTINCT photo_id) FROM style_faces WHERE character_id = ?1",
             params![id],
@@ -423,7 +423,7 @@ impl Library {
 
     /// All photos that contain a face of the given character, newest first.
     pub fn photos_of_character(&self, character_id: i64) -> Result<Vec<Photo>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let sql = format!(
             "SELECT {PHOTO_COLS} FROM photos WHERE id IN \
                 (SELECT DISTINCT photo_id FROM style_faces WHERE character_id = ?1) \
@@ -441,7 +441,7 @@ impl Library {
     /// All photos that contain an unassigned face in the given style cluster,
     /// newest first.
     pub fn photos_in_style_cluster(&self, cluster_id: i64) -> Result<Vec<Photo>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let sql = format!(
             "SELECT {PHOTO_COLS} FROM photos WHERE id IN \
                 (SELECT DISTINCT photo_id FROM style_faces WHERE cluster_id = ?1 AND character_id IS NULL) \
@@ -691,7 +691,7 @@ impl Library {
 
     /// Photos that have one or more ignored stylised faces.
     pub fn photos_with_ignored_style_faces(&self) -> Result<Vec<Photo>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         super::faces::photos_with_ignored(&conn, "style_faces")
     }
 
@@ -716,7 +716,7 @@ impl Library {
 
     /// Photo ids that have a face of the given character.
     pub fn photo_ids_of_character(&self, character_id: i64) -> Result<Vec<i64>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let mut stmt = conn
             .prepare("SELECT DISTINCT photo_id FROM style_faces WHERE character_id = ?1")?;
         let rows = stmt.query_map(params![character_id], |r| r.get::<_, i64>(0))?;
@@ -729,7 +729,7 @@ impl Library {
 
     /// Photo ids that have an unassigned face in the given style cluster.
     pub fn photo_ids_in_style_cluster(&self, cluster_id: i64) -> Result<Vec<i64>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let mut stmt = conn.prepare(
             "SELECT DISTINCT photo_id FROM style_faces WHERE cluster_id = ?1 AND character_id IS NULL",
         )?;

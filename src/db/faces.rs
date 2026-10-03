@@ -113,7 +113,7 @@ impl Library {
     }
 
     /// All faces detected in one photo.
-    pub fn faces_for_photo(&self, photo_id: i64) -> Result<Vec<Face>> {        let conn = self.lock();
+    pub fn faces_for_photo(&self, photo_id: i64) -> Result<Vec<Face>> {        let conn = self.read_lock();
         let sql = format!("SELECT {FACE_COLS} FROM faces WHERE photo_id = ?1 AND ignored = 0 ORDER BY id");
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(params![photo_id], map_face)?;
@@ -131,7 +131,7 @@ impl Library {
         if photo_ids.is_empty() {
             return Ok(Vec::new());
         }
-        let conn = self.lock();
+        let conn = self.read_lock();
         let placeholders = photo_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let sql = format!("SELECT {FACE_COLS} FROM faces WHERE photo_id IN ({placeholders}) AND ignored = 0");
         let mut stmt = conn.prepare(&sql)?;
@@ -146,7 +146,7 @@ impl Library {
 
     /// One face by id, or `None`.
     pub fn face_by_id(&self, face_id: i64) -> Result<Option<Face>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let sql = format!("SELECT {FACE_COLS} FROM faces WHERE id = ?1");
         let mut stmt = conn.prepare(&sql)?;
         let mut rows = stmt.query_map(params![face_id], map_face)?;
@@ -264,7 +264,7 @@ impl Library {
     /// "review unnamed people" flow. A photo with two or more faces in one
     /// cluster counts one time. Ordered by count, largest first.
     pub fn unnamed_clusters(&self) -> Result<Vec<(i64, i64)>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let mut stmt = conn.prepare(
             "SELECT cluster_id, COUNT(DISTINCT photo_id) AS n FROM faces \
              WHERE person_id IS NULL AND cluster_id IS NOT NULL \
@@ -478,7 +478,7 @@ impl Library {
 
     /// The number of distinct photos that contain a face of a person.
     pub fn person_photo_count(&self, id: i64) -> Result<i64> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let n: i64 = conn.query_row(
             "SELECT COUNT(DISTINCT photo_id) FROM faces WHERE person_id = ?1",
             params![id],
@@ -569,7 +569,7 @@ impl Library {
 
     /// All photos that contain a face of the given person, newest first.
     pub fn photos_of_person(&self, person_id: i64) -> Result<Vec<Photo>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let sql = format!(
             "SELECT {PHOTO_COLS} FROM photos WHERE id IN \
                 (SELECT DISTINCT photo_id FROM faces WHERE person_id = ?1) \
@@ -587,7 +587,7 @@ impl Library {
     /// All photos that contain an unassigned face in the given cluster, newest
     /// first.
     pub fn photos_in_cluster(&self, cluster_id: i64) -> Result<Vec<Photo>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let sql = format!(
             "SELECT {PHOTO_COLS} FROM photos WHERE id IN \
                 (SELECT DISTINCT photo_id FROM faces WHERE cluster_id = ?1 AND person_id IS NULL) \
@@ -791,7 +791,7 @@ impl Library {
 
     /// Photos that have one or more ignored faces.
     pub fn photos_with_ignored_faces(&self) -> Result<Vec<Photo>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         photos_with_ignored(&conn, "faces")
     }
 

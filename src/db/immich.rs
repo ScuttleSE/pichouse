@@ -52,7 +52,7 @@ impl Library {
 
     /// One Immich server by id, or `None` if it does not exist.
     pub fn immich_server(&self, id: i64) -> Result<Option<ImmichServer>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let row = conn
             .query_row(
                 "SELECT id, name, base_url, api_key, added_at FROM immich_servers WHERE id = ?1",
@@ -112,7 +112,7 @@ impl Library {
     /// The Immich album link for a folder, or `None` if the folder is not
     /// linked.
     pub fn immich_folder_link(&self, folder_id: i64) -> Result<Option<ImmichFolderLink>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let row = conn
             .query_row(
                 "SELECT folder_id, server_id, immich_album_id, created_at

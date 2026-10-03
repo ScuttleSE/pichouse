@@ -124,7 +124,7 @@ impl Library {
     /// Walks up the parent chain. An explicit Photo/Art wins. If every ancestor
     /// is Inherit (0), the default is Photo (1).
     pub fn album_effective_kind(&self, album_id: i64) -> Result<i64> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let mut cur = album_id;
         while cur != 0 {
             let row: Option<(i64, Option<i64>)> = conn
@@ -236,7 +236,7 @@ impl Library {
 
     /// All folder ids under an album and its sub-albums (the album subtree).
     pub fn folders_under_album(&self, album_id: i64) -> Result<Vec<i64>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         // Build parent -> children from the album list.
         let mut children: std::collections::HashMap<i64, Vec<i64>> =
             std::collections::HashMap::new();
@@ -318,7 +318,7 @@ impl Library {
     /// Every photo in an album, across all its member folders. Ordered by taken
     /// date then filename. Used by the Immich upload path.
     pub fn photos_in_album(&self, album_id: i64) -> Result<Vec<crate::model::Photo>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let mut stmt = conn.prepare(
             "SELECT p.id, p.folder_id, p.path, p.filename, p.size, p.mod_time, p.taken_at, \
                     p.width, p.height, p.hash, p.thumb_ready, p.orientation, p.ai_status, \

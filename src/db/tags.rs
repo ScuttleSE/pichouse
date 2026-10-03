@@ -79,7 +79,7 @@ impl Library {
 
     /// The tags on a photo ordered by source then name.
     pub fn photo_tags(&self, photo_id: i64) -> Result<Vec<Tag>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let mut stmt = conn.prepare(
             "SELECT t.name, pt.source, pt.confirmed
              FROM photo_tags pt JOIN tags t ON t.id = pt.tag_id
@@ -142,7 +142,7 @@ impl Library {
             return Ok(std::collections::HashSet::new());
         }
         let match_expr = fts_query(query);
-        let conn = self.lock();
+        let conn = self.read_lock();
         let mut stmt =
             conn.prepare("SELECT rowid FROM photo_tags_fts WHERE photo_tags_fts MATCH ?1")?;
         let rows = stmt.query_map(params![match_expr], |r| r.get::<_, i64>(0))?;
@@ -155,7 +155,7 @@ impl Library {
 
     /// Every tag with the number of photos carrying it.
     pub fn all_tags(&self) -> Result<Vec<TagCount>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let mut stmt = conn.prepare(
             "SELECT t.name, COUNT(pt.photo_id)
              FROM tags t LEFT JOIN photo_tags pt ON pt.tag_id = t.id

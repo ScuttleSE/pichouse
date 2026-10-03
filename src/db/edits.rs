@@ -50,7 +50,7 @@ impl Library {
     /// The edit record for a photo. Returns the identity edit (with the given
     /// `photo_id`) when the photo has no `photo_edits` row.
     pub fn photo_edit(&self, photo_id: i64) -> Result<PhotoEdit> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let sql = format!("SELECT {EDIT_COLS} FROM photo_edits WHERE photo_id = ?1");
         let edit = conn
             .query_row(&sql, params![photo_id], map_edit)

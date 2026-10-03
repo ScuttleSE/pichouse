@@ -534,7 +534,7 @@ impl Library {
 
     /// All user-added root folders.
     pub fn library_folders(&self) -> Result<Vec<LibraryFolder>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let mut stmt = conn.prepare(
             "SELECT id, path, added_at, first_scan_done_at FROM library_folders ORDER BY path",
         )?;
@@ -686,7 +686,7 @@ impl Library {
     /// All photos currently marked missing (soft-deleted from disk), grouped by
     /// folder then filename.
     pub fn photos_missing(&self) -> Result<Vec<Photo>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let mut stmt = conn.prepare(
             "SELECT id, folder_id, path, filename, size, mod_time, taken_at, width, height, hash, thumb_ready, orientation, ai_status, scan_state, missing, added_at, phash, skip_face_scan
              FROM photos WHERE missing = 1 ORDER BY folder_id ASC, filename ASC",
@@ -727,7 +727,7 @@ impl Library {
 
     /// Load a single folder by id.
     pub fn folder_by_id(&self, id: i64) -> Result<Option<Folder>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let f = conn
             .query_row(
                 "SELECT id, path, name, mtime, year FROM folders WHERE id = ?1",
@@ -1106,7 +1106,7 @@ impl Library {
     /// The earliest known EXIF taken date among a folder's enriched photos, if
     /// any (ignores the `0` "unknown" sentinel).
     pub fn earliest_taken_at(&self, folder_id: i64) -> Result<Option<i64>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let v: Option<i64> = conn.query_row(
             "SELECT MIN(taken_at) FROM photos WHERE folder_id = ?1 AND taken_at > 0",
             params![folder_id],
@@ -1399,7 +1399,7 @@ impl Library {
 
     /// The stored value for `key`, or `def` if unset.
     pub fn get_setting(&self, key: &str, def: &str) -> Result<String> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let v: Option<String> = conn
             .query_row(
                 "SELECT value FROM settings WHERE key = ?1",

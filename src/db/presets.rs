@@ -37,7 +37,7 @@ fn map_preset(r: &Row) -> rusqlite::Result<LevelPreset> {
 impl Library {
     /// All saved levels presets, ordered by name.
     pub fn level_presets(&self) -> Result<Vec<LevelPreset>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let sql = format!("SELECT {PRESET_COLS} FROM level_presets ORDER BY name COLLATE NOCASE");
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map([], map_preset)?;
