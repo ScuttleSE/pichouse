@@ -44,6 +44,8 @@ pub fn build_toolbar(state: &Rc<AppState>) -> GtkBox {
         ("Name (Z–A)", "name_desc"),
         ("Size (largest first)", "size_desc"),
         ("Size (smallest first)", "size_asc"),
+        ("Folder (A–Z)", "folder_asc"),
+        ("Folder (Z–A)", "folder_desc"),
     ] {
         let item = gio::MenuItem::new(Some(label), None);
         item.set_action_and_target_value(

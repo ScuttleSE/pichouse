@@ -210,6 +210,10 @@ pub enum SortOrder {
     SizeDesc,
     /// File size, smallest first.
     SizeAsc,
+    /// Folder path, A to Z, case-insensitive (then date, then filename).
+    FolderAsc,
+    /// Folder path, Z to A, case-insensitive (then date, then filename).
+    FolderDesc,
 }
 
 impl SortOrder {
@@ -221,6 +225,8 @@ impl SortOrder {
             "name_desc" => SortOrder::NameDesc,
             "size_desc" => SortOrder::SizeDesc,
             "size_asc" => SortOrder::SizeAsc,
+            "folder_asc" => SortOrder::FolderAsc,
+            "folder_desc" => SortOrder::FolderDesc,
             _ => SortOrder::DateDesc,
         }
     }
@@ -234,6 +240,8 @@ impl SortOrder {
             SortOrder::NameDesc => "name_desc",
             SortOrder::SizeDesc => "size_desc",
             SortOrder::SizeAsc => "size_asc",
+            SortOrder::FolderAsc => "folder_asc",
+            SortOrder::FolderDesc => "folder_desc",
         }
     }
 
@@ -246,6 +254,8 @@ impl SortOrder {
             SortOrder::NameDesc => 3,
             SortOrder::SizeDesc => 4,
             SortOrder::SizeAsc => 5,
+            SortOrder::FolderAsc => 6,
+            SortOrder::FolderDesc => 7,
         }
     }
 
@@ -257,6 +267,8 @@ impl SortOrder {
             3 => SortOrder::NameDesc,
             4 => SortOrder::SizeDesc,
             5 => SortOrder::SizeAsc,
+            6 => SortOrder::FolderAsc,
+            7 => SortOrder::FolderDesc,
             _ => SortOrder::DateDesc,
         }
     }
@@ -350,6 +362,8 @@ impl Grid {
                 "Name \u{2191}",
                 "Size \u{2193}",
                 "Size \u{2191}",
+                "Folder \u{2193}",
+                "Folder \u{2191}",
             ]);
         sort_dropdown.set_selected(sort_order.dropdown_index());
         sort_dropdown.set_margin_end(6);
@@ -1536,6 +1550,20 @@ impl Grid {
                 photos.sort_by(|a, b| {
                     a.size.cmp(&b.size).then_with(|| a.filename.cmp(&b.filename))
                 });
+            }
+            SortOrder::FolderAsc | SortOrder::FolderDesc => {
+                let desc = self.sort_order.get() == SortOrder::FolderDesc;
+                let dir = |p: &Photo| {
+                    std::path::Path::new(&p.path)
+                        .parent()
+                        .map(|d| d.to_string_lossy().to_lowercase())
+                        .unwrap_or_default()
+                };
+                photos.sort_by_cached_key(|p| (dir(p), p.taken_at.clone(), p.filename.clone()));
+                if desc {
+                    // Reverse the folder runs only. Keep date order inside each run.
+                    photos.sort_by(|a, b| dir(b).cmp(&dir(a)));
+                }
             }
         }
     }
