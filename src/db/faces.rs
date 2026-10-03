@@ -524,6 +524,51 @@ impl Library {
         Ok(fid.unwrap_or(0))
     }
 
+    /// The representative face of every owner, in one query. `style`
+    /// selects the characters, else the persons. The value is the cover face
+    /// if set, else the highest-scoring assigned face, else 0. This gives the
+    /// same result as `person_representative_face` for each person.
+    pub fn representative_faces(&self, style: bool) -> Result<HashMap<i64, i64>> {
+        let (owners, table, owner) = if style {
+            ("characters", "style_faces", "character_id")
+        } else {
+            ("persons", "faces", "person_id")
+        };
+        let conn = self.read_lock();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT o.id, COALESCE(o.cover_face_id, \
+                (SELECT f.id FROM {table} f WHERE f.{owner} = o.id \
+                 ORDER BY f.det_score DESC LIMIT 1), 0) \
+             FROM {owners} o"
+        ))?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// The representative face of every unnamed group, in one query. `style`
+    /// selects the stylised faces. The value is the highest-scoring face with
+    /// no owner. It reads no embedding blob.
+    pub fn cluster_representative_faces(&self, style: bool) -> Result<HashMap<i64, i64>> {
+        let (table, owner) = if style {
+            ("style_faces", "character_id")
+        } else {
+            ("faces", "person_id")
+        };
+        let conn = self.read_lock();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT cluster_id, rep FROM ( \
+                SELECT c.cluster_id, \
+                    (SELECT f.id FROM {table} f \
+                     WHERE f.cluster_id = c.cluster_id AND f.{owner} IS NULL \
+                     ORDER BY f.det_score DESC LIMIT 1) AS rep \
+                FROM (SELECT DISTINCT cluster_id FROM {table} \
+                      WHERE cluster_id IS NOT NULL) c) \
+             WHERE rep IS NOT NULL"
+        ))?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
     /// All photos that contain a face of the given person, newest first.
     pub fn photos_of_person(&self, person_id: i64) -> Result<Vec<Photo>> {
         let conn = self.lock();

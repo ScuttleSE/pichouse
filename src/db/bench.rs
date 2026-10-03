@@ -238,6 +238,43 @@ fn bench_all() {
             .sum::<i64>()
     });
 
+    time("H3new+H4new all rep faces", || {
+        lib.representative_faces(false).unwrap().len()
+            + lib.representative_faces(true).unwrap().len()
+            + lib.cluster_representative_faces(false).unwrap().len()
+            + lib.cluster_representative_faces(true).unwrap().len()
+    });
+    if want("H4check") {
+        let score = |table: &str, id: i64| -> i64 {
+            lib.lock()
+                .query_row(&format!("SELECT det_score FROM {table} WHERE id = ?1"), [id], |r| {
+                    r.get(0)
+                })
+                .unwrap_or(-1)
+        };
+        let reps = lib.representative_faces(false).unwrap();
+        for (p, _) in lib.persons().unwrap() {
+            let old = lib.person_representative_face(p.id).unwrap();
+            assert_eq!(score("faces", old), score("faces", reps[&p.id]));
+        }
+        let reps = lib.representative_faces(true).unwrap();
+        for (c, _) in lib.characters().unwrap() {
+            let old = lib.character_representative_face(c.id).unwrap();
+            assert_eq!(score("style_faces", old), score("style_faces", reps[&c.id]));
+        }
+        let reps = lib.cluster_representative_faces(false).unwrap();
+        for (cid, _) in lib.unnamed_clusters().unwrap() {
+            let old = lib.unassigned_faces_in_cluster(cid).unwrap()[0].id;
+            assert_eq!(score("faces", old), score("faces", reps[&cid]));
+        }
+        let reps = lib.cluster_representative_faces(true).unwrap();
+        for (cid, _) in lib.unnamed_style_clusters().unwrap() {
+            let old = lib.cluster_representative_face(cid).unwrap();
+            assert_eq!(score("style_faces", old), score("style_faces", reps[&cid]));
+        }
+        println!("H4check: representative faces match");
+    }
+
     // M1: reconcile snapshot.
     time("M1 reconcile snapshot", || {
         let mut n = 0;

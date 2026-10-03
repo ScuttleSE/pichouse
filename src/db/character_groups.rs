@@ -169,7 +169,7 @@ impl Library {
     /// Every character id under a group and its sub-groups (transitive union,
     /// de-duplicated).
     pub fn characters_under_group(&self, group_id: i64) -> Result<Vec<i64>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let mut children: HashMap<i64, Vec<i64>> = HashMap::new();
         {
             let mut stmt = conn.prepare("SELECT id, COALESCE(parent_id, 0) FROM character_groups")?;

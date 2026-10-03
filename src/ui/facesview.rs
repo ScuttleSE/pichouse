@@ -236,20 +236,21 @@ impl FacesView {
         self.empty.set_visible(false);
         self.flow.set_visible(!(subgroups.is_empty() && people.is_empty()));
 
+        // One query each for all representative faces.
+        let reps = state.lib.representative_faces(false).unwrap_or_default();
+        let cluster_reps = state.lib.cluster_representative_faces(false).unwrap_or_default();
+
         // Sub-groups first, like folders in a file browser.
         for g in &subgroups {
             let count = members.get(&g.id).map(|m| m.len() as i64).unwrap_or(0);
-            let faces = person_folder_faces(&state, g.id);
+            let faces = person_folder_faces(&state, g.id, &reps);
             let t = self.build_group_tile(&state, &g.name, count, g.id, &faces, tile);
             self.flow.append(&t);
         }
 
         // Named people next.
         for (person, count) in people {
-            let face_id = state
-                .lib
-                .person_representative_face(person.id)
-                .unwrap_or(0);
+            let face_id = reps.get(&person.id).copied().unwrap_or(0);
             let t = self.build_tile(
                 &state,
                 face_id,
@@ -265,12 +266,7 @@ impl FacesView {
 
         // Unnamed clusters below the line, in the chosen sort order.
         for (cluster_id, count) in clusters {
-            let face_id = state
-                .lib
-                .unassigned_faces_in_cluster(cluster_id)
-                .ok()
-                .and_then(|v| v.first().map(|f| f.id))
-                .unwrap_or(0);
+            let face_id = cluster_reps.get(&cluster_id).copied().unwrap_or(0);
             let t = self.build_tile(
                 &state,
                 face_id,
@@ -446,12 +442,16 @@ impl FacesView {
 }
 
 /// The mosaic face ids for one person folder.
-fn person_folder_faces(state: &Rc<AppState>, group_id: i64) -> Vec<i64> {
+fn person_folder_faces(
+    state: &Rc<AppState>,
+    group_id: i64,
+    all_reps: &std::collections::HashMap<i64, i64>,
+) -> Vec<i64> {
     let owners = state.lib.persons_under_group(group_id).unwrap_or_default();
     let pool = state.lib.faces_of_persons(&owners).unwrap_or_default();
     let reps: std::collections::HashMap<i64, i64> = owners
         .iter()
-        .map(|p| (*p, state.lib.person_representative_face(*p).unwrap_or(0)))
+        .map(|p| (*p, all_reps.get(p).copied().unwrap_or(0)))
         .collect();
     super::mosaic::pick_faces(group_id, &owners, &reps, &pool)
 }
