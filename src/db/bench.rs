@@ -22,7 +22,16 @@ fn open() -> Option<Library> {
 }
 
 /// Run `f` three times. Print the median time.
-fn time<T>(name: &str, mut f: impl FnMut() -> T) -> T {
+/// Report whether the bench item `name` runs. Set PICHOUSE_BENCH_ONLY to a
+/// name prefix to run only the matching items.
+fn want(name: &str) -> bool {
+    std::env::var("PICHOUSE_BENCH_ONLY").map_or(true, |p| name.starts_with(&p))
+}
+
+fn time<T>(name: &str, mut f: impl FnMut() -> T) -> Option<T> {
+    if !want(name) {
+        return None;
+    }
     let mut times: Vec<Duration> = Vec::new();
     let mut out = None;
     for _ in 0..3 {
@@ -32,7 +41,7 @@ fn time<T>(name: &str, mut f: impl FnMut() -> T) -> T {
     }
     times.sort();
     println!("{name:<40} {:>10.2?}", times[1]);
-    out.unwrap()
+    out
 }
 
 /// Add fake persons, faces, and virtual albums when the tables are empty.
@@ -217,6 +226,9 @@ fn bench_all() {
     time("M7 characters()", || lib.characters().unwrap().len());
 
     // H5: face scan writes for 1,000 photos with 3 faces each.
+    if !want("H5") {
+        return;
+    }
     let ids: Vec<i64> = {
         let conn = lib.lock();
         let mut s = conn

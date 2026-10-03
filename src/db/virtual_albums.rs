@@ -169,7 +169,7 @@ impl Library {
 
     /// The top-level (ungrouped) rules of a virtual album, in id order.
     pub fn virtual_album_rules(&self, album_id: i64) -> Result<Vec<VirtualRule>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let mut stmt = conn.prepare(
             "SELECT id, album_id, field, op, value
              FROM virtual_album_rules WHERE album_id = ?1 AND group_id IS NULL ORDER BY id ASC",
@@ -181,7 +181,7 @@ impl Library {
     /// The rule groups of a virtual album (each with its own member rules and
     /// AND/OR mode), in id order.
     pub fn virtual_album_rule_groups(&self, album_id: i64) -> Result<Vec<RuleGroup>> {
-        let conn = self.lock();
+        let conn = self.read_lock();
         let mut gstmt = conn.prepare(
             "SELECT id, rule_match FROM virtual_album_rule_groups
              WHERE album_id = ?1 ORDER BY id ASC",
@@ -283,8 +283,36 @@ impl Library {
     /// album's match mode, unioned with pins, minus exclusions. Ordered by taken
     /// date then filename.
     pub fn photos_in_virtual_album(&self, album_id: i64) -> Result<Vec<Photo>> {
+        let (member_sql, params) = self.virtual_album_member_sql(album_id)?;
+        let sql = format!(
+            "SELECT {PHOTO_COLS} FROM photos WHERE id IN ({member_sql})
+             ORDER BY taken_at ASC, filename ASC"
+        );
+        let conn = self.read_lock();
+        let mut stmt = conn.prepare(&sql)?;
+        let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|b| b.as_ref()).collect();
+        let rows = stmt.query_map(param_refs.as_slice(), map_photo)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// The number of photos in a virtual album (for sidebar counts). SQL
+    /// counts the members. It does not load or sort the photo rows.
+    pub fn virtual_album_photo_count(&self, album_id: i64) -> Result<i64> {
+        let (member_sql, params) = self.virtual_album_member_sql(album_id)?;
+        let sql = format!("SELECT COUNT(*) FROM photos WHERE id IN ({member_sql})");
+        let conn = self.read_lock();
+        let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|b| b.as_ref()).collect();
+        let n: i64 = conn.query_row(&sql, param_refs.as_slice(), |r| r.get(0))?;
+        Ok(n)
+    }
+
+    /// The member-id SQL of a virtual album and its bound values.
+    fn virtual_album_member_sql(
+        &self,
+        album_id: i64,
+    ) -> Result<(String, Vec<Box<dyn rusqlite::ToSql>>)> {
         let rule_match = {
-            let conn = self.lock();
+            let conn = self.read_lock();
             let m: Option<i64> = conn
                 .query_row(
                     "SELECT rule_match FROM virtual_albums WHERE id = ?1",
@@ -296,26 +324,9 @@ impl Library {
         };
         let rules = self.virtual_album_rules(album_id)?;
         let groups = self.virtual_album_rule_groups(album_id)?;
-
-        // Build the id-selecting query. `params` collects bound values in order.
         let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-        // Album id is used by the pins/exclusions subqueries.
-        let member_sql = build_membership_sql(album_id, rule_match, &rules, &groups, &mut params);
-
-        let sql = format!(
-            "SELECT {PHOTO_COLS} FROM photos WHERE id IN ({member_sql})
-             ORDER BY taken_at ASC, filename ASC"
-        );
-        let conn = self.lock();
-        let mut stmt = conn.prepare(&sql)?;
-        let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|b| b.as_ref()).collect();
-        let rows = stmt.query_map(param_refs.as_slice(), map_photo)?;
-        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
-    }
-
-    /// The number of photos in a virtual album (for sidebar counts).
-    pub fn virtual_album_photo_count(&self, album_id: i64) -> Result<i64> {
-        Ok(self.photos_in_virtual_album(album_id)?.len() as i64)
+        let sql = build_membership_sql(album_id, rule_match, &rules, &groups, &mut params);
+        Ok((sql, params))
     }
 }
 
