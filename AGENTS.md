@@ -176,6 +176,18 @@ are constants in that file.
     cargo run
     cargo test
 
+### DB benchmarks
+
+`src/db/bench.rs` is an ignored test. It times the slow queries against a
+copy of a real `library.db`. It changes the file, so use a copy only. The
+copy `library-copy.db` in the repo root is not committed (`*.db` is ignored).
+
+    PICHOUSE_BENCH_DB=library-copy.db cargo test --release bench_ -- --ignored --nocapture --test-threads=1
+
+Set `PICHOUSE_BENCH_ONLY=<prefix>` to run only the items with that name
+prefix, for example `H1` or `M5`. The harness adds fake persons, faces, and
+virtual albums when these tables are empty.
+
 ## Layout
 
     src/main.rs          entry point
