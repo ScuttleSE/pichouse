@@ -19,10 +19,12 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use gtk4::{
-    Align, Box as GtkBox, Button, FlowBox, Image, Label, Orientation, PolicyType,
-    ScrolledWindow, SelectionMode,
+    Box as GtkBox, Button, FlowBox, Image, Label, Orientation, PolicyType,
+    ScrolledWindow,
 };
 
+use super::groupsort::{sort_groups, tile_flow, GroupSort, UnnamedHeader};
+use super::prefs::KEY_FACES_UNNAMED_SORT;
 use super::state::AppState;
 use super::util::texture_from_bytes;
 
@@ -32,6 +34,10 @@ pub struct FacesView {
     title: Label,
     back_btn: Button,
     flow: FlowBox,
+    /// The tiles of the unidentified groups, below the line.
+    uflow: FlowBox,
+    /// The line, title, and sort menu above `uflow`.
+    uheader: UnnamedHeader,
     empty: Label,
     state: RefCell<Option<Rc<AppState>>>,
     /// The person group currently browsed, or `0` for the top-level People
@@ -62,17 +68,22 @@ impl FacesView {
         bar.append(&title);
         root.append(&bar);
 
-        let flow = FlowBox::new();
-        flow.set_selection_mode(SelectionMode::None);
-        flow.set_max_children_per_line(8);
-        flow.set_min_children_per_line(2);
-        flow.set_row_spacing(8);
-        flow.set_column_spacing(8);
-        flow.set_margin_top(8);
-        flow.set_margin_bottom(8);
-        flow.set_margin_start(8);
-        flow.set_margin_end(8);
-        flow.set_valign(Align::Start);
+        let flow = tile_flow();
+        let uflow = tile_flow();
+        // The sort menu needs the view, so the view is set after it is built.
+        let weak: Rc<RefCell<std::rc::Weak<FacesView>>> = Rc::new(RefCell::new(std::rc::Weak::new()));
+        let uheader = {
+            let weak = weak.clone();
+            UnnamedHeader::new(GroupSort::MostImages, move |s| {
+                if let Some(v) = weak.borrow().upgrade() {
+                    if let Some(st) = v.state.borrow().clone() {
+                        let _ = st.lib.set_setting(KEY_FACES_UNNAMED_SORT, s.key());
+                    }
+                    v.reload();
+                }
+            })
+        };
+        uheader.root.set_visible(false);
 
         let empty = Label::new(Some(
             "No faces yet. Turn on face detection in Settings → Faces, then scan.",
@@ -89,6 +100,8 @@ impl FacesView {
         let inner = GtkBox::new(Orientation::Vertical, 0);
         inner.append(&empty);
         inner.append(&flow);
+        inner.append(&uheader.root);
+        inner.append(&uflow);
         scroll.set_child(Some(&inner));
         root.append(&scroll);
 
@@ -97,10 +110,13 @@ impl FacesView {
             title,
             back_btn: back_btn.clone(),
             flow,
+            uflow,
+            uheader,
             empty,
             state: RefCell::new(None),
             scope: RefCell::new(0),
         });
+        *weak.borrow_mut() = Rc::downgrade(&view);
         {
             let this = view.clone();
             back_btn.connect_clicked(move |_| this.go_back());
@@ -162,6 +178,9 @@ impl FacesView {
         while let Some(child) = self.flow.first_child() {
             self.flow.remove(&child);
         }
+        while let Some(child) = self.uflow.first_child() {
+            self.uflow.remove(&child);
+        }
 
         // Match the general thumbnail slider size, clamped to a sane range for
         // face crops.
@@ -191,7 +210,13 @@ impl FacesView {
                 .into_iter()
                 .filter(|(p, _)| !grouped.contains(&p.id))
                 .collect();
-            (people, state.lib.unnamed_clusters().unwrap_or_default())
+            let sort = GroupSort::from_key(
+                &state.lib.get_setting(KEY_FACES_UNNAMED_SORT, "").unwrap_or_default(),
+            );
+            self.uheader.set_sort(sort);
+            let info = state.lib.unnamed_group_info(false).unwrap_or_default();
+            let clusters = sort_groups(state.lib.unnamed_clusters().unwrap_or_default(), &info, sort);
+            (people, clusters)
         } else {
             let member_ids = members.get(&scope).cloned().unwrap_or_default();
             let people: Vec<_> = all_people
@@ -201,13 +226,15 @@ impl FacesView {
             (people, Vec::new())
         };
 
+        self.uheader.set_count(clusters.len());
+        self.uflow.set_visible(!clusters.is_empty());
         if subgroups.is_empty() && people.is_empty() && clusters.is_empty() {
             self.empty.set_visible(true);
             self.flow.set_visible(false);
             return;
         }
         self.empty.set_visible(false);
-        self.flow.set_visible(true);
+        self.flow.set_visible(!(subgroups.is_empty() && people.is_empty()));
 
         // Sub-groups first, like folders in a file browser.
         for g in &subgroups {
@@ -236,7 +263,7 @@ impl FacesView {
             self.flow.append(&t);
         }
 
-        // Unnamed clusters, largest first.
+        // Unnamed clusters below the line, in the chosen sort order.
         for (cluster_id, count) in clusters {
             let face_id = state
                 .lib
@@ -254,7 +281,7 @@ impl FacesView {
                 cluster_id,
                 tile,
             );
-            self.flow.append(&t);
+            self.uflow.append(&t);
         }
     }
 

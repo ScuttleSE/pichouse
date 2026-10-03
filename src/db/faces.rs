@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 
 use rusqlite::{params, OptionalExtension, Row};
 
-use crate::model::{Face, Person, Photo};
+use crate::model::{Face, Person, Photo, UnnamedGroupInfo};
 
 use super::{library::map_photo, library::now, Library, Result};
 
@@ -281,6 +281,60 @@ impl Library {
             v.push(row?);
         }
         Ok(v)
+    }
+
+    /// Facts about each unnamed group, for the sort of the "Unidentified"
+    /// tiles. `style` selects the stylised-face tables. The result has the
+    /// time of the newest face and the mean embedding.
+    /// The result order is not specified.
+    pub fn unnamed_group_info(&self, style: bool) -> Result<Vec<UnnamedGroupInfo>> {
+        let (table, owner) = if style {
+            ("style_faces", "character_id")
+        } else {
+            ("faces", "person_id")
+        };
+        let conn = self.read_lock();
+        let mut out: HashMap<i64, UnnamedGroupInfo> = HashMap::new();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT cluster_id, MAX(created_at) FROM {table} \
+             WHERE {owner} IS NULL AND cluster_id IS NOT NULL AND ignored = 0 \
+             GROUP BY cluster_id"
+        ))?;
+        let rows = stmt.query_map([], |r| {
+            Ok(UnnamedGroupInfo {
+                cluster_id: r.get(0)?,
+                newest: r.get::<_, Option<i64>>(1)?.unwrap_or(0),
+                centroid: Vec::new(),
+            })
+        })?;
+        for row in rows {
+            let g = row?;
+            out.insert(g.cluster_id, g);
+        }
+        let mut stmt = conn.prepare(&format!(
+            "SELECT cluster_id, embedding FROM {table} \
+             WHERE {owner} IS NULL AND cluster_id IS NOT NULL AND ignored = 0 \
+             AND embedding IS NOT NULL AND embedding_dim > 0"
+        ))?;
+        let mut rows = stmt.query([])?;
+        while let Some(r) = rows.next()? {
+            let cid: i64 = r.get(0)?;
+            let blob: Vec<u8> = r.get(1)?;
+            let mut e = blob_to_floats(&blob);
+            // Normalise each face, so every face has the same weight.
+            let n = e.iter().map(|x| x * x).sum::<f32>().sqrt();
+            if n > 0.0 {
+                e.iter_mut().for_each(|x| *x /= n);
+            }
+            if let Some(g) = out.get_mut(&cid) {
+                if g.centroid.is_empty() {
+                    g.centroid = e;
+                } else if g.centroid.len() == e.len() {
+                    g.centroid.iter_mut().zip(&e).for_each(|(a, b)| *a += b);
+                }
+            }
+        }
+        Ok(out.into_values().collect())
     }
 
     /// The photo ids currently in each named or unnamed face group, for

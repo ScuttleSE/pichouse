@@ -139,6 +139,11 @@ processing stays on your machine.
   new imports scanned without asking.
 - **Name people** with *Review people*: it shows unnamed groups as face crops.
   Name a group to create a person, or merge a group into an existing person.
+- **Unidentified groups** show below a horizontal line in the People and
+  Characters views. A menu sorts only these groups: most images, fewest images,
+  newest group, oldest group, or similar together. "Newest group" uses the
+  time of the newest face in the group. "Similar together" puts groups with
+  similar faces next to each other. The sort does not join or change a group.
 - **Browse a person** from the **People** section in the Library sidebar:
   selecting a person shows every photo they appear in.
 - **Smart albums** can use a *Contains person* rule, so a virtual album can hold

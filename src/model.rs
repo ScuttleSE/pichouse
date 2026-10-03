@@ -660,6 +660,17 @@ pub struct StyleFace {
     pub source: i32,
 }
 
+/// Facts about one unnamed face group, for the sort of the "Unidentified"
+/// tiles. `centroid` is the sum of the normalised face embeddings. It is
+/// empty when no face in the group has an embedding.
+#[derive(Debug, Clone, Default)]
+pub struct UnnamedGroupInfo {
+    pub cluster_id: i64,
+    /// The `created_at` time of the newest face in the group.
+    pub newest: i64,
+    pub centroid: Vec<f32>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

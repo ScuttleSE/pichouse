@@ -16,6 +16,7 @@ mod export;
 mod facescan;
 mod facesview;
 mod foldertree;
+mod groupsort;
 mod freshness;
 mod grid;
 mod immich;

@@ -219,6 +219,7 @@ are constants in that file.
                          albumscan, people, characters, facesview,
                          charactersview, immich,
                          tagmanager, shortcuts, dialogs, actions, controller,
+                         groupsort,
                          prefs, photo_object, util, enrich, freshness, watcher,
                          newfiles, vrules, vmenu, dedup_scan)
     .gitea/workflows/    CI (build/test/release on push to main)
@@ -339,6 +340,21 @@ Both systems take a `ClusterParams` struct. The config builds it with
   default change, add a new marker key and a new function.
 - The Grouping sections are `grouping_section` in `settings_faces.rs` and
   `settings_characters.rs`. "Regroup now" calls `recluster_now`.
+
+### Unidentified section
+
+- The Faces and Characters views have two FlowBoxes. `flow` holds the
+  sub-groups and the named tiles. `uflow` holds the unnamed groups.
+- `UnnamedHeader` in `src/ui/groupsort.rs` is the line, the title, and the
+  sort menu between them. It hides when there are no unnamed groups.
+- `sort_groups` sorts the unnamed groups. The noise group (-1) stays last.
+  `order_by_similarity` chains each group to its nearest unused group.
+- `Library::unnamed_group_info` in `src/db/faces.rs` gives the newest face
+  time and the mean embedding per group. `style` selects the style tables.
+- The sort keys are `facesview.unnamed_sort` and
+  `charactersview.unnamed_sort`.
+- `CharactersView::refresh` keeps tiles in place. It sorts only on `reload`.
+  The `tiles` vector holds the top tiles first, then the cluster tiles.
 
 ### Face scan badges
 

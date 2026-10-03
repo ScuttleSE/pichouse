@@ -3304,6 +3304,94 @@
       "source_location": ""
     },
     {
+      "id": "src_ui_freshness",
+      "label": "freshness.rs",
+      "_origin": "ast",
+      "community": 11,
+      "community_name": "AppState",
+      "file_type": "code",
+      "norm_label": "freshness.rs",
+      "source_file": "src/ui/freshness.rs",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_ui_freshness_msg",
+      "label": "Msg",
+      "_origin": "ast",
+      "community": 11,
+      "community_name": "AppState",
+      "file_type": "code",
+      "norm_label": "msg",
+      "source_file": "src/ui/freshness.rs",
+      "source_location": "L25"
+    },
+    {
+      "id": "src_ui_freshness_reconcile_now",
+      "label": "reconcile_now()",
+      "_origin": "ast",
+      "community": 11,
+      "community_name": "AppState",
+      "file_type": "code",
+      "norm_label": "reconcile_now()",
+      "source_file": "src/ui/freshness.rs",
+      "source_location": "L33"
+    },
+    {
+      "id": "src_ui_freshness_refresh_library",
+      "label": "refresh_library()",
+      "_origin": "ast",
+      "community": 11,
+      "community_name": "AppState",
+      "file_type": "code",
+      "norm_label": "refresh_library()",
+      "source_file": "src/ui/freshness.rs",
+      "source_location": "L39"
+    },
+    {
+      "id": "src_ui_freshness_rs_rc",
+      "label": "Rc",
+      "_origin": "ast",
+      "community": 11,
+      "community_name": "AppState",
+      "file_type": "code",
+      "norm_label": "rc",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_ui_freshness_run_reconcile",
+      "label": "run_reconcile()",
+      "_origin": "ast",
+      "community": 11,
+      "community_name": "AppState",
+      "file_type": "code",
+      "norm_label": "run_reconcile()",
+      "source_file": "src/ui/freshness.rs",
+      "source_location": "L53"
+    },
+    {
+      "id": "src_ui_freshness_scan_new_folders",
+      "label": "scan_new_folders()",
+      "_origin": "ast",
+      "community": 11,
+      "community_name": "AppState",
+      "file_type": "code",
+      "norm_label": "scan_new_folders()",
+      "source_file": "src/ui/freshness.rs",
+      "source_location": "L46"
+    },
+    {
+      "id": "src_ui_freshness_start_periodic",
+      "label": "start_periodic()",
+      "_origin": "ast",
+      "community": 11,
+      "community_name": "AppState",
+      "file_type": "code",
+      "norm_label": "start_periodic()",
+      "source_file": "src/ui/freshness.rs",
+      "source_location": "L160"
+    },
+    {
       "id": "src_ui_state",
       "label": "state.rs",
       "_origin": "ast",
@@ -3755,6 +3843,325 @@
       "source_location": ""
     },
     {
+      "id": "src_face_embedder",
+      "label": "face/embedder.rs",
+      "_origin": "ast",
+      "community": 110,
+      "community_name": "Embedder",
+      "file_type": "code",
+      "norm_label": "face/embedder.rs",
+      "source_file": "src/face/embedder.rs",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_face_embedder_embedder",
+      "label": "Embedder",
+      "_origin": "ast",
+      "community": 110,
+      "community_name": "Embedder",
+      "file_type": "code",
+      "norm_label": "embedder",
+      "source_file": "src/face/embedder.rs",
+      "source_location": "L25"
+    },
+    {
+      "id": "src_face_embedder_embedder_embed",
+      "label": ".embed()",
+      "_origin": "ast",
+      "community": 110,
+      "community_name": "Embedder",
+      "file_type": "code",
+      "norm_label": ".embed()",
+      "source_file": "src/face/embedder.rs",
+      "source_location": "L54"
+    },
+    {
+      "id": "src_face_embedder_embedder_embedding_dim",
+      "label": ".embedding_dim()",
+      "_origin": "ast",
+      "community": 110,
+      "community_name": "Embedder",
+      "file_type": "code",
+      "norm_label": ".embedding_dim()",
+      "source_file": "src/face/embedder.rs",
+      "source_location": "L137"
+    },
+    {
+      "id": "src_face_embedder_embedder_load",
+      "label": ".load()",
+      "_origin": "ast",
+      "community": 110,
+      "community_name": "Embedder",
+      "file_type": "code",
+      "norm_label": ".load()",
+      "source_file": "src/face/embedder.rs",
+      "source_location": "L33"
+    },
+    {
+      "id": "src_face_embedder_rs_mutex",
+      "label": "Mutex",
+      "_origin": "ast",
+      "community": 110,
+      "community_name": "Embedder",
+      "file_type": "code",
+      "norm_label": "mutex",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_face_embedder_rs_result",
+      "label": "Result",
+      "_origin": "ast",
+      "community": 110,
+      "community_name": "Embedder",
+      "file_type": "code",
+      "norm_label": "result",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_face_embedder_rs_string",
+      "label": "String",
+      "_origin": "ast",
+      "community": 110,
+      "community_name": "Embedder",
+      "file_type": "code",
+      "norm_label": "string",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_face_embedder_rs_vec",
+      "label": "Vec",
+      "_origin": "ast",
+      "community": 110,
+      "community_name": "Embedder",
+      "file_type": "code",
+      "norm_label": "vec",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_face_embedder_sample_rgb",
+      "label": "sample_rgb()",
+      "_origin": "ast",
+      "community": 110,
+      "community_name": "Embedder",
+      "file_type": "code",
+      "norm_label": "sample_rgb()",
+      "source_file": "src/face/embedder.rs",
+      "source_location": "L207"
+    },
+    {
+      "id": "src_face_embedder_umeyama_similarity",
+      "label": "umeyama_similarity()",
+      "_origin": "ast",
+      "community": 110,
+      "community_name": "Embedder",
+      "file_type": "code",
+      "norm_label": "umeyama_similarity()",
+      "source_file": "src/face/embedder.rs",
+      "source_location": "L145"
+    },
+    {
+      "id": "src_styleface_embedder",
+      "label": "styleface/embedder.rs",
+      "_origin": "ast",
+      "community": 111,
+      "community_name": "Embedder",
+      "file_type": "code",
+      "norm_label": "styleface/embedder.rs",
+      "source_file": "src/styleface/embedder.rs",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_styleface_embedder_embedder",
+      "label": "Embedder",
+      "_origin": "ast",
+      "community": 111,
+      "community_name": "Embedder",
+      "file_type": "code",
+      "norm_label": "embedder",
+      "source_file": "src/styleface/embedder.rs",
+      "source_location": "L32"
+    },
+    {
+      "id": "src_styleface_embedder_embedder_embed",
+      "label": ".embed()",
+      "_origin": "ast",
+      "community": 111,
+      "community_name": "Embedder",
+      "file_type": "code",
+      "norm_label": ".embed()",
+      "source_file": "src/styleface/embedder.rs",
+      "source_location": "L61"
+    },
+    {
+      "id": "src_styleface_embedder_embedder_embedding_dim",
+      "label": ".embedding_dim()",
+      "_origin": "ast",
+      "community": 111,
+      "community_name": "Embedder",
+      "file_type": "code",
+      "norm_label": ".embedding_dim()",
+      "source_file": "src/styleface/embedder.rs",
+      "source_location": "L141"
+    },
+    {
+      "id": "src_styleface_embedder_embedder_load",
+      "label": ".load()",
+      "_origin": "ast",
+      "community": 111,
+      "community_name": "Embedder",
+      "file_type": "code",
+      "norm_label": ".load()",
+      "source_file": "src/styleface/embedder.rs",
+      "source_location": "L40"
+    },
+    {
+      "id": "src_styleface_embedder_rs_mutex",
+      "label": "Mutex",
+      "_origin": "ast",
+      "community": 111,
+      "community_name": "Embedder",
+      "file_type": "code",
+      "norm_label": "mutex",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_styleface_embedder_rs_result",
+      "label": "Result",
+      "_origin": "ast",
+      "community": 111,
+      "community_name": "Embedder",
+      "file_type": "code",
+      "norm_label": "result",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_styleface_embedder_rs_string",
+      "label": "String",
+      "_origin": "ast",
+      "community": 111,
+      "community_name": "Embedder",
+      "file_type": "code",
+      "norm_label": "string",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_styleface_embedder_rs_vec",
+      "label": "Vec",
+      "_origin": "ast",
+      "community": 111,
+      "community_name": "Embedder",
+      "file_type": "code",
+      "norm_label": "vec",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_styleface_embedder_sample_rgb",
+      "label": "sample_rgb()",
+      "_origin": "ast",
+      "community": 111,
+      "community_name": "Embedder",
+      "file_type": "code",
+      "norm_label": "sample_rgb()",
+      "source_file": "src/styleface/embedder.rs",
+      "source_location": "L148"
+    },
+    {
+      "id": "menubutton",
+      "label": "MenuButton",
+      "_origin": "ast",
+      "community": 112,
+      "community_name": "status.rs",
+      "file_type": "code",
+      "norm_label": "menubutton",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_ui_status",
+      "label": "status.rs",
+      "_origin": "ast",
+      "community": 112,
+      "community_name": "status.rs",
+      "file_type": "code",
+      "norm_label": "status.rs",
+      "source_file": "src/ui/status.rs",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_ui_status_activity_indicator",
+      "label": "activity_indicator()",
+      "_origin": "ast",
+      "community": 112,
+      "community_name": "status.rs",
+      "file_type": "code",
+      "norm_label": "activity_indicator()",
+      "source_file": "src/ui/status.rs",
+      "source_location": "L49"
+    },
+    {
+      "id": "src_ui_status_fmt_elapsed",
+      "label": "fmt_elapsed()",
+      "_origin": "ast",
+      "community": 112,
+      "community_name": "status.rs",
+      "file_type": "code",
+      "norm_label": "fmt_elapsed()",
+      "source_file": "src/ui/status.rs",
+      "source_location": "L34"
+    },
+    {
+      "id": "src_ui_status_rs_duration",
+      "label": "Duration",
+      "_origin": "ast",
+      "community": 112,
+      "community_name": "status.rs",
+      "file_type": "code",
+      "norm_label": "duration",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_ui_status_rs_rc",
+      "label": "Rc",
+      "_origin": "ast",
+      "community": 112,
+      "community_name": "status.rs",
+      "file_type": "code",
+      "norm_label": "rc",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_ui_status_rs_string",
+      "label": "String",
+      "_origin": "ast",
+      "community": 112,
+      "community_name": "status.rs",
+      "file_type": "code",
+      "norm_label": "string",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_ui_status_statusbar_new",
+      "label": ".new()",
+      "_origin": "ast",
+      "community": 112,
+      "community_name": "status.rs",
+      "file_type": "code",
+      "norm_label": ".new()",
+      "source_file": "src/ui/status.rs",
+      "source_location": "L142"
+    },
+    {
       "id": "src_ui_albumtree",
       "label": "albumtree.rs",
       "_origin": "ast",
@@ -4017,6 +4424,160 @@
       "norm_label": "self",
       "source_file": "",
       "source_location": ""
+    },
+    {
+      "id": "src_ai_config",
+      "label": "ai/config.rs",
+      "_origin": "ast",
+      "community": 115,
+      "community_name": "Config",
+      "file_type": "code",
+      "norm_label": "ai/config.rs",
+      "source_file": "src/ai/config.rs",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_ai_config_config",
+      "label": "Config",
+      "_origin": "ast",
+      "community": 115,
+      "community_name": "Config",
+      "file_type": "code",
+      "norm_label": "config",
+      "source_file": "src/ai/config.rs",
+      "source_location": "L33"
+    },
+    {
+      "id": "src_ai_config_config_default",
+      "label": ".default()",
+      "_origin": "ast",
+      "community": 115,
+      "community_name": "Config",
+      "file_type": "code",
+      "norm_label": ".default()",
+      "source_file": "src/ai/config.rs",
+      "source_location": "L59"
+    },
+    {
+      "id": "src_ai_config_config_normalize",
+      "label": ".normalize()",
+      "_origin": "ast",
+      "community": 115,
+      "community_name": "Config",
+      "file_type": "code",
+      "norm_label": ".normalize()",
+      "source_file": "src/ai/config.rs",
+      "source_location": "L81"
+    },
+    {
+      "id": "src_ai_config_normalize_fills_defaults_and_clamps",
+      "label": "normalize_fills_defaults_and_clamps()",
+      "_origin": "ast",
+      "community": 115,
+      "community_name": "Config",
+      "file_type": "code",
+      "norm_label": "normalize_fills_defaults_and_clamps()",
+      "source_file": "src/ai/config.rs",
+      "source_location": "L123"
+    },
+    {
+      "id": "src_ai_config_rs_default",
+      "label": "Default",
+      "_origin": "ast",
+      "community": 115,
+      "community_name": "Config",
+      "file_type": "code",
+      "norm_label": "default",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_ai_config_rs_string",
+      "label": "String",
+      "_origin": "ast",
+      "community": 115,
+      "community_name": "Config",
+      "file_type": "code",
+      "norm_label": "string",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_ui_settings_ai",
+      "label": "settings_ai.rs",
+      "_origin": "ast",
+      "community": 116,
+      "community_name": "spin_row",
+      "file_type": "code",
+      "norm_label": "settings_ai.rs",
+      "source_file": "src/ui/settings_ai.rs",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_ui_settings_ai_ai_pane",
+      "label": "ai_pane()",
+      "_origin": "ast",
+      "community": 116,
+      "community_name": "spin_row",
+      "file_type": "code",
+      "norm_label": "ai_pane()",
+      "source_file": "src/ui/settings_ai.rs",
+      "source_location": "L16"
+    },
+    {
+      "id": "src_ui_settings_ai_fixed_label",
+      "label": "fixed_label()",
+      "_origin": "ast",
+      "community": 116,
+      "community_name": "spin_row",
+      "file_type": "code",
+      "norm_label": "fixed_label()",
+      "source_file": "src/ui/settings_ai.rs",
+      "source_location": "L243"
+    },
+    {
+      "id": "src_ui_settings_ai_rs_gtkbox",
+      "label": "GtkBox",
+      "_origin": "ast",
+      "community": 116,
+      "community_name": "spin_row",
+      "file_type": "code",
+      "norm_label": "gtkbox",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_ui_settings_ai_rs_label",
+      "label": "Label",
+      "_origin": "ast",
+      "community": 116,
+      "community_name": "spin_row",
+      "file_type": "code",
+      "norm_label": "label",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_ui_settings_ai_rs_rc",
+      "label": "Rc",
+      "_origin": "ast",
+      "community": 116,
+      "community_name": "spin_row",
+      "file_type": "code",
+      "norm_label": "rc",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_ui_settings_ai_spin_row",
+      "label": "spin_row()",
+      "_origin": "ast",
+      "community": 116,
+      "community_name": "spin_row",
+      "file_type": "code",
+      "norm_label": "spin_row()",
+      "source_file": "src/ui/settings_ai.rs",
+      "source_location": "L217"
     },
     {
       "id": "src_ui_settings_characters",
@@ -4437,6 +4998,259 @@
       "source_location": "L19"
     },
     {
+      "id": "src_face_detector",
+      "label": "face/detector.rs",
+      "_origin": "ast",
+      "community": 12,
+      "community_name": "facescan.rs",
+      "file_type": "code",
+      "norm_label": "face/detector.rs",
+      "source_file": "src/face/detector.rs",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_face_detector_cand",
+      "label": "Cand",
+      "_origin": "ast",
+      "community": 12,
+      "community_name": "facescan.rs",
+      "file_type": "code",
+      "norm_label": "cand",
+      "source_file": "src/face/detector.rs",
+      "source_location": "L29"
+    },
+    {
+      "id": "src_face_detector_detector",
+      "label": "Detector",
+      "_origin": "ast",
+      "community": 12,
+      "community_name": "facescan.rs",
+      "file_type": "code",
+      "norm_label": "detector",
+      "source_file": "src/face/detector.rs",
+      "source_location": "L23"
+    },
+    {
+      "id": "src_face_detector_detector_detect",
+      "label": ".detect()",
+      "_origin": "ast",
+      "community": 12,
+      "community_name": "facescan.rs",
+      "file_type": "code",
+      "norm_label": ".detect()",
+      "source_file": "src/face/detector.rs",
+      "source_location": "L60"
+    },
+    {
+      "id": "src_face_detector_detector_load",
+      "label": ".load()",
+      "_origin": "ast",
+      "community": 12,
+      "community_name": "facescan.rs",
+      "file_type": "code",
+      "norm_label": ".load()",
+      "source_file": "src/face/detector.rs",
+      "source_location": "L41"
+    },
+    {
+      "id": "src_face_detector_iou",
+      "label": "iou()",
+      "_origin": "ast",
+      "community": 12,
+      "community_name": "facescan.rs",
+      "file_type": "code",
+      "norm_label": "iou()",
+      "source_file": "src/face/detector.rs",
+      "source_location": "L256"
+    },
+    {
+      "id": "src_face_detector_nms",
+      "label": "nms()",
+      "_origin": "ast",
+      "community": 12,
+      "community_name": "facescan.rs",
+      "file_type": "code",
+      "norm_label": "nms()",
+      "source_file": "src/face/detector.rs",
+      "source_location": "L231"
+    },
+    {
+      "id": "src_face_detector_rs_mutex",
+      "label": "Mutex",
+      "_origin": "ast",
+      "community": 12,
+      "community_name": "facescan.rs",
+      "file_type": "code",
+      "norm_label": "mutex",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_face_detector_rs_result",
+      "label": "Result",
+      "_origin": "ast",
+      "community": 12,
+      "community_name": "facescan.rs",
+      "file_type": "code",
+      "norm_label": "result",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_face_detector_rs_string",
+      "label": "String",
+      "_origin": "ast",
+      "community": 12,
+      "community_name": "facescan.rs",
+      "file_type": "code",
+      "norm_label": "string",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_face_detector_rs_vec",
+      "label": "Vec",
+      "_origin": "ast",
+      "community": 12,
+      "community_name": "facescan.rs",
+      "file_type": "code",
+      "norm_label": "vec",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_face_detector_sample_rgb",
+      "label": "sample_rgb()",
+      "_origin": "ast",
+      "community": 12,
+      "community_name": "facescan.rs",
+      "file_type": "code",
+      "norm_label": "sample_rgb()",
+      "source_file": "src/face/detector.rs",
+      "source_location": "L208"
+    },
+    {
+      "id": "src_face_mod",
+      "label": "face/mod.rs",
+      "_origin": "ast",
+      "community": 12,
+      "community_name": "facescan.rs",
+      "file_type": "code",
+      "norm_label": "face/mod.rs",
+      "source_file": "src/face/mod.rs",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_face_mod_detectedface",
+      "label": "DetectedFace",
+      "_origin": "ast",
+      "community": 12,
+      "community_name": "facescan.rs",
+      "file_type": "code",
+      "norm_label": "detectedface",
+      "source_file": "src/face/mod.rs",
+      "source_location": "L28"
+    },
+    {
+      "id": "src_face_mod_facepipeline",
+      "label": "FacePipeline",
+      "_origin": "ast",
+      "community": 12,
+      "community_name": "facescan.rs",
+      "file_type": "code",
+      "norm_label": "facepipeline",
+      "source_file": "src/face/mod.rs",
+      "source_location": "L43"
+    },
+    {
+      "id": "src_face_mod_facepipeline_detect_and_embed",
+      "label": ".detect_and_embed()",
+      "_origin": "ast",
+      "community": 12,
+      "community_name": "facescan.rs",
+      "file_type": "code",
+      "norm_label": ".detect_and_embed()",
+      "source_file": "src/face/mod.rs",
+      "source_location": "L71"
+    },
+    {
+      "id": "src_face_mod_facepipeline_embedding_dim",
+      "label": ".embedding_dim()",
+      "_origin": "ast",
+      "community": 12,
+      "community_name": "facescan.rs",
+      "file_type": "code",
+      "norm_label": ".embedding_dim()",
+      "source_file": "src/face/mod.rs",
+      "source_location": "L65"
+    },
+    {
+      "id": "src_face_mod_facepipeline_load",
+      "label": ".load()",
+      "_origin": "ast",
+      "community": 12,
+      "community_name": "facescan.rs",
+      "file_type": "code",
+      "norm_label": ".load()",
+      "source_file": "src/face/mod.rs",
+      "source_location": "L52"
+    },
+    {
+      "id": "src_face_mod_rs_detector",
+      "label": "Detector",
+      "_origin": "ast",
+      "community": 12,
+      "community_name": "facescan.rs",
+      "file_type": "code",
+      "norm_label": "detector",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_face_mod_rs_embedder",
+      "label": "Embedder",
+      "_origin": "ast",
+      "community": 12,
+      "community_name": "facescan.rs",
+      "file_type": "code",
+      "norm_label": "embedder",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_face_mod_rs_result",
+      "label": "Result",
+      "_origin": "ast",
+      "community": 12,
+      "community_name": "facescan.rs",
+      "file_type": "code",
+      "norm_label": "result",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_face_mod_rs_string",
+      "label": "String",
+      "_origin": "ast",
+      "community": 12,
+      "community_name": "facescan.rs",
+      "file_type": "code",
+      "norm_label": "string",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_face_mod_rs_vec",
+      "label": "Vec",
+      "_origin": "ast",
+      "community": 12,
+      "community_name": "facescan.rs",
+      "file_type": "code",
+      "norm_label": "vec",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
       "id": "src_ui_facescan",
       "label": "facescan.rs",
       "_origin": "ast",
@@ -4688,248 +5502,6 @@
       "norm_label": "scan_one_photo()",
       "source_file": "src/ui/facescan.rs",
       "source_location": "L299"
-    },
-    {
-      "id": "src_db_presets",
-      "label": "presets.rs",
-      "_origin": "ast",
-      "community": 120,
-      "community_name": "model.rs",
-      "file_type": "code",
-      "norm_label": "presets.rs",
-      "source_file": "src/db/presets.rs",
-      "source_location": "L1"
-    },
-    {
-      "id": "src_db_presets_map_preset",
-      "label": "map_preset()",
-      "_origin": "ast",
-      "community": 120,
-      "community_name": "model.rs",
-      "file_type": "code",
-      "norm_label": "map_preset()",
-      "source_file": "src/db/presets.rs",
-      "source_location": "L19"
-    },
-    {
-      "id": "src_db_presets_rs_row",
-      "label": "Row",
-      "_origin": "ast",
-      "community": 120,
-      "community_name": "model.rs",
-      "file_type": "code",
-      "norm_label": "row",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_model",
-      "label": "model.rs",
-      "_origin": "ast",
-      "community": 120,
-      "community_name": "model.rs",
-      "file_type": "code",
-      "norm_label": "model.rs",
-      "source_file": "src/model.rs",
-      "source_location": "L1"
-    },
-    {
-      "id": "src_model_ai_status_roundtrip",
-      "label": "ai_status_roundtrip()",
-      "_origin": "ast",
-      "community": 120,
-      "community_name": "model.rs",
-      "file_type": "code",
-      "norm_label": "ai_status_roundtrip()",
-      "source_file": "src/model.rs",
-      "source_location": "L668"
-    },
-    {
-      "id": "src_model_album",
-      "label": "Album",
-      "_origin": "ast",
-      "community": 120,
-      "community_name": "model.rs",
-      "file_type": "code",
-      "norm_label": "album",
-      "source_file": "src/model.rs",
-      "source_location": "L289"
-    },
-    {
-      "id": "src_model_albumkind",
-      "label": "AlbumKind",
-      "_origin": "ast",
-      "community": 120,
-      "community_name": "model.rs",
-      "file_type": "code",
-      "norm_label": "albumkind",
-      "source_file": "src/model.rs",
-      "source_location": "L307"
-    },
-    {
-      "id": "src_model_albumkind_as_i64",
-      "label": ".as_i64()",
-      "_origin": "ast",
-      "community": 120,
-      "community_name": "model.rs",
-      "file_type": "code",
-      "norm_label": ".as_i64()",
-      "source_file": "src/model.rs",
-      "source_location": "L326"
-    },
-    {
-      "id": "src_model_albumkind_from_i64",
-      "label": ".from_i64()",
-      "_origin": "ast",
-      "community": 120,
-      "community_name": "model.rs",
-      "file_type": "code",
-      "norm_label": ".from_i64()",
-      "source_file": "src/model.rs",
-      "source_location": "L318"
-    },
-    {
-      "id": "src_model_character",
-      "label": "Character",
-      "_origin": "ast",
-      "community": 120,
-      "community_name": "model.rs",
-      "file_type": "code",
-      "norm_label": "character",
-      "source_file": "src/model.rs",
-      "source_location": "L618"
-    },
-    {
-      "id": "src_model_charactergroup",
-      "label": "CharacterGroup",
-      "_origin": "ast",
-      "community": 120,
-      "community_name": "model.rs",
-      "file_type": "code",
-      "norm_label": "charactergroup",
-      "source_file": "src/model.rs",
-      "source_location": "L627"
-    },
-    {
-      "id": "src_model_immichalbum",
-      "label": "ImmichAlbum",
-      "_origin": "ast",
-      "community": 120,
-      "community_name": "model.rs",
-      "file_type": "code",
-      "norm_label": "immichalbum",
-      "source_file": "src/model.rs",
-      "source_location": "L503"
-    },
-    {
-      "id": "src_model_immichfolderlink",
-      "label": "ImmichFolderLink",
-      "_origin": "ast",
-      "community": 120,
-      "community_name": "model.rs",
-      "file_type": "code",
-      "norm_label": "immichfolderlink",
-      "source_file": "src/model.rs",
-      "source_location": "L494"
-    },
-    {
-      "id": "src_model_levelpreset",
-      "label": "LevelPreset",
-      "_origin": "ast",
-      "community": 120,
-      "community_name": "model.rs",
-      "file_type": "code",
-      "norm_label": "levelpreset",
-      "source_file": "src/model.rs",
-      "source_location": "L114"
-    },
-    {
-      "id": "src_model_persongroup",
-      "label": "PersonGroup",
-      "_origin": "ast",
-      "community": 120,
-      "community_name": "model.rs",
-      "file_type": "code",
-      "norm_label": "persongroup",
-      "source_file": "src/model.rs",
-      "source_location": "L575"
-    },
-    {
-      "id": "src_model_photo_scan_state_roundtrip",
-      "label": "photo_scan_state_roundtrip()",
-      "_origin": "ast",
-      "community": 120,
-      "community_name": "model.rs",
-      "file_type": "code",
-      "norm_label": "photo_scan_state_roundtrip()",
-      "source_file": "src/model.rs",
-      "source_location": "L682"
-    },
-    {
-      "id": "src_model_rs_string",
-      "label": "String",
-      "_origin": "ast",
-      "community": 120,
-      "community_name": "model.rs",
-      "file_type": "code",
-      "norm_label": "string",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_model_scan_status_roundtrip",
-      "label": "scan_status_roundtrip()",
-      "_origin": "ast",
-      "community": 120,
-      "community_name": "model.rs",
-      "file_type": "code",
-      "norm_label": "scan_status_roundtrip()",
-      "source_file": "src/model.rs",
-      "source_location": "L704"
-    },
-    {
-      "id": "src_model_tag",
-      "label": "Tag",
-      "_origin": "ast",
-      "community": 120,
-      "community_name": "model.rs",
-      "file_type": "code",
-      "norm_label": "tag",
-      "source_file": "src/model.rs",
-      "source_location": "L273"
-    },
-    {
-      "id": "src_model_tag_source_roundtrip",
-      "label": "tag_source_roundtrip()",
-      "_origin": "ast",
-      "community": 120,
-      "community_name": "model.rs",
-      "file_type": "code",
-      "norm_label": "tag_source_roundtrip()",
-      "source_file": "src/model.rs",
-      "source_location": "L694"
-    },
-    {
-      "id": "src_model_tagcount",
-      "label": "TagCount",
-      "_origin": "ast",
-      "community": 120,
-      "community_name": "model.rs",
-      "file_type": "code",
-      "norm_label": "tagcount",
-      "source_file": "src/model.rs",
-      "source_location": "L281"
-    },
-    {
-      "id": "src_model_virtualalbum",
-      "label": "VirtualAlbum",
-      "_origin": "ast",
-      "community": 120,
-      "community_name": "model.rs",
-      "file_type": "code",
-      "norm_label": "virtualalbum",
-      "source_file": "src/model.rs",
-      "source_location": "L335"
     },
     {
       "id": "src_immich_client",
@@ -6054,17 +6626,6 @@
       "source_location": "L467"
     },
     {
-      "id": "src_scan_is_image",
-      "label": "is_image()",
-      "_origin": "ast",
-      "community": 15,
-      "community_name": "reconcile.rs",
-      "file_type": "code",
-      "norm_label": "is_image()",
-      "source_file": "src/scan.rs",
-      "source_location": "L18"
-    },
-    {
       "id": "src_ui_charactersview",
       "label": "charactersview.rs",
       "_origin": "ast",
@@ -6074,6 +6635,17 @@
       "norm_label": "charactersview.rs",
       "source_file": "src/ui/charactersview.rs",
       "source_location": "L1"
+    },
+    {
+      "id": "src_ui_charactersview_character_folder_faces",
+      "label": "character_folder_faces()",
+      "_origin": "ast",
+      "community": 16,
+      "community_name": "CharactersView",
+      "file_type": "code",
+      "norm_label": "character_folder_faces()",
+      "source_file": "src/ui/charactersview.rs",
+      "source_location": "L902"
     },
     {
       "id": "src_ui_charactersview_charactersview",
@@ -6106,7 +6678,7 @@
       "file_type": "code",
       "norm_label": ".build_group_tile()",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L556"
+      "source_location": "L523"
     },
     {
       "id": "src_ui_charactersview_charactersview_build_tile",
@@ -6117,7 +6689,7 @@
       "file_type": "code",
       "norm_label": ".build_tile()",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L406"
+      "source_location": "L407"
     },
     {
       "id": "src_ui_charactersview_charactersview_clear_selection",
@@ -6128,7 +6700,7 @@
       "file_type": "code",
       "norm_label": ".clear_selection()",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L652"
+      "source_location": "L615"
     },
     {
       "id": "src_ui_charactersview_charactersview_go_back",
@@ -6183,7 +6755,7 @@
       "file_type": "code",
       "norm_label": ".select_range_to()",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L620"
+      "source_location": "L583"
     },
     {
       "id": "src_ui_charactersview_charactersview_show_group",
@@ -6205,7 +6777,7 @@
       "file_type": "code",
       "norm_label": ".show_tile_menu()",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L724"
+      "source_location": "L699"
     },
     {
       "id": "src_ui_charactersview_charactersview_show_top",
@@ -6227,7 +6799,7 @@
       "file_type": "code",
       "norm_label": ".skip_keys()",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L692"
+      "source_location": "L655"
     },
     {
       "id": "src_ui_charactersview_charactersview_skip_selected",
@@ -6238,7 +6810,7 @@
       "file_type": "code",
       "norm_label": ".skip_selected()",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L682"
+      "source_location": "L645"
     },
     {
       "id": "src_ui_charactersview_charactersview_toggle_selection",
@@ -6249,7 +6821,7 @@
       "file_type": "code",
       "norm_label": ".toggle_selection()",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L604"
+      "source_location": "L567"
     },
     {
       "id": "src_ui_charactersview_charactersview_update_selection_ui",
@@ -6260,7 +6832,7 @@
       "file_type": "code",
       "norm_label": ".update_selection_ui()",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L660"
+      "source_location": "L623"
     },
     {
       "id": "src_ui_charactersview_charactersview_widget",
@@ -6272,6 +6844,17 @@
       "norm_label": ".widget()",
       "source_file": "src/ui/charactersview.rs",
       "source_location": "L213"
+    },
+    {
+      "id": "src_ui_charactersview_fill_style_crop",
+      "label": "fill_style_crop()",
+      "_origin": "ast",
+      "community": 16,
+      "community_name": "CharactersView",
+      "file_type": "code",
+      "norm_label": "fill_style_crop()",
+      "source_file": "src/ui/charactersview.rs",
+      "source_location": "L867"
     },
     {
       "id": "src_ui_charactersview_rs_button",
@@ -6303,6 +6886,17 @@
       "community_name": "CharactersView",
       "file_type": "code",
       "norm_label": "gtkbox",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_ui_charactersview_rs_image",
+      "label": "Image",
+      "_origin": "ast",
+      "community": 16,
+      "community_name": "CharactersView",
+      "file_type": "code",
+      "norm_label": "image",
       "source_file": "",
       "source_location": ""
     },
@@ -8819,86 +9413,9 @@
       "label": "Child",
       "_origin": "ast",
       "community": 22,
-      "community_name": "Config",
+      "community_name": "Manager",
       "file_type": "code",
       "norm_label": "child",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_ai_config",
-      "label": "ai/config.rs",
-      "_origin": "ast",
-      "community": 22,
-      "community_name": "Config",
-      "file_type": "code",
-      "norm_label": "ai/config.rs",
-      "source_file": "src/ai/config.rs",
-      "source_location": "L1"
-    },
-    {
-      "id": "src_ai_config_config",
-      "label": "Config",
-      "_origin": "ast",
-      "community": 22,
-      "community_name": "Config",
-      "file_type": "code",
-      "norm_label": "config",
-      "source_file": "src/ai/config.rs",
-      "source_location": "L33"
-    },
-    {
-      "id": "src_ai_config_config_default",
-      "label": ".default()",
-      "_origin": "ast",
-      "community": 22,
-      "community_name": "Config",
-      "file_type": "code",
-      "norm_label": ".default()",
-      "source_file": "src/ai/config.rs",
-      "source_location": "L59"
-    },
-    {
-      "id": "src_ai_config_config_normalize",
-      "label": ".normalize()",
-      "_origin": "ast",
-      "community": 22,
-      "community_name": "Config",
-      "file_type": "code",
-      "norm_label": ".normalize()",
-      "source_file": "src/ai/config.rs",
-      "source_location": "L81"
-    },
-    {
-      "id": "src_ai_config_normalize_fills_defaults_and_clamps",
-      "label": "normalize_fills_defaults_and_clamps()",
-      "_origin": "ast",
-      "community": 22,
-      "community_name": "Config",
-      "file_type": "code",
-      "norm_label": "normalize_fills_defaults_and_clamps()",
-      "source_file": "src/ai/config.rs",
-      "source_location": "L123"
-    },
-    {
-      "id": "src_ai_config_rs_default",
-      "label": "Default",
-      "_origin": "ast",
-      "community": 22,
-      "community_name": "Config",
-      "file_type": "code",
-      "norm_label": "default",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_ai_config_rs_string",
-      "label": "String",
-      "_origin": "ast",
-      "community": 22,
-      "community_name": "Config",
-      "file_type": "code",
-      "norm_label": "string",
       "source_file": "",
       "source_location": ""
     },
@@ -8907,7 +9424,7 @@
       "label": "manager.rs",
       "_origin": "ast",
       "community": 22,
-      "community_name": "Config",
+      "community_name": "Manager",
       "file_type": "code",
       "norm_label": "manager.rs",
       "source_file": "src/ai/manager.rs",
@@ -8918,7 +9435,7 @@
       "label": "Manager",
       "_origin": "ast",
       "community": 22,
-      "community_name": "Config",
+      "community_name": "Manager",
       "file_type": "code",
       "norm_label": "manager",
       "source_file": "src/ai/manager.rs",
@@ -8929,7 +9446,7 @@
       "label": ".drop()",
       "_origin": "ast",
       "community": 22,
-      "community_name": "Config",
+      "community_name": "Manager",
       "file_type": "code",
       "norm_label": ".drop()",
       "source_file": "src/ai/manager.rs",
@@ -8940,7 +9457,7 @@
       "label": ".ensure_running()",
       "_origin": "ast",
       "community": 22,
-      "community_name": "Config",
+      "community_name": "Manager",
       "file_type": "code",
       "norm_label": ".ensure_running()",
       "source_file": "src/ai/manager.rs",
@@ -8951,7 +9468,7 @@
       "label": ".stop()",
       "_origin": "ast",
       "community": 22,
-      "community_name": "Config",
+      "community_name": "Manager",
       "file_type": "code",
       "norm_label": ".stop()",
       "source_file": "src/ai/manager.rs",
@@ -8962,7 +9479,7 @@
       "label": "Client",
       "_origin": "ast",
       "community": 22,
-      "community_name": "Config",
+      "community_name": "Manager",
       "file_type": "code",
       "norm_label": "client",
       "source_file": "",
@@ -8973,7 +9490,7 @@
       "label": "Drop",
       "_origin": "ast",
       "community": 22,
-      "community_name": "Config",
+      "community_name": "Manager",
       "file_type": "code",
       "norm_label": "drop",
       "source_file": "",
@@ -8984,7 +9501,7 @@
       "label": "Option",
       "_origin": "ast",
       "community": 22,
-      "community_name": "Config",
+      "community_name": "Manager",
       "file_type": "code",
       "norm_label": "option",
       "source_file": "",
@@ -8995,7 +9512,7 @@
       "label": "Result",
       "_origin": "ast",
       "community": 22,
-      "community_name": "Config",
+      "community_name": "Manager",
       "file_type": "code",
       "norm_label": "result",
       "source_file": "",
@@ -9006,7 +9523,7 @@
       "label": "String",
       "_origin": "ast",
       "community": 22,
-      "community_name": "Config",
+      "community_name": "Manager",
       "file_type": "code",
       "norm_label": "string",
       "source_file": "",
@@ -9017,88 +9534,11 @@
       "label": "ai/mod.rs",
       "_origin": "ast",
       "community": 22,
-      "community_name": "Config",
+      "community_name": "Manager",
       "file_type": "code",
       "norm_label": "ai/mod.rs",
       "source_file": "src/ai/mod.rs",
       "source_location": "L1"
-    },
-    {
-      "id": "src_ui_settings_ai",
-      "label": "settings_ai.rs",
-      "_origin": "ast",
-      "community": 22,
-      "community_name": "Config",
-      "file_type": "code",
-      "norm_label": "settings_ai.rs",
-      "source_file": "src/ui/settings_ai.rs",
-      "source_location": "L1"
-    },
-    {
-      "id": "src_ui_settings_ai_ai_pane",
-      "label": "ai_pane()",
-      "_origin": "ast",
-      "community": 22,
-      "community_name": "Config",
-      "file_type": "code",
-      "norm_label": "ai_pane()",
-      "source_file": "src/ui/settings_ai.rs",
-      "source_location": "L16"
-    },
-    {
-      "id": "src_ui_settings_ai_fixed_label",
-      "label": "fixed_label()",
-      "_origin": "ast",
-      "community": 22,
-      "community_name": "Config",
-      "file_type": "code",
-      "norm_label": "fixed_label()",
-      "source_file": "src/ui/settings_ai.rs",
-      "source_location": "L243"
-    },
-    {
-      "id": "src_ui_settings_ai_rs_gtkbox",
-      "label": "GtkBox",
-      "_origin": "ast",
-      "community": 22,
-      "community_name": "Config",
-      "file_type": "code",
-      "norm_label": "gtkbox",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_ui_settings_ai_rs_label",
-      "label": "Label",
-      "_origin": "ast",
-      "community": 22,
-      "community_name": "Config",
-      "file_type": "code",
-      "norm_label": "label",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_ui_settings_ai_rs_rc",
-      "label": "Rc",
-      "_origin": "ast",
-      "community": 22,
-      "community_name": "Config",
-      "file_type": "code",
-      "norm_label": "rc",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_ui_settings_ai_spin_row",
-      "label": "spin_row()",
-      "_origin": "ast",
-      "community": 22,
-      "community_name": "Config",
-      "file_type": "code",
-      "norm_label": "spin_row()",
-      "source_file": "src/ui/settings_ai.rs",
-      "source_location": "L217"
     },
     {
       "id": "src_dedup",
@@ -9860,17 +10300,6 @@
       "source_location": "L445"
     },
     {
-      "id": "src_model_rs_vec",
-      "label": "Vec",
-      "_origin": "ast",
-      "community": 24,
-      "community_name": "vrules.rs",
-      "file_type": "code",
-      "norm_label": "vec",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
       "id": "src_model_rulefield",
       "label": "RuleField",
       "_origin": "ast",
@@ -9937,17 +10366,6 @@
       "source_location": "L364"
     },
     {
-      "id": "src_model_rulematch_from_i64",
-      "label": ".from_i64()",
-      "_origin": "ast",
-      "community": 24,
-      "community_name": "vrules.rs",
-      "file_type": "code",
-      "norm_label": ".from_i64()",
-      "source_file": "src/model.rs",
-      "source_location": "L357"
-    },
-    {
       "id": "src_model_ruleop",
       "label": "RuleOp",
       "_origin": "ast",
@@ -9979,6 +10397,17 @@
       "norm_label": ".from_str()",
       "source_file": "src/model.rs",
       "source_location": "L446"
+    },
+    {
+      "id": "src_model_virtualalbum",
+      "label": "VirtualAlbum",
+      "_origin": "ast",
+      "community": 24,
+      "community_name": "vrules.rs",
+      "file_type": "code",
+      "norm_label": "virtualalbum",
+      "source_file": "src/model.rs",
+      "source_location": "L335"
     },
     {
       "id": "src_model_virtualrule",
@@ -11541,6 +11970,127 @@
       "norm_label": "spinbutton",
       "source_file": "",
       "source_location": ""
+    },
+    {
+      "id": "src_db_presets",
+      "label": "presets.rs",
+      "_origin": "ast",
+      "community": 3,
+      "community_name": "EditPanel",
+      "file_type": "code",
+      "norm_label": "presets.rs",
+      "source_file": "src/db/presets.rs",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_db_presets_library",
+      "label": "Library",
+      "_origin": "ast",
+      "community": 3,
+      "community_name": "EditPanel",
+      "file_type": "code",
+      "norm_label": "library",
+      "source_file": "src/db/presets.rs",
+      "source_location": "L37"
+    },
+    {
+      "id": "src_db_presets_library_delete_level_preset",
+      "label": ".delete_level_preset()",
+      "_origin": "ast",
+      "community": 3,
+      "community_name": "EditPanel",
+      "file_type": "code",
+      "norm_label": ".delete_level_preset()",
+      "source_file": "src/db/presets.rs",
+      "source_location": "L87"
+    },
+    {
+      "id": "src_db_presets_library_level_presets",
+      "label": ".level_presets()",
+      "_origin": "ast",
+      "community": 3,
+      "community_name": "EditPanel",
+      "file_type": "code",
+      "norm_label": ".level_presets()",
+      "source_file": "src/db/presets.rs",
+      "source_location": "L39"
+    },
+    {
+      "id": "src_db_presets_library_save_level_preset",
+      "label": ".save_level_preset()",
+      "_origin": "ast",
+      "community": 3,
+      "community_name": "EditPanel",
+      "file_type": "code",
+      "norm_label": ".save_level_preset()",
+      "source_file": "src/db/presets.rs",
+      "source_location": "L52"
+    },
+    {
+      "id": "src_db_presets_map_preset",
+      "label": "map_preset()",
+      "_origin": "ast",
+      "community": 3,
+      "community_name": "EditPanel",
+      "file_type": "code",
+      "norm_label": "map_preset()",
+      "source_file": "src/db/presets.rs",
+      "source_location": "L19"
+    },
+    {
+      "id": "src_db_presets_rs_result",
+      "label": "Result",
+      "_origin": "ast",
+      "community": 3,
+      "community_name": "EditPanel",
+      "file_type": "code",
+      "norm_label": "result",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_db_presets_rs_row",
+      "label": "Row",
+      "_origin": "ast",
+      "community": 3,
+      "community_name": "EditPanel",
+      "file_type": "code",
+      "norm_label": "row",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_db_presets_rs_vec",
+      "label": "Vec",
+      "_origin": "ast",
+      "community": 3,
+      "community_name": "EditPanel",
+      "file_type": "code",
+      "norm_label": "vec",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_model_levelpreset",
+      "label": "LevelPreset",
+      "_origin": "ast",
+      "community": 3,
+      "community_name": "EditPanel",
+      "file_type": "code",
+      "norm_label": "levelpreset",
+      "source_file": "src/model.rs",
+      "source_location": "L114"
+    },
+    {
+      "id": "src_model_levels",
+      "label": "Levels",
+      "_origin": "ast",
+      "community": 3,
+      "community_name": "EditPanel",
+      "file_type": "code",
+      "norm_label": "levels",
+      "source_file": "src/model.rs",
+      "source_location": "L77"
     },
     {
       "id": "src_ui_editor",
@@ -13135,7 +13685,7 @@
       "file_type": "code",
       "norm_label": "character_can_belong_to_multiple_groups()",
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L258"
+      "source_location": "L276"
     },
     {
       "id": "src_db_character_groups_characters_under_group_covers_subtree_and_dedupes",
@@ -13146,7 +13696,7 @@
       "file_type": "code",
       "norm_label": "characters_under_group_covers_subtree_and_dedupes()",
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L276"
+      "source_location": "L294"
     },
     {
       "id": "src_db_character_groups_cleanup",
@@ -13157,7 +13707,7 @@
       "file_type": "code",
       "norm_label": "cleanup()",
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L226"
+      "source_location": "L244"
     },
     {
       "id": "src_db_character_groups_create_rename_delete_character_group",
@@ -13168,7 +13718,7 @@
       "file_type": "code",
       "norm_label": "create_rename_delete_character_group()",
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L233"
+      "source_location": "L251"
     },
     {
       "id": "src_db_character_groups_delete_group_does_not_delete_characters",
@@ -13179,7 +13729,7 @@
       "file_type": "code",
       "norm_label": "delete_group_does_not_delete_characters()",
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L306"
+      "source_location": "L324"
     },
     {
       "id": "src_db_character_groups_library",
@@ -13314,6 +13864,17 @@
       "source_location": "L59"
     },
     {
+      "id": "src_db_character_groups_library_style_faces_of_characters",
+      "label": ".style_faces_of_characters()",
+      "_origin": "ast",
+      "community": 34,
+      "community_name": "Library",
+      "file_type": "code",
+      "norm_label": ".style_faces_of_characters()",
+      "source_file": "src/db/character_groups.rs",
+      "source_location": "L209"
+    },
+    {
       "id": "src_db_character_groups_rs_hashmap",
       "label": "HashMap",
       "_origin": "ast",
@@ -13377,7 +13938,7 @@
       "file_type": "code",
       "norm_label": "set_character_group_cover_roundtrip()",
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L294"
+      "source_location": "L312"
     },
     {
       "id": "src_db_character_groups_set_character_group_parent_rejects_cycle",
@@ -13388,7 +13949,7 @@
       "file_type": "code",
       "norm_label": "set_character_group_parent_rejects_cycle()",
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L245"
+      "source_location": "L263"
     },
     {
       "id": "src_db_character_groups_temp_lib",
@@ -13399,7 +13960,18 @@
       "file_type": "code",
       "norm_label": "temp_lib()",
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L212"
+      "source_location": "L230"
+    },
+    {
+      "id": "src_model_charactergroup",
+      "label": "CharacterGroup",
+      "_origin": "ast",
+      "community": 34,
+      "community_name": "Library",
+      "file_type": "code",
+      "norm_label": "charactergroup",
+      "source_file": "src/model.rs",
+      "source_location": "L627"
     },
     {
       "id": "src_face_models",
@@ -13598,490 +14170,6 @@
       "norm_label": "verify()",
       "source_file": "src/face/models.rs",
       "source_location": "L162"
-    },
-    {
-      "id": "src_face_detector",
-      "label": "face/detector.rs",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "face/detector.rs",
-      "source_file": "src/face/detector.rs",
-      "source_location": "L1"
-    },
-    {
-      "id": "src_face_detector_cand",
-      "label": "Cand",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "cand",
-      "source_file": "src/face/detector.rs",
-      "source_location": "L29"
-    },
-    {
-      "id": "src_face_detector_detector",
-      "label": "Detector",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "detector",
-      "source_file": "src/face/detector.rs",
-      "source_location": "L23"
-    },
-    {
-      "id": "src_face_detector_detector_detect",
-      "label": ".detect()",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": ".detect()",
-      "source_file": "src/face/detector.rs",
-      "source_location": "L60"
-    },
-    {
-      "id": "src_face_detector_detector_load",
-      "label": ".load()",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": ".load()",
-      "source_file": "src/face/detector.rs",
-      "source_location": "L41"
-    },
-    {
-      "id": "src_face_detector_iou",
-      "label": "iou()",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "iou()",
-      "source_file": "src/face/detector.rs",
-      "source_location": "L256"
-    },
-    {
-      "id": "src_face_detector_nms",
-      "label": "nms()",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "nms()",
-      "source_file": "src/face/detector.rs",
-      "source_location": "L231"
-    },
-    {
-      "id": "src_face_detector_rs_mutex",
-      "label": "Mutex",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "mutex",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_face_detector_rs_result",
-      "label": "Result",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "result",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_face_detector_rs_string",
-      "label": "String",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "string",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_face_detector_rs_vec",
-      "label": "Vec",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "vec",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_face_detector_sample_rgb",
-      "label": "sample_rgb()",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "sample_rgb()",
-      "source_file": "src/face/detector.rs",
-      "source_location": "L208"
-    },
-    {
-      "id": "src_face_embedder",
-      "label": "face/embedder.rs",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "face/embedder.rs",
-      "source_file": "src/face/embedder.rs",
-      "source_location": "L1"
-    },
-    {
-      "id": "src_face_embedder_embedder",
-      "label": "Embedder",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "embedder",
-      "source_file": "src/face/embedder.rs",
-      "source_location": "L25"
-    },
-    {
-      "id": "src_face_embedder_embedder_embed",
-      "label": ".embed()",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": ".embed()",
-      "source_file": "src/face/embedder.rs",
-      "source_location": "L54"
-    },
-    {
-      "id": "src_face_embedder_embedder_embedding_dim",
-      "label": ".embedding_dim()",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": ".embedding_dim()",
-      "source_file": "src/face/embedder.rs",
-      "source_location": "L137"
-    },
-    {
-      "id": "src_face_embedder_embedder_load",
-      "label": ".load()",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": ".load()",
-      "source_file": "src/face/embedder.rs",
-      "source_location": "L33"
-    },
-    {
-      "id": "src_face_embedder_rs_mutex",
-      "label": "Mutex",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "mutex",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_face_embedder_rs_result",
-      "label": "Result",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "result",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_face_embedder_rs_string",
-      "label": "String",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "string",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_face_embedder_rs_vec",
-      "label": "Vec",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "vec",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_face_embedder_sample_rgb",
-      "label": "sample_rgb()",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "sample_rgb()",
-      "source_file": "src/face/embedder.rs",
-      "source_location": "L207"
-    },
-    {
-      "id": "src_face_embedder_umeyama_similarity",
-      "label": "umeyama_similarity()",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "umeyama_similarity()",
-      "source_file": "src/face/embedder.rs",
-      "source_location": "L145"
-    },
-    {
-      "id": "src_face_mod",
-      "label": "face/mod.rs",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "face/mod.rs",
-      "source_file": "src/face/mod.rs",
-      "source_location": "L1"
-    },
-    {
-      "id": "src_face_mod_detectedface",
-      "label": "DetectedFace",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "detectedface",
-      "source_file": "src/face/mod.rs",
-      "source_location": "L28"
-    },
-    {
-      "id": "src_face_mod_facepipeline",
-      "label": "FacePipeline",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "facepipeline",
-      "source_file": "src/face/mod.rs",
-      "source_location": "L43"
-    },
-    {
-      "id": "src_face_mod_facepipeline_detect_and_embed",
-      "label": ".detect_and_embed()",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": ".detect_and_embed()",
-      "source_file": "src/face/mod.rs",
-      "source_location": "L71"
-    },
-    {
-      "id": "src_face_mod_facepipeline_embedding_dim",
-      "label": ".embedding_dim()",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": ".embedding_dim()",
-      "source_file": "src/face/mod.rs",
-      "source_location": "L65"
-    },
-    {
-      "id": "src_face_mod_facepipeline_load",
-      "label": ".load()",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": ".load()",
-      "source_file": "src/face/mod.rs",
-      "source_location": "L52"
-    },
-    {
-      "id": "src_face_mod_rs_detector",
-      "label": "Detector",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "detector",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_face_mod_rs_embedder",
-      "label": "Embedder",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "embedder",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_face_mod_rs_result",
-      "label": "Result",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "result",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_face_mod_rs_string",
-      "label": "String",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "string",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_face_mod_rs_vec",
-      "label": "Vec",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "vec",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_styleface_embedder",
-      "label": "styleface/embedder.rs",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "styleface/embedder.rs",
-      "source_file": "src/styleface/embedder.rs",
-      "source_location": "L1"
-    },
-    {
-      "id": "src_styleface_embedder_embedder",
-      "label": "Embedder",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "embedder",
-      "source_file": "src/styleface/embedder.rs",
-      "source_location": "L32"
-    },
-    {
-      "id": "src_styleface_embedder_embedder_embed",
-      "label": ".embed()",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": ".embed()",
-      "source_file": "src/styleface/embedder.rs",
-      "source_location": "L61"
-    },
-    {
-      "id": "src_styleface_embedder_embedder_embedding_dim",
-      "label": ".embedding_dim()",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": ".embedding_dim()",
-      "source_file": "src/styleface/embedder.rs",
-      "source_location": "L141"
-    },
-    {
-      "id": "src_styleface_embedder_embedder_load",
-      "label": ".load()",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": ".load()",
-      "source_file": "src/styleface/embedder.rs",
-      "source_location": "L40"
-    },
-    {
-      "id": "src_styleface_embedder_rs_mutex",
-      "label": "Mutex",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "mutex",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_styleface_embedder_rs_result",
-      "label": "Result",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "result",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_styleface_embedder_rs_string",
-      "label": "String",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "string",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_styleface_embedder_rs_vec",
-      "label": "Vec",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "vec",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_styleface_embedder_sample_rgb",
-      "label": "sample_rgb()",
-      "_origin": "ast",
-      "community": 36,
-      "community_name": "Controller",
-      "file_type": "code",
-      "norm_label": "sample_rgb()",
-      "source_file": "src/styleface/embedder.rs",
-      "source_location": "L148"
     },
     {
       "id": "src_ui_controller",
@@ -15929,7 +16017,7 @@
       "file_type": "code",
       "norm_label": "cleanup()",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L225"
+      "source_location": "L242"
     },
     {
       "id": "src_db_person_groups_create_rename_delete_person_group",
@@ -15940,7 +16028,7 @@
       "file_type": "code",
       "norm_label": "create_rename_delete_person_group()",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L232"
+      "source_location": "L249"
     },
     {
       "id": "src_db_person_groups_delete_group_does_not_delete_persons",
@@ -15951,7 +16039,7 @@
       "file_type": "code",
       "norm_label": "delete_group_does_not_delete_persons()",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L307"
+      "source_location": "L324"
     },
     {
       "id": "src_db_person_groups_library",
@@ -15996,6 +16084,17 @@
       "norm_label": ".delete_person_group()",
       "source_file": "src/db/person_groups.rs",
       "source_location": "L52"
+    },
+    {
+      "id": "src_db_person_groups_library_faces_of_persons",
+      "label": ".faces_of_persons()",
+      "_origin": "ast",
+      "community": 43,
+      "community_name": "Library",
+      "file_type": "code",
+      "norm_label": ".faces_of_persons()",
+      "source_file": "src/db/person_groups.rs",
+      "source_location": "L207"
     },
     {
       "id": "src_db_person_groups_library_groups_of_person",
@@ -16094,7 +16193,7 @@
       "file_type": "code",
       "norm_label": "person_can_belong_to_multiple_groups()",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L258"
+      "source_location": "L275"
     },
     {
       "id": "src_db_person_groups_persons_under_group_covers_subtree_and_dedupes",
@@ -16105,7 +16204,7 @@
       "file_type": "code",
       "norm_label": "persons_under_group_covers_subtree_and_dedupes()",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L276"
+      "source_location": "L293"
     },
     {
       "id": "src_db_person_groups_rs_hashmap",
@@ -16171,7 +16270,7 @@
       "file_type": "code",
       "norm_label": "set_person_group_cover_roundtrip()",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L295"
+      "source_location": "L312"
     },
     {
       "id": "src_db_person_groups_set_person_group_parent_rejects_cycle",
@@ -16182,7 +16281,7 @@
       "file_type": "code",
       "norm_label": "set_person_group_parent_rejects_cycle()",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L244"
+      "source_location": "L261"
     },
     {
       "id": "src_db_person_groups_temp_lib",
@@ -16193,7 +16292,18 @@
       "file_type": "code",
       "norm_label": "temp_lib()",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L211"
+      "source_location": "L228"
+    },
+    {
+      "id": "src_model_persongroup",
+      "label": "PersonGroup",
+      "_origin": "ast",
+      "community": 43,
+      "community_name": "Library",
+      "file_type": "code",
+      "norm_label": "persongroup",
+      "source_file": "src/model.rs",
+      "source_location": "L575"
     },
     {
       "id": "src_ui_enrich",
@@ -16416,17 +16526,6 @@
       "source_location": "L4"
     },
     {
-      "id": "menubutton",
-      "label": "MenuButton",
-      "_origin": "ast",
-      "community": 46,
-      "community_name": "StatusBar",
-      "file_type": "code",
-      "norm_label": "menubutton",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
       "id": "progressbar",
       "label": "ProgressBar",
       "_origin": "ast",
@@ -16436,39 +16535,6 @@
       "norm_label": "progressbar",
       "source_file": "",
       "source_location": ""
-    },
-    {
-      "id": "src_ui_status",
-      "label": "status.rs",
-      "_origin": "ast",
-      "community": 46,
-      "community_name": "StatusBar",
-      "file_type": "code",
-      "norm_label": "status.rs",
-      "source_file": "src/ui/status.rs",
-      "source_location": "L1"
-    },
-    {
-      "id": "src_ui_status_activity_indicator",
-      "label": "activity_indicator()",
-      "_origin": "ast",
-      "community": 46,
-      "community_name": "StatusBar",
-      "file_type": "code",
-      "norm_label": "activity_indicator()",
-      "source_file": "src/ui/status.rs",
-      "source_location": "L49"
-    },
-    {
-      "id": "src_ui_status_fmt_elapsed",
-      "label": "fmt_elapsed()",
-      "_origin": "ast",
-      "community": 46,
-      "community_name": "StatusBar",
-      "file_type": "code",
-      "norm_label": "fmt_elapsed()",
-      "source_file": "src/ui/status.rs",
-      "source_location": "L34"
     },
     {
       "id": "src_ui_status_rs_box",
@@ -16493,17 +16559,6 @@
       "source_location": ""
     },
     {
-      "id": "src_ui_status_rs_duration",
-      "label": "Duration",
-      "_origin": "ast",
-      "community": 46,
-      "community_name": "StatusBar",
-      "file_type": "code",
-      "norm_label": "duration",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
       "id": "src_ui_status_rs_label",
       "label": "Label",
       "_origin": "ast",
@@ -16511,28 +16566,6 @@
       "community_name": "StatusBar",
       "file_type": "code",
       "norm_label": "label",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_ui_status_rs_rc",
-      "label": "Rc",
-      "_origin": "ast",
-      "community": 46,
-      "community_name": "StatusBar",
-      "file_type": "code",
-      "norm_label": "rc",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_ui_status_rs_string",
-      "label": "String",
-      "_origin": "ast",
-      "community": 46,
-      "community_name": "StatusBar",
-      "file_type": "code",
-      "norm_label": "string",
       "source_file": "",
       "source_location": ""
     },
@@ -16546,17 +16579,6 @@
       "norm_label": "statusbar",
       "source_file": "src/ui/status.rs",
       "source_location": "L133"
-    },
-    {
-      "id": "src_ui_status_statusbar_new",
-      "label": ".new()",
-      "_origin": "ast",
-      "community": 46,
-      "community_name": "StatusBar",
-      "file_type": "code",
-      "norm_label": ".new()",
-      "source_file": "src/ui/status.rs",
-      "source_location": "L142"
     },
     {
       "id": "src_ui_status_statusbar_set_message",
@@ -16856,11 +16878,44 @@
       "source_location": "L59"
     },
     {
+      "id": "src_db_immich",
+      "label": "db/immich.rs",
+      "_origin": "ast",
+      "community": 49,
+      "community_name": "model.rs",
+      "file_type": "code",
+      "norm_label": "db/immich.rs",
+      "source_file": "src/db/immich.rs",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_model",
+      "label": "model.rs",
+      "_origin": "ast",
+      "community": 49,
+      "community_name": "model.rs",
+      "file_type": "code",
+      "norm_label": "model.rs",
+      "source_file": "src/model.rs",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_model_ai_status_roundtrip",
+      "label": "ai_status_roundtrip()",
+      "_origin": "ast",
+      "community": 49,
+      "community_name": "model.rs",
+      "file_type": "code",
+      "norm_label": "ai_status_roundtrip()",
+      "source_file": "src/model.rs",
+      "source_location": "L668"
+    },
+    {
       "id": "src_model_aistatus",
       "label": "AiStatus",
       "_origin": "ast",
       "community": 49,
-      "community_name": "Self",
+      "community_name": "model.rs",
       "file_type": "code",
       "norm_label": "aistatus",
       "source_file": "src/model.rs",
@@ -16871,7 +16926,7 @@
       "label": ".as_i64()",
       "_origin": "ast",
       "community": 49,
-      "community_name": "Self",
+      "community_name": "model.rs",
       "file_type": "code",
       "norm_label": ".as_i64()",
       "source_file": "src/model.rs",
@@ -16882,29 +16937,128 @@
       "label": ".from_i64()",
       "_origin": "ast",
       "community": 49,
-      "community_name": "Self",
+      "community_name": "model.rs",
       "file_type": "code",
       "norm_label": ".from_i64()",
       "source_file": "src/model.rs",
       "source_location": "L233"
     },
     {
+      "id": "src_model_album",
+      "label": "Album",
+      "_origin": "ast",
+      "community": 49,
+      "community_name": "model.rs",
+      "file_type": "code",
+      "norm_label": "album",
+      "source_file": "src/model.rs",
+      "source_location": "L289"
+    },
+    {
+      "id": "src_model_albumkind",
+      "label": "AlbumKind",
+      "_origin": "ast",
+      "community": 49,
+      "community_name": "model.rs",
+      "file_type": "code",
+      "norm_label": "albumkind",
+      "source_file": "src/model.rs",
+      "source_location": "L307"
+    },
+    {
+      "id": "src_model_albumkind_as_i64",
+      "label": ".as_i64()",
+      "_origin": "ast",
+      "community": 49,
+      "community_name": "model.rs",
+      "file_type": "code",
+      "norm_label": ".as_i64()",
+      "source_file": "src/model.rs",
+      "source_location": "L326"
+    },
+    {
+      "id": "src_model_albumkind_from_i64",
+      "label": ".from_i64()",
+      "_origin": "ast",
+      "community": 49,
+      "community_name": "model.rs",
+      "file_type": "code",
+      "norm_label": ".from_i64()",
+      "source_file": "src/model.rs",
+      "source_location": "L318"
+    },
+    {
+      "id": "src_model_immichalbum",
+      "label": "ImmichAlbum",
+      "_origin": "ast",
+      "community": 49,
+      "community_name": "model.rs",
+      "file_type": "code",
+      "norm_label": "immichalbum",
+      "source_file": "src/model.rs",
+      "source_location": "L503"
+    },
+    {
+      "id": "src_model_immichfolderlink",
+      "label": "ImmichFolderLink",
+      "_origin": "ast",
+      "community": 49,
+      "community_name": "model.rs",
+      "file_type": "code",
+      "norm_label": "immichfolderlink",
+      "source_file": "src/model.rs",
+      "source_location": "L494"
+    },
+    {
       "id": "src_model_levels_default",
       "label": ".default()",
       "_origin": "ast",
       "community": 49,
-      "community_name": "Self",
+      "community_name": "model.rs",
       "file_type": "code",
       "norm_label": ".default()",
       "source_file": "src/model.rs",
       "source_location": "L90"
     },
     {
+      "id": "src_model_levels_is_identity",
+      "label": ".is_identity()",
+      "_origin": "ast",
+      "community": 49,
+      "community_name": "model.rs",
+      "file_type": "code",
+      "norm_label": ".is_identity()",
+      "source_file": "src/model.rs",
+      "source_location": "L107"
+    },
+    {
+      "id": "src_model_photo_scan_state_roundtrip",
+      "label": "photo_scan_state_roundtrip()",
+      "_origin": "ast",
+      "community": 49,
+      "community_name": "model.rs",
+      "file_type": "code",
+      "norm_label": "photo_scan_state_roundtrip()",
+      "source_file": "src/model.rs",
+      "source_location": "L682"
+    },
+    {
+      "id": "src_model_photoedit_default",
+      "label": ".default()",
+      "_origin": "ast",
+      "community": 49,
+      "community_name": "model.rs",
+      "file_type": "code",
+      "norm_label": ".default()",
+      "source_file": "src/model.rs",
+      "source_location": "L156"
+    },
+    {
       "id": "src_model_photoscanstate",
       "label": "PhotoScanState",
       "_origin": "ast",
       "community": 49,
-      "community_name": "Self",
+      "community_name": "model.rs",
       "file_type": "code",
       "norm_label": "photoscanstate",
       "source_file": "src/model.rs",
@@ -16915,7 +17069,7 @@
       "label": ".as_i64()",
       "_origin": "ast",
       "community": 49,
-      "community_name": "Self",
+      "community_name": "model.rs",
       "file_type": "code",
       "norm_label": ".as_i64()",
       "source_file": "src/model.rs",
@@ -16926,7 +17080,7 @@
       "label": ".from_i64()",
       "_origin": "ast",
       "community": 49,
-      "community_name": "Self",
+      "community_name": "model.rs",
       "file_type": "code",
       "norm_label": ".from_i64()",
       "source_file": "src/model.rs",
@@ -16937,18 +17091,51 @@
       "label": "Self",
       "_origin": "ast",
       "community": 49,
-      "community_name": "Self",
+      "community_name": "model.rs",
       "file_type": "code",
       "norm_label": "self",
       "source_file": "",
       "source_location": ""
     },
     {
+      "id": "src_model_rs_string",
+      "label": "String",
+      "_origin": "ast",
+      "community": 49,
+      "community_name": "model.rs",
+      "file_type": "code",
+      "norm_label": "string",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_model_rulematch_from_i64",
+      "label": ".from_i64()",
+      "_origin": "ast",
+      "community": 49,
+      "community_name": "model.rs",
+      "file_type": "code",
+      "norm_label": ".from_i64()",
+      "source_file": "src/model.rs",
+      "source_location": "L357"
+    },
+    {
+      "id": "src_model_scan_status_roundtrip",
+      "label": "scan_status_roundtrip()",
+      "_origin": "ast",
+      "community": 49,
+      "community_name": "model.rs",
+      "file_type": "code",
+      "norm_label": "scan_status_roundtrip()",
+      "source_file": "src/model.rs",
+      "source_location": "L704"
+    },
+    {
       "id": "src_model_scanstatus",
       "label": "ScanStatus",
       "_origin": "ast",
       "community": 49,
-      "community_name": "Self",
+      "community_name": "model.rs",
       "file_type": "code",
       "norm_label": "scanstatus",
       "source_file": "src/model.rs",
@@ -16959,7 +17146,7 @@
       "label": ".as_str()",
       "_origin": "ast",
       "community": 49,
-      "community_name": "Self",
+      "community_name": "model.rs",
       "file_type": "code",
       "norm_label": ".as_str()",
       "source_file": "src/model.rs",
@@ -16970,18 +17157,51 @@
       "label": ".from_str()",
       "_origin": "ast",
       "community": 49,
-      "community_name": "Self",
+      "community_name": "model.rs",
       "file_type": "code",
       "norm_label": ".from_str()",
       "source_file": "src/model.rs",
       "source_location": "L552"
     },
     {
+      "id": "src_model_tag",
+      "label": "Tag",
+      "_origin": "ast",
+      "community": 49,
+      "community_name": "model.rs",
+      "file_type": "code",
+      "norm_label": "tag",
+      "source_file": "src/model.rs",
+      "source_location": "L273"
+    },
+    {
+      "id": "src_model_tag_source_roundtrip",
+      "label": "tag_source_roundtrip()",
+      "_origin": "ast",
+      "community": 49,
+      "community_name": "model.rs",
+      "file_type": "code",
+      "norm_label": "tag_source_roundtrip()",
+      "source_file": "src/model.rs",
+      "source_location": "L694"
+    },
+    {
+      "id": "src_model_tagcount",
+      "label": "TagCount",
+      "_origin": "ast",
+      "community": 49,
+      "community_name": "model.rs",
+      "file_type": "code",
+      "norm_label": "tagcount",
+      "source_file": "src/model.rs",
+      "source_location": "L281"
+    },
+    {
       "id": "src_model_tagsource",
       "label": "TagSource",
       "_origin": "ast",
       "community": 49,
-      "community_name": "Self",
+      "community_name": "model.rs",
       "file_type": "code",
       "norm_label": "tagsource",
       "source_file": "src/model.rs",
@@ -16992,7 +17212,7 @@
       "label": ".as_i64()",
       "_origin": "ast",
       "community": 49,
-      "community_name": "Self",
+      "community_name": "model.rs",
       "file_type": "code",
       "norm_label": ".as_i64()",
       "source_file": "src/model.rs",
@@ -17003,7 +17223,7 @@
       "label": ".from_i64()",
       "_origin": "ast",
       "community": 49,
-      "community_name": "Self",
+      "community_name": "model.rs",
       "file_type": "code",
       "norm_label": ".from_i64()",
       "source_file": "src/model.rs",
@@ -17173,138 +17393,6 @@
       "norm_label": "verify_sha256()",
       "source_file": "src/face/runtime.rs",
       "source_location": "L47"
-    },
-    {
-      "id": "src_styleface_detector",
-      "label": "styleface/detector.rs",
-      "_origin": "ast",
-      "community": 5,
-      "community_name": "stylefacescan.rs",
-      "file_type": "code",
-      "norm_label": "styleface/detector.rs",
-      "source_file": "src/styleface/detector.rs",
-      "source_location": "L1"
-    },
-    {
-      "id": "src_styleface_detector_cand",
-      "label": "Cand",
-      "_origin": "ast",
-      "community": 5,
-      "community_name": "stylefacescan.rs",
-      "file_type": "code",
-      "norm_label": "cand",
-      "source_file": "src/styleface/detector.rs",
-      "source_location": "L30"
-    },
-    {
-      "id": "src_styleface_detector_detector",
-      "label": "Detector",
-      "_origin": "ast",
-      "community": 5,
-      "community_name": "stylefacescan.rs",
-      "file_type": "code",
-      "norm_label": "detector",
-      "source_file": "src/styleface/detector.rs",
-      "source_location": "L24"
-    },
-    {
-      "id": "src_styleface_detector_detector_detect",
-      "label": ".detect()",
-      "_origin": "ast",
-      "community": 5,
-      "community_name": "stylefacescan.rs",
-      "file_type": "code",
-      "norm_label": ".detect()",
-      "source_file": "src/styleface/detector.rs",
-      "source_location": "L58"
-    },
-    {
-      "id": "src_styleface_detector_detector_load",
-      "label": ".load()",
-      "_origin": "ast",
-      "community": 5,
-      "community_name": "stylefacescan.rs",
-      "file_type": "code",
-      "norm_label": ".load()",
-      "source_file": "src/styleface/detector.rs",
-      "source_location": "L41"
-    },
-    {
-      "id": "src_styleface_detector_iou",
-      "label": "iou()",
-      "_origin": "ast",
-      "community": 5,
-      "community_name": "stylefacescan.rs",
-      "file_type": "code",
-      "norm_label": "iou()",
-      "source_file": "src/styleface/detector.rs",
-      "source_location": "L231"
-    },
-    {
-      "id": "src_styleface_detector_nms",
-      "label": "nms()",
-      "_origin": "ast",
-      "community": 5,
-      "community_name": "stylefacescan.rs",
-      "file_type": "code",
-      "norm_label": "nms()",
-      "source_file": "src/styleface/detector.rs",
-      "source_location": "L206"
-    },
-    {
-      "id": "src_styleface_detector_rs_mutex",
-      "label": "Mutex",
-      "_origin": "ast",
-      "community": 5,
-      "community_name": "stylefacescan.rs",
-      "file_type": "code",
-      "norm_label": "mutex",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_styleface_detector_rs_result",
-      "label": "Result",
-      "_origin": "ast",
-      "community": 5,
-      "community_name": "stylefacescan.rs",
-      "file_type": "code",
-      "norm_label": "result",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_styleface_detector_rs_string",
-      "label": "String",
-      "_origin": "ast",
-      "community": 5,
-      "community_name": "stylefacescan.rs",
-      "file_type": "code",
-      "norm_label": "string",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_styleface_detector_rs_vec",
-      "label": "Vec",
-      "_origin": "ast",
-      "community": 5,
-      "community_name": "stylefacescan.rs",
-      "file_type": "code",
-      "norm_label": "vec",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_styleface_detector_sample_rgb",
-      "label": "sample_rgb()",
-      "_origin": "ast",
-      "community": 5,
-      "community_name": "stylefacescan.rs",
-      "file_type": "code",
-      "norm_label": "sample_rgb()",
-      "source_file": "src/styleface/detector.rs",
-      "source_location": "L185"
     },
     {
       "id": "src_styleface_mod",
@@ -17780,17 +17868,6 @@
       "source_location": ""
     },
     {
-      "id": "src_db_immich",
-      "label": "db/immich.rs",
-      "_origin": "ast",
-      "community": 51,
-      "community_name": "Result",
-      "file_type": "code",
-      "norm_label": "db/immich.rs",
-      "source_file": "src/db/immich.rs",
-      "source_location": "L1"
-    },
-    {
       "id": "src_db_immich_library",
       "label": "Library",
       "_origin": "ast",
@@ -18211,193 +18288,6 @@
       "source_location": "L1"
     },
     {
-      "id": "src_ui_characters",
-      "label": "characters.rs",
-      "_origin": "ast",
-      "community": 56,
-      "community_name": "FacesView",
-      "file_type": "code",
-      "norm_label": "characters.rs",
-      "source_file": "src/ui/characters.rs",
-      "source_location": "L1"
-    },
-    {
-      "id": "src_ui_characters_assign_photos_to_character_dialog",
-      "label": "assign_photos_to_character_dialog()",
-      "_origin": "ast",
-      "community": 56,
-      "community_name": "FacesView",
-      "file_type": "code",
-      "norm_label": "assign_photos_to_character_dialog()",
-      "source_file": "src/ui/characters.rs",
-      "source_location": "L245"
-    },
-    {
-      "id": "src_ui_characters_assign_style_cluster_to_character",
-      "label": "assign_style_cluster_to_character()",
-      "_origin": "ast",
-      "community": 56,
-      "community_name": "FacesView",
-      "file_type": "code",
-      "norm_label": "assign_style_cluster_to_character()",
-      "source_file": "src/ui/characters.rs",
-      "source_location": "L46"
-    },
-    {
-      "id": "src_ui_characters_assign_style_clusters_to_character",
-      "label": "assign_style_clusters_to_character()",
-      "_origin": "ast",
-      "community": 56,
-      "community_name": "FacesView",
-      "file_type": "code",
-      "norm_label": "assign_style_clusters_to_character()",
-      "source_file": "src/ui/characters.rs",
-      "source_location": "L34"
-    },
-    {
-      "id": "src_ui_characters_assign_style_face_dialog",
-      "label": "assign_style_face_dialog()",
-      "_origin": "ast",
-      "community": 56,
-      "community_name": "FacesView",
-      "file_type": "code",
-      "norm_label": "assign_style_face_dialog()",
-      "source_file": "src/ui/characters.rs",
-      "source_location": "L92"
-    },
-    {
-      "id": "src_ui_characters_assign_style_faces_per_face_dialog",
-      "label": "assign_style_faces_per_face_dialog()",
-      "_origin": "ast",
-      "community": 56,
-      "community_name": "FacesView",
-      "file_type": "code",
-      "norm_label": "assign_style_faces_per_face_dialog()",
-      "source_file": "src/ui/characters.rs",
-      "source_location": "L390"
-    },
-    {
-      "id": "src_ui_characters_assign_style_faces_to_character",
-      "label": "assign_style_faces_to_character()",
-      "_origin": "ast",
-      "community": 56,
-      "community_name": "FacesView",
-      "file_type": "code",
-      "norm_label": "assign_style_faces_to_character()",
-      "source_file": "src/ui/characters.rs",
-      "source_location": "L63"
-    },
-    {
-      "id": "src_ui_characters_name_style_clusters",
-      "label": "name_style_clusters()",
-      "_origin": "ast",
-      "community": 56,
-      "community_name": "FacesView",
-      "file_type": "code",
-      "norm_label": "name_style_clusters()",
-      "source_file": "src/ui/characters.rs",
-      "source_location": "L18"
-    },
-    {
-      "id": "src_ui_characters_name_style_clusters_dialog",
-      "label": "name_style_clusters_dialog()",
-      "_origin": "ast",
-      "community": 56,
-      "community_name": "FacesView",
-      "file_type": "code",
-      "norm_label": "name_style_clusters_dialog()",
-      "source_file": "src/ui/characters.rs",
-      "source_location": "L673"
-    },
-    {
-      "id": "src_ui_characters_name_style_faces",
-      "label": "name_style_faces()",
-      "_origin": "ast",
-      "community": 56,
-      "community_name": "FacesView",
-      "file_type": "code",
-      "norm_label": "name_style_faces()",
-      "source_file": "src/ui/characters.rs",
-      "source_location": "L81"
-    },
-    {
-      "id": "src_ui_characters_rs_f",
-      "label": "F",
-      "_origin": "ast",
-      "community": 56,
-      "community_name": "FacesView",
-      "file_type": "code",
-      "norm_label": "f",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_ui_characters_rs_g",
-      "label": "G",
-      "_origin": "ast",
-      "community": 56,
-      "community_name": "FacesView",
-      "file_type": "code",
-      "norm_label": "g",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_ui_characters_rs_option",
-      "label": "Option",
-      "_origin": "ast",
-      "community": 56,
-      "community_name": "FacesView",
-      "file_type": "code",
-      "norm_label": "option",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_ui_characters_rs_rc",
-      "label": "Rc",
-      "_origin": "ast",
-      "community": 56,
-      "community_name": "FacesView",
-      "file_type": "code",
-      "norm_label": "rc",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_ui_characters_rs_result",
-      "label": "Result",
-      "_origin": "ast",
-      "community": 56,
-      "community_name": "FacesView",
-      "file_type": "code",
-      "norm_label": "result",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_ui_characters_rs_string",
-      "label": "String",
-      "_origin": "ast",
-      "community": 56,
-      "community_name": "FacesView",
-      "file_type": "code",
-      "norm_label": "string",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "src_ui_characters_rs_vec",
-      "label": "Vec",
-      "_origin": "ast",
-      "community": 56,
-      "community_name": "FacesView",
-      "file_type": "code",
-      "norm_label": "vec",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
       "id": "src_ui_facesview",
       "label": "facesview.rs",
       "_origin": "ast",
@@ -18417,7 +18307,7 @@
       "file_type": "code",
       "norm_label": "facesview",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L31"
+      "source_location": "L30"
     },
     {
       "id": "src_ui_facesview_facesview_bind_state",
@@ -18428,7 +18318,7 @@
       "file_type": "code",
       "norm_label": ".bind_state()",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L112"
+      "source_location": "L111"
     },
     {
       "id": "src_ui_facesview_facesview_build_group_tile",
@@ -18439,7 +18329,7 @@
       "file_type": "code",
       "norm_label": ".build_group_tile()",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L265"
+      "source_location": "L264"
     },
     {
       "id": "src_ui_facesview_facesview_build_tile",
@@ -18450,7 +18340,7 @@
       "file_type": "code",
       "norm_label": ".build_tile()",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L323"
+      "source_location": "L321"
     },
     {
       "id": "src_ui_facesview_facesview_go_back",
@@ -18461,7 +18351,7 @@
       "file_type": "code",
       "norm_label": ".go_back()",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L136"
+      "source_location": "L135"
     },
     {
       "id": "src_ui_facesview_facesview_new",
@@ -18472,7 +18362,7 @@
       "file_type": "code",
       "norm_label": ".new()",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L46"
+      "source_location": "L45"
     },
     {
       "id": "src_ui_facesview_facesview_reload",
@@ -18483,18 +18373,7 @@
       "file_type": "code",
       "norm_label": ".reload()",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L158"
-    },
-    {
-      "id": "src_ui_facesview_facesview_show_face_tile_menu",
-      "label": ".show_face_tile_menu()",
-      "_origin": "ast",
-      "community": 56,
-      "community_name": "FacesView",
-      "file_type": "code",
-      "norm_label": ".show_face_tile_menu()",
-      "source_file": "src/ui/facesview.rs",
-      "source_location": "L441"
+      "source_location": "L157"
     },
     {
       "id": "src_ui_facesview_facesview_show_group",
@@ -18505,7 +18384,7 @@
       "file_type": "code",
       "norm_label": ".show_group()",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L130"
+      "source_location": "L129"
     },
     {
       "id": "src_ui_facesview_facesview_show_top",
@@ -18516,7 +18395,7 @@
       "file_type": "code",
       "norm_label": ".show_top()",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L123"
+      "source_location": "L122"
     },
     {
       "id": "src_ui_facesview_facesview_widget",
@@ -18527,7 +18406,18 @@
       "file_type": "code",
       "norm_label": ".widget()",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L117"
+      "source_location": "L116"
+    },
+    {
+      "id": "src_ui_facesview_person_folder_faces",
+      "label": "person_folder_faces()",
+      "_origin": "ast",
+      "community": 56,
+      "community_name": "FacesView",
+      "file_type": "code",
+      "norm_label": "person_folder_faces()",
+      "source_file": "src/ui/facesview.rs",
+      "source_location": "L422"
     },
     {
       "id": "src_ui_facesview_rs_button",
@@ -18614,6 +18504,17 @@
       "community_name": "FacesView",
       "file_type": "code",
       "norm_label": "self",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_ui_facesview_rs_vec",
+      "label": "Vec",
+      "_origin": "ast",
+      "community": 56,
+      "community_name": "FacesView",
+      "file_type": "code",
+      "norm_label": "vec",
       "source_file": "",
       "source_location": ""
     },
@@ -19278,28 +19179,6 @@
       "source_location": "L67"
     },
     {
-      "id": "src_model_levels",
-      "label": "Levels",
-      "_origin": "ast",
-      "community": 6,
-      "community_name": "PhotoEdit",
-      "file_type": "code",
-      "norm_label": "levels",
-      "source_file": "src/model.rs",
-      "source_location": "L77"
-    },
-    {
-      "id": "src_model_levels_is_identity",
-      "label": ".is_identity()",
-      "_origin": "ast",
-      "community": 6,
-      "community_name": "PhotoEdit",
-      "file_type": "code",
-      "norm_label": ".is_identity()",
-      "source_file": "src/model.rs",
-      "source_location": "L107"
-    },
-    {
       "id": "src_model_photoedit",
       "label": "PhotoEdit",
       "_origin": "ast",
@@ -19309,17 +19188,6 @@
       "norm_label": "photoedit",
       "source_file": "src/model.rs",
       "source_location": "L129"
-    },
-    {
-      "id": "src_model_photoedit_default",
-      "label": ".default()",
-      "_origin": "ast",
-      "community": 6,
-      "community_name": "PhotoEdit",
-      "file_type": "code",
-      "norm_label": ".default()",
-      "source_file": "src/model.rs",
-      "source_location": "L156"
     },
     {
       "id": "src_model_photoedit_is_identity",
@@ -19883,92 +19751,191 @@
       "source_location": ""
     },
     {
-      "id": "src_ui_freshness",
-      "label": "freshness.rs",
+      "id": "src_ui_characters",
+      "label": "characters.rs",
       "_origin": "ast",
       "community": 62,
-      "community_name": "freshness.rs",
+      "community_name": "characters.rs",
       "file_type": "code",
-      "norm_label": "freshness.rs",
-      "source_file": "src/ui/freshness.rs",
+      "norm_label": "characters.rs",
+      "source_file": "src/ui/characters.rs",
       "source_location": "L1"
     },
     {
-      "id": "src_ui_freshness_msg",
-      "label": "Msg",
+      "id": "src_ui_characters_assign_photos_to_character_dialog",
+      "label": "assign_photos_to_character_dialog()",
       "_origin": "ast",
       "community": 62,
-      "community_name": "freshness.rs",
+      "community_name": "characters.rs",
       "file_type": "code",
-      "norm_label": "msg",
-      "source_file": "src/ui/freshness.rs",
-      "source_location": "L25"
+      "norm_label": "assign_photos_to_character_dialog()",
+      "source_file": "src/ui/characters.rs",
+      "source_location": "L245"
     },
     {
-      "id": "src_ui_freshness_reconcile_now",
-      "label": "reconcile_now()",
+      "id": "src_ui_characters_assign_style_cluster_to_character",
+      "label": "assign_style_cluster_to_character()",
       "_origin": "ast",
       "community": 62,
-      "community_name": "freshness.rs",
+      "community_name": "characters.rs",
       "file_type": "code",
-      "norm_label": "reconcile_now()",
-      "source_file": "src/ui/freshness.rs",
-      "source_location": "L33"
+      "norm_label": "assign_style_cluster_to_character()",
+      "source_file": "src/ui/characters.rs",
+      "source_location": "L46"
     },
     {
-      "id": "src_ui_freshness_refresh_library",
-      "label": "refresh_library()",
+      "id": "src_ui_characters_assign_style_clusters_to_character",
+      "label": "assign_style_clusters_to_character()",
       "_origin": "ast",
       "community": 62,
-      "community_name": "freshness.rs",
+      "community_name": "characters.rs",
       "file_type": "code",
-      "norm_label": "refresh_library()",
-      "source_file": "src/ui/freshness.rs",
-      "source_location": "L39"
+      "norm_label": "assign_style_clusters_to_character()",
+      "source_file": "src/ui/characters.rs",
+      "source_location": "L34"
     },
     {
-      "id": "src_ui_freshness_rs_rc",
+      "id": "src_ui_characters_assign_style_face_dialog",
+      "label": "assign_style_face_dialog()",
+      "_origin": "ast",
+      "community": 62,
+      "community_name": "characters.rs",
+      "file_type": "code",
+      "norm_label": "assign_style_face_dialog()",
+      "source_file": "src/ui/characters.rs",
+      "source_location": "L92"
+    },
+    {
+      "id": "src_ui_characters_assign_style_faces_per_face_dialog",
+      "label": "assign_style_faces_per_face_dialog()",
+      "_origin": "ast",
+      "community": 62,
+      "community_name": "characters.rs",
+      "file_type": "code",
+      "norm_label": "assign_style_faces_per_face_dialog()",
+      "source_file": "src/ui/characters.rs",
+      "source_location": "L390"
+    },
+    {
+      "id": "src_ui_characters_assign_style_faces_to_character",
+      "label": "assign_style_faces_to_character()",
+      "_origin": "ast",
+      "community": 62,
+      "community_name": "characters.rs",
+      "file_type": "code",
+      "norm_label": "assign_style_faces_to_character()",
+      "source_file": "src/ui/characters.rs",
+      "source_location": "L63"
+    },
+    {
+      "id": "src_ui_characters_name_style_clusters",
+      "label": "name_style_clusters()",
+      "_origin": "ast",
+      "community": 62,
+      "community_name": "characters.rs",
+      "file_type": "code",
+      "norm_label": "name_style_clusters()",
+      "source_file": "src/ui/characters.rs",
+      "source_location": "L18"
+    },
+    {
+      "id": "src_ui_characters_name_style_clusters_dialog",
+      "label": "name_style_clusters_dialog()",
+      "_origin": "ast",
+      "community": 62,
+      "community_name": "characters.rs",
+      "file_type": "code",
+      "norm_label": "name_style_clusters_dialog()",
+      "source_file": "src/ui/characters.rs",
+      "source_location": "L673"
+    },
+    {
+      "id": "src_ui_characters_name_style_faces",
+      "label": "name_style_faces()",
+      "_origin": "ast",
+      "community": 62,
+      "community_name": "characters.rs",
+      "file_type": "code",
+      "norm_label": "name_style_faces()",
+      "source_file": "src/ui/characters.rs",
+      "source_location": "L81"
+    },
+    {
+      "id": "src_ui_characters_rs_f",
+      "label": "F",
+      "_origin": "ast",
+      "community": 62,
+      "community_name": "characters.rs",
+      "file_type": "code",
+      "norm_label": "f",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_ui_characters_rs_g",
+      "label": "G",
+      "_origin": "ast",
+      "community": 62,
+      "community_name": "characters.rs",
+      "file_type": "code",
+      "norm_label": "g",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_ui_characters_rs_option",
+      "label": "Option",
+      "_origin": "ast",
+      "community": 62,
+      "community_name": "characters.rs",
+      "file_type": "code",
+      "norm_label": "option",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_ui_characters_rs_rc",
       "label": "Rc",
       "_origin": "ast",
       "community": 62,
-      "community_name": "freshness.rs",
+      "community_name": "characters.rs",
       "file_type": "code",
       "norm_label": "rc",
       "source_file": "",
       "source_location": ""
     },
     {
-      "id": "src_ui_freshness_run_reconcile",
-      "label": "run_reconcile()",
+      "id": "src_ui_characters_rs_result",
+      "label": "Result",
       "_origin": "ast",
       "community": 62,
-      "community_name": "freshness.rs",
+      "community_name": "characters.rs",
       "file_type": "code",
-      "norm_label": "run_reconcile()",
-      "source_file": "src/ui/freshness.rs",
-      "source_location": "L53"
+      "norm_label": "result",
+      "source_file": "",
+      "source_location": ""
     },
     {
-      "id": "src_ui_freshness_scan_new_folders",
-      "label": "scan_new_folders()",
+      "id": "src_ui_characters_rs_string",
+      "label": "String",
       "_origin": "ast",
       "community": 62,
-      "community_name": "freshness.rs",
+      "community_name": "characters.rs",
       "file_type": "code",
-      "norm_label": "scan_new_folders()",
-      "source_file": "src/ui/freshness.rs",
-      "source_location": "L46"
+      "norm_label": "string",
+      "source_file": "",
+      "source_location": ""
     },
     {
-      "id": "src_ui_freshness_start_periodic",
-      "label": "start_periodic()",
+      "id": "src_ui_characters_rs_vec",
+      "label": "Vec",
       "_origin": "ast",
       "community": 62,
-      "community_name": "freshness.rs",
+      "community_name": "characters.rs",
       "file_type": "code",
-      "norm_label": "start_periodic()",
-      "source_file": "src/ui/freshness.rs",
-      "source_location": "L160"
+      "norm_label": "vec",
+      "source_file": "",
+      "source_location": ""
     },
     {
       "id": "src_ai_tagger",
@@ -20048,70 +20015,268 @@
       "source_location": ""
     },
     {
-      "id": "src_db_presets_library",
-      "label": "Library",
+      "id": "src_styleface_detector",
+      "label": "styleface/detector.rs",
       "_origin": "ast",
-      "community": 67,
-      "community_name": ".level_presets",
+      "community": 66,
+      "community_name": "styleface/detector.rs",
       "file_type": "code",
-      "norm_label": "library",
-      "source_file": "src/db/presets.rs",
-      "source_location": "L37"
+      "norm_label": "styleface/detector.rs",
+      "source_file": "src/styleface/detector.rs",
+      "source_location": "L1"
     },
     {
-      "id": "src_db_presets_library_delete_level_preset",
-      "label": ".delete_level_preset()",
+      "id": "src_styleface_detector_cand",
+      "label": "Cand",
       "_origin": "ast",
-      "community": 67,
-      "community_name": ".level_presets",
+      "community": 66,
+      "community_name": "styleface/detector.rs",
       "file_type": "code",
-      "norm_label": ".delete_level_preset()",
-      "source_file": "src/db/presets.rs",
-      "source_location": "L87"
+      "norm_label": "cand",
+      "source_file": "src/styleface/detector.rs",
+      "source_location": "L30"
     },
     {
-      "id": "src_db_presets_library_level_presets",
-      "label": ".level_presets()",
+      "id": "src_styleface_detector_detector",
+      "label": "Detector",
       "_origin": "ast",
-      "community": 67,
-      "community_name": ".level_presets",
+      "community": 66,
+      "community_name": "styleface/detector.rs",
       "file_type": "code",
-      "norm_label": ".level_presets()",
-      "source_file": "src/db/presets.rs",
-      "source_location": "L39"
+      "norm_label": "detector",
+      "source_file": "src/styleface/detector.rs",
+      "source_location": "L24"
     },
     {
-      "id": "src_db_presets_library_save_level_preset",
-      "label": ".save_level_preset()",
+      "id": "src_styleface_detector_detector_detect",
+      "label": ".detect()",
       "_origin": "ast",
-      "community": 67,
-      "community_name": ".level_presets",
+      "community": 66,
+      "community_name": "styleface/detector.rs",
       "file_type": "code",
-      "norm_label": ".save_level_preset()",
-      "source_file": "src/db/presets.rs",
-      "source_location": "L52"
+      "norm_label": ".detect()",
+      "source_file": "src/styleface/detector.rs",
+      "source_location": "L58"
     },
     {
-      "id": "src_db_presets_rs_result",
+      "id": "src_styleface_detector_detector_load",
+      "label": ".load()",
+      "_origin": "ast",
+      "community": 66,
+      "community_name": "styleface/detector.rs",
+      "file_type": "code",
+      "norm_label": ".load()",
+      "source_file": "src/styleface/detector.rs",
+      "source_location": "L41"
+    },
+    {
+      "id": "src_styleface_detector_iou",
+      "label": "iou()",
+      "_origin": "ast",
+      "community": 66,
+      "community_name": "styleface/detector.rs",
+      "file_type": "code",
+      "norm_label": "iou()",
+      "source_file": "src/styleface/detector.rs",
+      "source_location": "L231"
+    },
+    {
+      "id": "src_styleface_detector_nms",
+      "label": "nms()",
+      "_origin": "ast",
+      "community": 66,
+      "community_name": "styleface/detector.rs",
+      "file_type": "code",
+      "norm_label": "nms()",
+      "source_file": "src/styleface/detector.rs",
+      "source_location": "L206"
+    },
+    {
+      "id": "src_styleface_detector_rs_mutex",
+      "label": "Mutex",
+      "_origin": "ast",
+      "community": 66,
+      "community_name": "styleface/detector.rs",
+      "file_type": "code",
+      "norm_label": "mutex",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_styleface_detector_rs_result",
       "label": "Result",
       "_origin": "ast",
-      "community": 67,
-      "community_name": ".level_presets",
+      "community": 66,
+      "community_name": "styleface/detector.rs",
       "file_type": "code",
       "norm_label": "result",
       "source_file": "",
       "source_location": ""
     },
     {
-      "id": "src_db_presets_rs_vec",
+      "id": "src_styleface_detector_rs_string",
+      "label": "String",
+      "_origin": "ast",
+      "community": 66,
+      "community_name": "styleface/detector.rs",
+      "file_type": "code",
+      "norm_label": "string",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_styleface_detector_rs_vec",
       "label": "Vec",
       "_origin": "ast",
-      "community": 67,
-      "community_name": ".level_presets",
+      "community": 66,
+      "community_name": "styleface/detector.rs",
       "file_type": "code",
       "norm_label": "vec",
       "source_file": "",
       "source_location": ""
+    },
+    {
+      "id": "src_styleface_detector_sample_rgb",
+      "label": "sample_rgb()",
+      "_origin": "ast",
+      "community": 66,
+      "community_name": "styleface/detector.rs",
+      "file_type": "code",
+      "norm_label": "sample_rgb()",
+      "source_file": "src/styleface/detector.rs",
+      "source_location": "L185"
+    },
+    {
+      "id": "src_ui_mosaic",
+      "label": "mosaic.rs",
+      "_origin": "ast",
+      "community": 67,
+      "community_name": "mosaic.rs",
+      "file_type": "code",
+      "norm_label": "mosaic.rs",
+      "source_file": "src/ui/mosaic.rs",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_ui_mosaic_build",
+      "label": "build()",
+      "_origin": "ast",
+      "community": 67,
+      "community_name": "mosaic.rs",
+      "file_type": "code",
+      "norm_label": "build()",
+      "source_file": "src/ui/mosaic.rs",
+      "source_location": "L91"
+    },
+    {
+      "id": "src_ui_mosaic_pick_faces",
+      "label": "pick_faces()",
+      "_origin": "ast",
+      "community": 67,
+      "community_name": "mosaic.rs",
+      "file_type": "code",
+      "norm_label": "pick_faces()",
+      "source_file": "src/ui/mosaic.rs",
+      "source_location": "L39"
+    },
+    {
+      "id": "src_ui_mosaic_reps_first_then_fill_without_repeats",
+      "label": "reps_first_then_fill_without_repeats()",
+      "_origin": "ast",
+      "community": 67,
+      "community_name": "mosaic.rs",
+      "file_type": "code",
+      "norm_label": "reps_first_then_fill_without_repeats()",
+      "source_file": "src/ui/mosaic.rs",
+      "source_location": "L115"
+    },
+    {
+      "id": "src_ui_mosaic_rng",
+      "label": "Rng",
+      "_origin": "ast",
+      "community": 67,
+      "community_name": "mosaic.rs",
+      "file_type": "code",
+      "norm_label": "rng",
+      "source_file": "src/ui/mosaic.rs",
+      "source_location": "L17"
+    },
+    {
+      "id": "src_ui_mosaic_rng_below",
+      "label": ".below()",
+      "_origin": "ast",
+      "community": 67,
+      "community_name": "mosaic.rs",
+      "file_type": "code",
+      "norm_label": ".below()",
+      "source_file": "src/ui/mosaic.rs",
+      "source_location": "L28"
+    },
+    {
+      "id": "src_ui_mosaic_rng_next",
+      "label": ".next()",
+      "_origin": "ast",
+      "community": 67,
+      "community_name": "mosaic.rs",
+      "file_type": "code",
+      "norm_label": ".next()",
+      "source_file": "src/ui/mosaic.rs",
+      "source_location": "L20"
+    },
+    {
+      "id": "src_ui_mosaic_rs_fn",
+      "label": "Fn",
+      "_origin": "ast",
+      "community": 67,
+      "community_name": "mosaic.rs",
+      "file_type": "code",
+      "norm_label": "fn",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_ui_mosaic_rs_hashmap",
+      "label": "HashMap",
+      "_origin": "ast",
+      "community": 67,
+      "community_name": "mosaic.rs",
+      "file_type": "code",
+      "norm_label": "hashmap",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_ui_mosaic_rs_image",
+      "label": "Image",
+      "_origin": "ast",
+      "community": 67,
+      "community_name": "mosaic.rs",
+      "file_type": "code",
+      "norm_label": "image",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_ui_mosaic_rs_vec",
+      "label": "Vec",
+      "_origin": "ast",
+      "community": 67,
+      "community_name": "mosaic.rs",
+      "file_type": "code",
+      "norm_label": "vec",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "src_ui_mosaic_stable_for_same_count_and_short_pool",
+      "label": "stable_for_same_count_and_short_pool()",
+      "_origin": "ast",
+      "community": 67,
+      "community_name": "mosaic.rs",
+      "file_type": "code",
+      "norm_label": "stable_for_same_count_and_short_pool()",
+      "source_file": "src/ui/mosaic.rs",
+      "source_location": "L132"
     },
     {
       "id": "src_ui_settings_immich",
@@ -20321,6 +20486,17 @@
       "norm_label": "hex_encode()",
       "source_file": "src/scan.rs",
       "source_location": "L611"
+    },
+    {
+      "id": "src_scan_is_image",
+      "label": "is_image()",
+      "_origin": "ast",
+      "community": 7,
+      "community_name": "scan.rs",
+      "file_type": "code",
+      "norm_label": "is_image()",
+      "source_file": "src/scan.rs",
+      "source_location": "L18"
     },
     {
       "id": "src_scan_is_image_matches_extensions",
@@ -22435,6 +22611,28 @@
       "source_location": "L772"
     },
     {
+      "id": "src_model_character",
+      "label": "Character",
+      "_origin": "ast",
+      "community": 9,
+      "community_name": "Library",
+      "file_type": "code",
+      "norm_label": "character",
+      "source_file": "src/model.rs",
+      "source_location": "L618"
+    },
+    {
+      "id": "src_model_rs_vec",
+      "label": "Vec",
+      "_origin": "ast",
+      "community": 9,
+      "community_name": "Library",
+      "file_type": "code",
+      "norm_label": "vec",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
       "id": "src_model_styleface",
       "label": "StyleFace",
       "_origin": "ast",
@@ -22457,7 +22655,7 @@
       "source_file": "Cargo.toml",
       "source_location": "L1",
       "type": "package",
-      "version": "0.2.20"
+      "version": "0.2.21"
     },
     {
       "id": "readme_baked_export",
@@ -23886,7 +24084,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L259",
+      "source_location": "L277",
       "weight": 1.0
     },
     {
@@ -23898,7 +24096,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L261",
+      "source_location": "L279",
       "weight": 1.0
     },
     {
@@ -23910,7 +24108,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L263",
+      "source_location": "L281",
       "weight": 1.0
     },
     {
@@ -23922,7 +24120,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L265",
+      "source_location": "L283",
       "weight": 1.0
     },
     {
@@ -23934,7 +24132,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L270",
+      "source_location": "L288",
       "weight": 1.0
     },
     {
@@ -23946,191 +24144,11 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L272",
-      "weight": 1.0
-    },
-    {
-      "source": "src_db_character_groups_characters_under_group_covers_subtree_and_dedupes",
-      "target": "src_db_character_groups_temp_lib",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/db/character_groups.rs",
-      "source_location": "L277",
-      "weight": 1.0
-    },
-    {
-      "source": "src_db_character_groups_characters_under_group_covers_subtree_and_dedupes",
-      "target": "src_db_character_groups_library_create_character_group",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/db/character_groups.rs",
-      "source_location": "L278",
-      "weight": 1.0
-    },
-    {
-      "source": "src_db_character_groups_characters_under_group_covers_subtree_and_dedupes",
-      "target": "src_db_character_groups_library_add_character_to_group",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/db/character_groups.rs",
-      "source_location": "L282",
-      "weight": 1.0
-    },
-    {
-      "source": "src_db_character_groups_characters_under_group_covers_subtree_and_dedupes",
-      "target": "src_db_character_groups_library_characters_under_group",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/db/character_groups.rs",
-      "source_location": "L285",
-      "weight": 1.0
-    },
-    {
-      "source": "src_db_character_groups_characters_under_group_covers_subtree_and_dedupes",
-      "target": "src_db_character_groups_cleanup",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/db/character_groups.rs",
       "source_location": "L290",
       "weight": 1.0
     },
     {
-      "source": "src_db_character_groups_create_rename_delete_character_group",
-      "target": "src_db_character_groups_temp_lib",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/db/character_groups.rs",
-      "source_location": "L234",
-      "weight": 1.0
-    },
-    {
-      "source": "src_db_character_groups_create_rename_delete_character_group",
-      "target": "src_db_character_groups_library_create_character_group",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/db/character_groups.rs",
-      "source_location": "L235",
-      "weight": 1.0
-    },
-    {
-      "source": "src_db_character_groups_create_rename_delete_character_group",
-      "target": "src_db_character_groups_library_rename_character_group",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/db/character_groups.rs",
-      "source_location": "L237",
-      "weight": 1.0
-    },
-    {
-      "source": "src_db_character_groups_create_rename_delete_character_group",
-      "target": "src_db_character_groups_library_delete_character_group",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/db/character_groups.rs",
-      "source_location": "L239",
-      "weight": 1.0
-    },
-    {
-      "source": "src_db_character_groups_create_rename_delete_character_group",
-      "target": "src_db_character_groups_cleanup",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/db/character_groups.rs",
-      "source_location": "L241",
-      "weight": 1.0
-    },
-    {
-      "source": "src_db_character_groups_delete_group_does_not_delete_characters",
-      "target": "src_db_character_groups_temp_lib",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/db/character_groups.rs",
-      "source_location": "L307",
-      "weight": 1.0
-    },
-    {
-      "source": "src_db_character_groups_delete_group_does_not_delete_characters",
-      "target": "src_db_character_groups_library_create_character_group",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/db/character_groups.rs",
-      "source_location": "L309",
-      "weight": 1.0
-    },
-    {
-      "source": "src_db_character_groups_delete_group_does_not_delete_characters",
-      "target": "src_db_character_groups_library_add_character_to_group",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/db/character_groups.rs",
-      "source_location": "L310",
-      "weight": 1.0
-    },
-    {
-      "source": "src_db_character_groups_delete_group_does_not_delete_characters",
-      "target": "src_db_character_groups_library_delete_character_group",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/db/character_groups.rs",
-      "source_location": "L311",
-      "weight": 1.0
-    },
-    {
-      "source": "src_db_character_groups_delete_group_does_not_delete_characters",
-      "target": "src_db_character_groups_cleanup",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/db/character_groups.rs",
-      "source_location": "L314",
-      "weight": 1.0
-    },
-    {
-      "source": "src_db_character_groups_set_character_group_cover_roundtrip",
+      "source": "src_db_character_groups_characters_under_group_covers_subtree_and_dedupes",
       "target": "src_db_character_groups_temp_lib",
       "relation": "calls",
       "_origin": "ast",
@@ -24142,7 +24160,7 @@
       "weight": 1.0
     },
     {
-      "source": "src_db_character_groups_set_character_group_cover_roundtrip",
+      "source": "src_db_character_groups_characters_under_group_covers_subtree_and_dedupes",
       "target": "src_db_character_groups_library_create_character_group",
       "relation": "calls",
       "_origin": "ast",
@@ -24154,6 +24172,186 @@
       "weight": 1.0
     },
     {
+      "source": "src_db_character_groups_characters_under_group_covers_subtree_and_dedupes",
+      "target": "src_db_character_groups_library_add_character_to_group",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/db/character_groups.rs",
+      "source_location": "L300",
+      "weight": 1.0
+    },
+    {
+      "source": "src_db_character_groups_characters_under_group_covers_subtree_and_dedupes",
+      "target": "src_db_character_groups_library_characters_under_group",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/db/character_groups.rs",
+      "source_location": "L303",
+      "weight": 1.0
+    },
+    {
+      "source": "src_db_character_groups_characters_under_group_covers_subtree_and_dedupes",
+      "target": "src_db_character_groups_cleanup",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/db/character_groups.rs",
+      "source_location": "L308",
+      "weight": 1.0
+    },
+    {
+      "source": "src_db_character_groups_create_rename_delete_character_group",
+      "target": "src_db_character_groups_temp_lib",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/db/character_groups.rs",
+      "source_location": "L252",
+      "weight": 1.0
+    },
+    {
+      "source": "src_db_character_groups_create_rename_delete_character_group",
+      "target": "src_db_character_groups_library_create_character_group",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/db/character_groups.rs",
+      "source_location": "L253",
+      "weight": 1.0
+    },
+    {
+      "source": "src_db_character_groups_create_rename_delete_character_group",
+      "target": "src_db_character_groups_library_rename_character_group",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/db/character_groups.rs",
+      "source_location": "L255",
+      "weight": 1.0
+    },
+    {
+      "source": "src_db_character_groups_create_rename_delete_character_group",
+      "target": "src_db_character_groups_library_delete_character_group",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/db/character_groups.rs",
+      "source_location": "L257",
+      "weight": 1.0
+    },
+    {
+      "source": "src_db_character_groups_create_rename_delete_character_group",
+      "target": "src_db_character_groups_cleanup",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/db/character_groups.rs",
+      "source_location": "L259",
+      "weight": 1.0
+    },
+    {
+      "source": "src_db_character_groups_delete_group_does_not_delete_characters",
+      "target": "src_db_character_groups_temp_lib",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/db/character_groups.rs",
+      "source_location": "L325",
+      "weight": 1.0
+    },
+    {
+      "source": "src_db_character_groups_delete_group_does_not_delete_characters",
+      "target": "src_db_character_groups_library_create_character_group",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/db/character_groups.rs",
+      "source_location": "L327",
+      "weight": 1.0
+    },
+    {
+      "source": "src_db_character_groups_delete_group_does_not_delete_characters",
+      "target": "src_db_character_groups_library_add_character_to_group",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/db/character_groups.rs",
+      "source_location": "L328",
+      "weight": 1.0
+    },
+    {
+      "source": "src_db_character_groups_delete_group_does_not_delete_characters",
+      "target": "src_db_character_groups_library_delete_character_group",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/db/character_groups.rs",
+      "source_location": "L329",
+      "weight": 1.0
+    },
+    {
+      "source": "src_db_character_groups_delete_group_does_not_delete_characters",
+      "target": "src_db_character_groups_cleanup",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/db/character_groups.rs",
+      "source_location": "L332",
+      "weight": 1.0
+    },
+    {
+      "source": "src_db_character_groups_set_character_group_cover_roundtrip",
+      "target": "src_db_character_groups_temp_lib",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/db/character_groups.rs",
+      "source_location": "L313",
+      "weight": 1.0
+    },
+    {
+      "source": "src_db_character_groups_set_character_group_cover_roundtrip",
+      "target": "src_db_character_groups_library_create_character_group",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/db/character_groups.rs",
+      "source_location": "L314",
+      "weight": 1.0
+    },
+    {
       "source": "src_db_character_groups_set_character_group_cover_roundtrip",
       "target": "src_db_character_groups_library_set_character_group_cover",
       "relation": "calls",
@@ -24162,7 +24360,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L298",
+      "source_location": "L316",
       "weight": 1.0
     },
     {
@@ -24174,7 +24372,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L302",
+      "source_location": "L320",
       "weight": 1.0
     },
     {
@@ -24186,7 +24384,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L246",
+      "source_location": "L264",
       "weight": 1.0
     },
     {
@@ -24198,7 +24396,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L247",
+      "source_location": "L265",
       "weight": 1.0
     },
     {
@@ -24210,7 +24408,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L250",
+      "source_location": "L268",
       "weight": 1.0
     },
     {
@@ -24222,7 +24420,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L251",
+      "source_location": "L269",
       "weight": 1.0
     },
     {
@@ -24234,7 +24432,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L254",
+      "source_location": "L272",
       "weight": 1.0
     },
     {
@@ -26622,7 +26820,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L233",
+      "source_location": "L250",
       "weight": 1.0
     },
     {
@@ -26634,7 +26832,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L234",
+      "source_location": "L251",
       "weight": 1.0
     },
     {
@@ -26646,7 +26844,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L236",
+      "source_location": "L253",
       "weight": 1.0
     },
     {
@@ -26658,7 +26856,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L238",
+      "source_location": "L255",
       "weight": 1.0
     },
     {
@@ -26670,7 +26868,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L240",
+      "source_location": "L257",
       "weight": 1.0
     },
     {
@@ -26682,7 +26880,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L308",
+      "source_location": "L325",
       "weight": 1.0
     },
     {
@@ -26694,7 +26892,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L310",
+      "source_location": "L327",
       "weight": 1.0
     },
     {
@@ -26706,7 +26904,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L311",
+      "source_location": "L328",
       "weight": 1.0
     },
     {
@@ -26718,7 +26916,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L312",
+      "source_location": "L329",
       "weight": 1.0
     },
     {
@@ -26730,7 +26928,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L315",
+      "source_location": "L332",
       "weight": 1.0
     },
     {
@@ -26742,83 +26940,11 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L259",
+      "source_location": "L276",
       "weight": 1.0
     },
     {
       "source": "src_db_person_groups_person_can_belong_to_multiple_groups",
-      "target": "src_db_person_groups_library_create_person_group",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/db/person_groups.rs",
-      "source_location": "L261",
-      "weight": 1.0
-    },
-    {
-      "source": "src_db_person_groups_person_can_belong_to_multiple_groups",
-      "target": "src_db_person_groups_library_add_person_to_group",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/db/person_groups.rs",
-      "source_location": "L263",
-      "weight": 1.0
-    },
-    {
-      "source": "src_db_person_groups_person_can_belong_to_multiple_groups",
-      "target": "src_db_person_groups_library_groups_of_person",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/db/person_groups.rs",
-      "source_location": "L265",
-      "weight": 1.0
-    },
-    {
-      "source": "src_db_person_groups_person_can_belong_to_multiple_groups",
-      "target": "src_db_person_groups_library_remove_person_from_group",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/db/person_groups.rs",
-      "source_location": "L270",
-      "weight": 1.0
-    },
-    {
-      "source": "src_db_person_groups_person_can_belong_to_multiple_groups",
-      "target": "src_db_person_groups_cleanup",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/db/person_groups.rs",
-      "source_location": "L272",
-      "weight": 1.0
-    },
-    {
-      "source": "src_db_person_groups_persons_under_group_covers_subtree_and_dedupes",
-      "target": "src_db_person_groups_temp_lib",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/db/person_groups.rs",
-      "source_location": "L277",
-      "weight": 1.0
-    },
-    {
-      "source": "src_db_person_groups_persons_under_group_covers_subtree_and_dedupes",
       "target": "src_db_person_groups_library_create_person_group",
       "relation": "calls",
       "_origin": "ast",
@@ -26830,6 +26956,78 @@
       "weight": 1.0
     },
     {
+      "source": "src_db_person_groups_person_can_belong_to_multiple_groups",
+      "target": "src_db_person_groups_library_add_person_to_group",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/db/person_groups.rs",
+      "source_location": "L280",
+      "weight": 1.0
+    },
+    {
+      "source": "src_db_person_groups_person_can_belong_to_multiple_groups",
+      "target": "src_db_person_groups_library_groups_of_person",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/db/person_groups.rs",
+      "source_location": "L282",
+      "weight": 1.0
+    },
+    {
+      "source": "src_db_person_groups_person_can_belong_to_multiple_groups",
+      "target": "src_db_person_groups_library_remove_person_from_group",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/db/person_groups.rs",
+      "source_location": "L287",
+      "weight": 1.0
+    },
+    {
+      "source": "src_db_person_groups_person_can_belong_to_multiple_groups",
+      "target": "src_db_person_groups_cleanup",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/db/person_groups.rs",
+      "source_location": "L289",
+      "weight": 1.0
+    },
+    {
+      "source": "src_db_person_groups_persons_under_group_covers_subtree_and_dedupes",
+      "target": "src_db_person_groups_temp_lib",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/db/person_groups.rs",
+      "source_location": "L294",
+      "weight": 1.0
+    },
+    {
+      "source": "src_db_person_groups_persons_under_group_covers_subtree_and_dedupes",
+      "target": "src_db_person_groups_library_create_person_group",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/db/person_groups.rs",
+      "source_location": "L295",
+      "weight": 1.0
+    },
+    {
       "source": "src_db_person_groups_persons_under_group_covers_subtree_and_dedupes",
       "target": "src_db_person_groups_library_add_person_to_group",
       "relation": "calls",
@@ -26838,7 +27036,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L282",
+      "source_location": "L299",
       "weight": 1.0
     },
     {
@@ -26850,7 +27048,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L286",
+      "source_location": "L303",
       "weight": 1.0
     },
     {
@@ -26862,7 +27060,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L291",
+      "source_location": "L308",
       "weight": 1.0
     },
     {
@@ -26874,7 +27072,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L296",
+      "source_location": "L313",
       "weight": 1.0
     },
     {
@@ -26886,7 +27084,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L297",
+      "source_location": "L314",
       "weight": 1.0
     },
     {
@@ -26898,7 +27096,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L299",
+      "source_location": "L316",
       "weight": 1.0
     },
     {
@@ -26910,7 +27108,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L303",
+      "source_location": "L320",
       "weight": 1.0
     },
     {
@@ -26922,7 +27120,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L245",
+      "source_location": "L262",
       "weight": 1.0
     },
     {
@@ -26934,7 +27132,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L246",
+      "source_location": "L263",
       "weight": 1.0
     },
     {
@@ -26946,7 +27144,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L250",
+      "source_location": "L267",
       "weight": 1.0
     },
     {
@@ -26958,7 +27156,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L251",
+      "source_location": "L268",
       "weight": 1.0
     },
     {
@@ -26970,7 +27168,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L254",
+      "source_location": "L271",
       "weight": 1.0
     },
     {
@@ -31182,7 +31380,19 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L565",
+      "source_location": "L532",
+      "weight": 1.0
+    },
+    {
+      "source": "src_ui_charactersview_charactersview_build_group_tile",
+      "target": "src_ui_charactersview_fill_style_crop",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/ui/charactersview.rs",
+      "source_location": "L543",
       "weight": 1.0
     },
     {
@@ -31194,7 +31404,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L593",
+      "source_location": "L557",
       "weight": 1.0
     },
     {
@@ -31206,7 +31416,19 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L417",
+      "source_location": "L418",
+      "weight": 1.0
+    },
+    {
+      "source": "src_ui_charactersview_charactersview_build_tile",
+      "target": "src_ui_charactersview_fill_style_crop",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/ui/charactersview.rs",
+      "source_location": "L435",
       "weight": 1.0
     },
     {
@@ -31218,7 +31440,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L498",
+      "source_location": "L466",
       "weight": 1.0
     },
     {
@@ -31230,7 +31452,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L510",
+      "source_location": "L478",
       "weight": 1.0
     },
     {
@@ -31242,7 +31464,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L521",
+      "source_location": "L489",
       "weight": 1.0
     },
     {
@@ -31254,7 +31476,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L539",
+      "source_location": "L507",
       "weight": 1.0
     },
     {
@@ -31266,7 +31488,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L655",
+      "source_location": "L618",
       "weight": 1.0
     },
     {
@@ -31331,6 +31553,18 @@
     },
     {
       "source": "src_ui_charactersview_charactersview_refresh",
+      "target": "src_ui_charactersview_character_folder_faces",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/ui/charactersview.rs",
+      "source_location": "L328",
+      "weight": 1.0
+    },
+    {
+      "source": "src_ui_charactersview_charactersview_refresh",
       "target": "src_ui_charactersview_charactersview_build_group_tile",
       "relation": "calls",
       "_origin": "ast",
@@ -31338,7 +31572,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L358",
+      "source_location": "L359",
       "weight": 1.0
     },
     {
@@ -31350,7 +31584,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L361",
+      "source_location": "L362",
       "weight": 1.0
     },
     {
@@ -31362,7 +31596,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L400",
+      "source_location": "L401",
       "weight": 1.0
     },
     {
@@ -31386,7 +31620,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L623",
+      "source_location": "L586",
       "weight": 1.0
     },
     {
@@ -31398,7 +31632,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L648",
+      "source_location": "L611",
       "weight": 1.0
     },
     {
@@ -31422,7 +31656,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L736",
+      "source_location": "L711",
       "weight": 1.0
     },
     {
@@ -31434,7 +31668,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L773",
+      "source_location": "L757",
       "weight": 1.0
     },
     {
@@ -31446,7 +31680,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L867",
+      "source_location": "L823",
       "weight": 1.0
     },
     {
@@ -31458,7 +31692,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L893",
+      "source_location": "L849",
       "weight": 1.0
     },
     {
@@ -31475,14 +31709,14 @@
     },
     {
       "source": "src_ui_charactersview_charactersview_skip_keys",
-      "target": "src_ui_charactersview_charactersview_reload",
+      "target": "src_ui_charactersview_charactersview_refresh",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L713",
+      "source_location": "L684",
       "weight": 1.0
     },
     {
@@ -31494,7 +31728,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L687",
+      "source_location": "L650",
       "weight": 1.0
     },
     {
@@ -31506,7 +31740,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L614",
+      "source_location": "L577",
       "weight": 1.0
     },
     {
@@ -32850,7 +33084,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L274",
+      "source_location": "L273",
       "weight": 1.0
     },
     {
@@ -32862,7 +33096,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L296",
+      "source_location": "L294",
       "weight": 1.0
     },
     {
@@ -32874,7 +33108,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L334",
+      "source_location": "L332",
       "weight": 1.0
     },
     {
@@ -32886,19 +33120,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L408",
-      "weight": 1.0
-    },
-    {
-      "source": "src_ui_facesview_facesview_build_tile",
-      "target": "src_ui_facesview_facesview_show_face_tile_menu",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/ui/facesview.rs",
-      "source_location": "L428",
+      "source_location": "L406",
       "weight": 1.0
     },
     {
@@ -32910,7 +33132,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L152",
+      "source_location": "L151",
       "weight": 1.0
     },
     {
@@ -32922,7 +33144,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L107",
+      "source_location": "L106",
       "weight": 1.0
     },
     {
@@ -32934,7 +33156,19 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L202",
+      "source_location": "L201",
+      "weight": 1.0
+    },
+    {
+      "source": "src_ui_facesview_facesview_reload",
+      "target": "src_ui_facesview_person_folder_faces",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/ui/facesview.rs",
+      "source_location": "L215",
       "weight": 1.0
     },
     {
@@ -32950,30 +33184,6 @@
       "weight": 1.0
     },
     {
-      "source": "src_ui_facesview_facesview_show_face_tile_menu",
-      "target": "src_ui_facesview_facesview_new",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/ui/facesview.rs",
-      "source_location": "L445",
-      "weight": 1.0
-    },
-    {
-      "source": "src_ui_facesview_facesview_show_face_tile_menu",
-      "target": "src_ui_facesview_facesview_reload",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/ui/facesview.rs",
-      "source_location": "L456",
-      "weight": 1.0
-    },
-    {
       "source": "src_ui_facesview_facesview_show_group",
       "target": "src_ui_facesview_facesview_reload",
       "relation": "calls",
@@ -32982,7 +33192,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L132",
+      "source_location": "L131",
       "weight": 1.0
     },
     {
@@ -32994,7 +33204,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L125",
+      "source_location": "L124",
       "weight": 1.0
     },
     {
@@ -34483,6 +34693,42 @@
       "context": "call",
       "source_file": "src/ui/immich.rs",
       "source_location": "L323",
+      "weight": 1.0
+    },
+    {
+      "source": "src_ui_mosaic_pick_faces",
+      "target": "src_ui_mosaic_rng",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/ui/mosaic.rs",
+      "source_location": "L76",
+      "weight": 1.0
+    },
+    {
+      "source": "src_ui_mosaic_pick_faces",
+      "target": "src_ui_mosaic_rng_below",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/ui/mosaic.rs",
+      "source_location": "L78",
+      "weight": 1.0
+    },
+    {
+      "source": "src_ui_mosaic_reps_first_then_fill_without_repeats",
+      "target": "src_ui_mosaic_pick_faces",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "src/ui/mosaic.rs",
+      "source_location": "L122",
       "weight": 1.0
     },
     {
@@ -41722,6 +41968,18 @@
       "weight": 1.0
     },
     {
+      "source": "src_ui_charactersview_tileentry",
+      "target": "src_ui_charactersview_rs_vec",
+      "relation": "references",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "field",
+      "source_file": "src/ui/charactersview.rs",
+      "source_location": "L50",
+      "weight": 1.0
+    },
+    {
       "source": "src_ui_controller_controller",
       "target": "src_ui_controller_rs_mutex",
       "relation": "references",
@@ -41994,7 +42252,7 @@
       "confidence_score": 1.0,
       "context": "field",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L32",
+      "source_location": "L31",
       "weight": 1.0
     },
     {
@@ -42006,7 +42264,7 @@
       "confidence_score": 1.0,
       "context": "field",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L34",
+      "source_location": "L33",
       "weight": 1.0
     },
     {
@@ -42018,7 +42276,7 @@
       "confidence_score": 1.0,
       "context": "field",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L35",
+      "source_location": "L34",
       "weight": 1.0
     },
     {
@@ -42030,7 +42288,7 @@
       "confidence_score": 1.0,
       "context": "field",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L36",
+      "source_location": "L35",
       "weight": 1.0
     },
     {
@@ -42042,7 +42300,7 @@
       "confidence_score": 1.0,
       "context": "field",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L41",
+      "source_location": "L40",
       "weight": 1.0
     },
     {
@@ -43366,6 +43624,18 @@
       "weight": 1.0
     },
     {
+      "source": "src_db_character_groups_library_style_faces_of_characters",
+      "target": "src_db_character_groups_rs_vec",
+      "relation": "references",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "generic_arg",
+      "source_file": "src/db/character_groups.rs",
+      "source_location": "L209",
+      "weight": 1.0
+    },
+    {
       "source": "src_db_config_config_path",
       "target": "src_db_config_rs_pathbuf",
       "relation": "references",
@@ -44635,6 +44905,18 @@
       "context": "generic_arg",
       "source_file": "src/db/library.rs",
       "source_location": "L1384",
+      "weight": 1.0
+    },
+    {
+      "source": "src_db_person_groups_library_faces_of_persons",
+      "target": "src_db_person_groups_rs_vec",
+      "relation": "references",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "generic_arg",
+      "source_file": "src/db/person_groups.rs",
+      "source_location": "L207",
       "weight": 1.0
     },
     {
@@ -47326,6 +47608,18 @@
       "weight": 1.0
     },
     {
+      "source": "src_ui_charactersview_character_folder_faces",
+      "target": "src_ui_state_appstate",
+      "relation": "references",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "generic_arg",
+      "source_file": "src/ui/charactersview.rs",
+      "source_location": "L902",
+      "weight": 1.0
+    },
+    {
       "source": "src_ui_charactersview_charactersview",
       "target": "src_ui_charactersview_rs_rc",
       "relation": "references",
@@ -47430,7 +47724,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L556",
+      "source_location": "L523",
       "weight": 1.0
     },
     {
@@ -47442,7 +47736,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L556",
+      "source_location": "L523",
       "weight": 1.0
     },
     {
@@ -47454,7 +47748,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L406",
+      "source_location": "L407",
       "weight": 1.0
     },
     {
@@ -47466,7 +47760,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L406",
+      "source_location": "L407",
       "weight": 1.0
     },
     {
@@ -47478,7 +47772,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L652",
+      "source_location": "L615",
       "weight": 1.0
     },
     {
@@ -47526,7 +47820,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L620",
+      "source_location": "L583",
       "weight": 1.0
     },
     {
@@ -47550,7 +47844,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L724",
+      "source_location": "L699",
       "weight": 1.0
     },
     {
@@ -47562,7 +47856,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L724",
+      "source_location": "L699",
       "weight": 1.0
     },
     {
@@ -47586,7 +47880,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L692",
+      "source_location": "L655",
       "weight": 1.0
     },
     {
@@ -47598,7 +47892,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L682",
+      "source_location": "L645",
       "weight": 1.0
     },
     {
@@ -47610,7 +47904,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L604",
+      "source_location": "L567",
       "weight": 1.0
     },
     {
@@ -47622,7 +47916,19 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L660",
+      "source_location": "L623",
+      "weight": 1.0
+    },
+    {
+      "source": "src_ui_charactersview_fill_style_crop",
+      "target": "src_ui_state_appstate",
+      "relation": "references",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "generic_arg",
+      "source_file": "src/ui/charactersview.rs",
+      "source_location": "L867",
       "weight": 1.0
     },
     {
@@ -48810,7 +49116,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L37",
+      "source_location": "L36",
       "weight": 1.0
     },
     {
@@ -48822,7 +49128,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L37",
+      "source_location": "L36",
       "weight": 1.0
     },
     {
@@ -48834,7 +49140,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L37",
+      "source_location": "L36",
       "weight": 1.0
     },
     {
@@ -48846,7 +49152,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L112",
+      "source_location": "L111",
       "weight": 1.0
     },
     {
@@ -48858,7 +49164,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L112",
+      "source_location": "L111",
       "weight": 1.0
     },
     {
@@ -48870,7 +49176,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L265",
+      "source_location": "L264",
       "weight": 1.0
     },
     {
@@ -48882,7 +49188,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L265",
+      "source_location": "L264",
       "weight": 1.0
     },
     {
@@ -48894,7 +49200,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L323",
+      "source_location": "L321",
       "weight": 1.0
     },
     {
@@ -48906,7 +49212,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L323",
+      "source_location": "L321",
       "weight": 1.0
     },
     {
@@ -48918,7 +49224,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L136",
+      "source_location": "L135",
       "weight": 1.0
     },
     {
@@ -48930,19 +49236,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L158",
-      "weight": 1.0
-    },
-    {
-      "source": "src_ui_facesview_facesview_show_face_tile_menu",
-      "target": "src_ui_facesview_rs_self",
-      "relation": "references",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "generic_arg",
-      "source_file": "src/ui/facesview.rs",
-      "source_location": "L441",
+      "source_location": "L157",
       "weight": 1.0
     },
     {
@@ -48954,7 +49248,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L130",
+      "source_location": "L129",
       "weight": 1.0
     },
     {
@@ -48966,7 +49260,19 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L123",
+      "source_location": "L122",
+      "weight": 1.0
+    },
+    {
+      "source": "src_ui_facesview_person_folder_faces",
+      "target": "src_ui_state_appstate",
+      "relation": "references",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "generic_arg",
+      "source_file": "src/ui/facesview.rs",
+      "source_location": "L422",
       "weight": 1.0
     },
     {
@@ -55319,14 +55625,14 @@
     },
     {
       "source": "src_ui_facesview",
-      "target": "src_ui_state",
+      "target": "src_ui_state_appstate",
       "relation": "imports_from",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L27",
+      "source_location": "L26",
       "weight": 1.0
     },
     {
@@ -55543,6 +55849,18 @@
       "context": "import",
       "source_file": "src/ui/immich.rs",
       "source_location": "L7",
+      "weight": 1.0
+    },
+    {
+      "source": "src_ui_mosaic",
+      "target": "src_ui_mosaic_rs_hashmap",
+      "relation": "imports_from",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "src/ui/mosaic.rs",
+      "source_location": "L8",
       "weight": 1.0
     },
     {
@@ -56622,7 +56940,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L226",
+      "source_location": "L244",
       "weight": 1.0
     },
     {
@@ -57054,7 +57372,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L225",
+      "source_location": "L242",
       "weight": 1.0
     },
     {
@@ -59242,6 +59560,18 @@
       "weight": 1.0
     },
     {
+      "source": "src_ui_charactersview_character_folder_faces",
+      "target": "src_ui_charactersview_rs_rc",
+      "relation": "references",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "parameter_type",
+      "source_file": "src/ui/charactersview.rs",
+      "source_location": "L902",
+      "weight": 1.0
+    },
+    {
       "source": "src_ui_charactersview_charactersview_bind_state",
       "target": "src_ui_charactersview_rs_rc",
       "relation": "references",
@@ -59262,7 +59592,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L556",
+      "source_location": "L523",
       "weight": 1.0
     },
     {
@@ -59274,7 +59604,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L406",
+      "source_location": "L407",
       "weight": 1.0
     },
     {
@@ -59286,7 +59616,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L652",
+      "source_location": "L615",
       "weight": 1.0
     },
     {
@@ -59334,7 +59664,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L620",
+      "source_location": "L583",
       "weight": 1.0
     },
     {
@@ -59346,7 +59676,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L620",
+      "source_location": "L583",
       "weight": 1.0
     },
     {
@@ -59370,7 +59700,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L724",
+      "source_location": "L699",
       "weight": 1.0
     },
     {
@@ -59382,7 +59712,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L724",
+      "source_location": "L699",
       "weight": 1.0
     },
     {
@@ -59406,7 +59736,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L692",
+      "source_location": "L655",
       "weight": 1.0
     },
     {
@@ -59418,7 +59748,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L692",
+      "source_location": "L655",
       "weight": 1.0
     },
     {
@@ -59430,7 +59760,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L682",
+      "source_location": "L645",
       "weight": 1.0
     },
     {
@@ -59442,7 +59772,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L604",
+      "source_location": "L567",
       "weight": 1.0
     },
     {
@@ -59454,7 +59784,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L604",
+      "source_location": "L567",
       "weight": 1.0
     },
     {
@@ -59466,7 +59796,31 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L660",
+      "source_location": "L623",
+      "weight": 1.0
+    },
+    {
+      "source": "src_ui_charactersview_fill_style_crop",
+      "target": "src_ui_charactersview_rs_image",
+      "relation": "references",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "parameter_type",
+      "source_file": "src/ui/charactersview.rs",
+      "source_location": "L867",
+      "weight": 1.0
+    },
+    {
+      "source": "src_ui_charactersview_fill_style_crop",
+      "target": "src_ui_charactersview_rs_rc",
+      "relation": "references",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "parameter_type",
+      "source_file": "src/ui/charactersview.rs",
+      "source_location": "L867",
       "weight": 1.0
     },
     {
@@ -60786,7 +61140,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L112",
+      "source_location": "L111",
       "weight": 1.0
     },
     {
@@ -60798,7 +61152,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L265",
+      "source_location": "L264",
       "weight": 1.0
     },
     {
@@ -60810,7 +61164,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L323",
+      "source_location": "L321",
       "weight": 1.0
     },
     {
@@ -60822,7 +61176,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L136",
+      "source_location": "L135",
       "weight": 1.0
     },
     {
@@ -60834,31 +61188,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L158",
-      "weight": 1.0
-    },
-    {
-      "source": "src_ui_facesview_facesview_show_face_tile_menu",
-      "target": "src_ui_facesview_rs_gtkbox",
-      "relation": "references",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "parameter_type",
-      "source_file": "src/ui/facesview.rs",
-      "source_location": "L441",
-      "weight": 1.0
-    },
-    {
-      "source": "src_ui_facesview_facesview_show_face_tile_menu",
-      "target": "src_ui_facesview_rs_rc",
-      "relation": "references",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "parameter_type",
-      "source_file": "src/ui/facesview.rs",
-      "source_location": "L441",
+      "source_location": "L157",
       "weight": 1.0
     },
     {
@@ -60870,7 +61200,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L130",
+      "source_location": "L129",
       "weight": 1.0
     },
     {
@@ -60882,7 +61212,19 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L123",
+      "source_location": "L122",
+      "weight": 1.0
+    },
+    {
+      "source": "src_ui_facesview_person_folder_faces",
+      "target": "src_ui_facesview_rs_rc",
+      "relation": "references",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "parameter_type",
+      "source_file": "src/ui/facesview.rs",
+      "source_location": "L422",
       "weight": 1.0
     },
     {
@@ -61651,6 +61993,42 @@
       "context": "parameter_type",
       "source_file": "src/ui/immich.rs",
       "source_location": "L35",
+      "weight": 1.0
+    },
+    {
+      "source": "src_ui_mosaic_build",
+      "target": "src_ui_mosaic_rs_fn",
+      "relation": "references",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "parameter_type",
+      "source_file": "src/ui/mosaic.rs",
+      "source_location": "L91",
+      "weight": 1.0
+    },
+    {
+      "source": "src_ui_mosaic_build",
+      "target": "src_ui_mosaic_rs_image",
+      "relation": "references",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "parameter_type",
+      "source_file": "src/ui/mosaic.rs",
+      "source_location": "L91",
+      "weight": 1.0
+    },
+    {
+      "source": "src_ui_mosaic_pick_faces",
+      "target": "src_ui_mosaic_rs_hashmap",
+      "relation": "references",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "parameter_type",
+      "source_file": "src/ui/mosaic.rs",
+      "source_location": "L39",
       "weight": 1.0
     },
     {
@@ -64846,6 +65224,18 @@
       "weight": 1.0
     },
     {
+      "source": "src_db_character_groups_library_style_faces_of_characters",
+      "target": "src_db_character_groups_rs_result",
+      "relation": "references",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "return_type",
+      "source_file": "src/db/character_groups.rs",
+      "source_location": "L209",
+      "weight": 1.0
+    },
+    {
       "source": "src_db_character_groups_temp_lib",
       "target": "src_db_character_groups_library",
       "relation": "references",
@@ -64854,7 +65244,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L212",
+      "source_location": "L230",
       "weight": 1.0
     },
     {
@@ -64866,7 +65256,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L212",
+      "source_location": "L230",
       "weight": 1.0
     },
     {
@@ -66766,6 +67156,18 @@
       "weight": 1.0
     },
     {
+      "source": "src_db_person_groups_library_faces_of_persons",
+      "target": "src_db_person_groups_rs_result",
+      "relation": "references",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "return_type",
+      "source_file": "src/db/person_groups.rs",
+      "source_location": "L207",
+      "weight": 1.0
+    },
+    {
       "source": "src_db_person_groups_library_groups_of_person",
       "target": "src_db_person_groups_rs_result",
       "relation": "references",
@@ -66870,7 +67272,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L211",
+      "source_location": "L228",
       "weight": 1.0
     },
     {
@@ -66882,7 +67284,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L211",
+      "source_location": "L228",
       "weight": 1.0
     },
     {
@@ -69634,6 +70036,18 @@
       "weight": 1.0
     },
     {
+      "source": "src_ui_charactersview_character_folder_faces",
+      "target": "src_ui_charactersview_rs_vec",
+      "relation": "references",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "return_type",
+      "source_file": "src/ui/charactersview.rs",
+      "source_location": "L902",
+      "weight": 1.0
+    },
+    {
       "source": "src_ui_charactersview_charactersview_build_group_tile",
       "target": "src_ui_charactersview_rs_gtkbox",
       "relation": "references",
@@ -69642,7 +70056,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L556",
+      "source_location": "L523",
       "weight": 1.0
     },
     {
@@ -69654,7 +70068,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L556",
+      "source_location": "L523",
       "weight": 1.0
     },
     {
@@ -69666,7 +70080,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L406",
+      "source_location": "L407",
       "weight": 1.0
     },
     {
@@ -69678,7 +70092,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L406",
+      "source_location": "L407",
       "weight": 1.0
     },
     {
@@ -69918,7 +70332,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L265",
+      "source_location": "L264",
       "weight": 1.0
     },
     {
@@ -69930,7 +70344,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L323",
+      "source_location": "L321",
       "weight": 1.0
     },
     {
@@ -69942,7 +70356,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L46",
+      "source_location": "L45",
       "weight": 1.0
     },
     {
@@ -69954,7 +70368,19 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L117",
+      "source_location": "L116",
+      "weight": 1.0
+    },
+    {
+      "source": "src_ui_facesview_person_folder_faces",
+      "target": "src_ui_facesview_rs_vec",
+      "relation": "references",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "return_type",
+      "source_file": "src/ui/facesview.rs",
+      "source_location": "L422",
       "weight": 1.0
     },
     {
@@ -70375,6 +70801,30 @@
       "context": "return_type",
       "source_file": "src/ui/immich.rs",
       "source_location": "L35",
+      "weight": 1.0
+    },
+    {
+      "source": "src_ui_mosaic_build",
+      "target": "src_ui_grid_grid",
+      "relation": "references",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "return_type",
+      "source_file": "src/ui/mosaic.rs",
+      "source_location": "L91",
+      "weight": 1.0
+    },
+    {
+      "source": "src_ui_mosaic_pick_faces",
+      "target": "src_ui_mosaic_rs_vec",
+      "relation": "references",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "return_type",
+      "source_file": "src/ui/mosaic.rs",
+      "source_location": "L39",
       "weight": 1.0
     },
     {
@@ -72201,7 +72651,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L212",
+      "source_location": "L230",
       "weight": 1.0
     },
     {
@@ -72212,7 +72662,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L226",
+      "source_location": "L244",
       "weight": 1.0
     },
     {
@@ -72223,7 +72673,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L233",
+      "source_location": "L251",
       "weight": 1.0
     },
     {
@@ -72234,7 +72684,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L245",
+      "source_location": "L263",
       "weight": 1.0
     },
     {
@@ -72245,7 +72695,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L258",
+      "source_location": "L276",
       "weight": 1.0
     },
     {
@@ -72256,7 +72706,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L276",
+      "source_location": "L294",
       "weight": 1.0
     },
     {
@@ -72267,7 +72717,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L294",
+      "source_location": "L312",
       "weight": 1.0
     },
     {
@@ -72278,7 +72728,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/db/character_groups.rs",
-      "source_location": "L306",
+      "source_location": "L324",
       "weight": 1.0
     },
     {
@@ -73059,7 +73509,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L211",
+      "source_location": "L228",
       "weight": 1.0
     },
     {
@@ -73070,7 +73520,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L225",
+      "source_location": "L242",
       "weight": 1.0
     },
     {
@@ -73081,7 +73531,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L232",
+      "source_location": "L249",
       "weight": 1.0
     },
     {
@@ -73092,7 +73542,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L244",
+      "source_location": "L261",
       "weight": 1.0
     },
     {
@@ -73103,7 +73553,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L258",
+      "source_location": "L275",
       "weight": 1.0
     },
     {
@@ -73114,7 +73564,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L276",
+      "source_location": "L293",
       "weight": 1.0
     },
     {
@@ -73125,7 +73575,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L295",
+      "source_location": "L312",
       "weight": 1.0
     },
     {
@@ -73136,7 +73586,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/db/person_groups.rs",
-      "source_location": "L307",
+      "source_location": "L324",
       "weight": 1.0
     },
     {
@@ -76572,6 +77022,28 @@
       "weight": 1.0
     },
     {
+      "source": "src_ui_charactersview",
+      "target": "src_ui_charactersview_fill_style_crop",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/ui/charactersview.rs",
+      "source_location": "L867",
+      "weight": 1.0
+    },
+    {
+      "source": "src_ui_charactersview",
+      "target": "src_ui_charactersview_character_folder_faces",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/ui/charactersview.rs",
+      "source_location": "L902",
+      "weight": 1.0
+    },
+    {
       "source": "src_ui_controller",
       "target": "src_ui_controller_controller",
       "relation": "contains",
@@ -77228,7 +77700,18 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L31",
+      "source_location": "L30",
+      "weight": 1.0
+    },
+    {
+      "source": "src_ui_facesview",
+      "target": "src_ui_facesview_person_folder_faces",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/ui/facesview.rs",
+      "source_location": "L422",
       "weight": 1.0
     },
     {
@@ -77746,6 +78229,61 @@
       "confidence_score": 1.0,
       "source_file": "src/ui/immich.rs",
       "source_location": "L945",
+      "weight": 1.0
+    },
+    {
+      "source": "src_ui_mosaic",
+      "target": "src_ui_mosaic_reps_first_then_fill_without_repeats",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/ui/mosaic.rs",
+      "source_location": "L115",
+      "weight": 1.0
+    },
+    {
+      "source": "src_ui_mosaic",
+      "target": "src_ui_mosaic_stable_for_same_count_and_short_pool",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/ui/mosaic.rs",
+      "source_location": "L132",
+      "weight": 1.0
+    },
+    {
+      "source": "src_ui_mosaic",
+      "target": "src_ui_mosaic_rng",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/ui/mosaic.rs",
+      "source_location": "L17",
+      "weight": 1.0
+    },
+    {
+      "source": "src_ui_mosaic",
+      "target": "src_ui_mosaic_pick_faces",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/ui/mosaic.rs",
+      "source_location": "L39",
+      "weight": 1.0
+    },
+    {
+      "source": "src_ui_mosaic",
+      "target": "src_ui_mosaic_build",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/ui/mosaic.rs",
+      "source_location": "L91",
       "weight": 1.0
     },
     {
@@ -80082,6 +80620,17 @@
     },
     {
       "source": "src_db_character_groups_library",
+      "target": "src_db_character_groups_library_style_faces_of_characters",
+      "relation": "method",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/db/character_groups.rs",
+      "source_location": "L209",
+      "weight": 1.0
+    },
+    {
+      "source": "src_db_character_groups_library",
       "target": "src_db_character_groups_library_rename_character_group",
       "relation": "method",
       "_origin": "ast",
@@ -81585,6 +82134,17 @@
       "confidence_score": 1.0,
       "source_file": "src/db/person_groups.rs",
       "source_location": "L170",
+      "weight": 1.0
+    },
+    {
+      "source": "src_db_person_groups_library",
+      "target": "src_db_person_groups_library_faces_of_persons",
+      "relation": "method",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/db/person_groups.rs",
+      "source_location": "L207",
       "weight": 1.0
     },
     {
@@ -83575,7 +84135,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L406",
+      "source_location": "L407",
       "weight": 1.0
     },
     {
@@ -83586,7 +84146,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L556",
+      "source_location": "L523",
       "weight": 1.0
     },
     {
@@ -83597,7 +84157,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L604",
+      "source_location": "L567",
       "weight": 1.0
     },
     {
@@ -83608,7 +84168,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L620",
+      "source_location": "L583",
       "weight": 1.0
     },
     {
@@ -83619,7 +84179,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L652",
+      "source_location": "L615",
       "weight": 1.0
     },
     {
@@ -83630,7 +84190,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L660",
+      "source_location": "L623",
       "weight": 1.0
     },
     {
@@ -83641,7 +84201,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L682",
+      "source_location": "L645",
       "weight": 1.0
     },
     {
@@ -83652,7 +84212,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L692",
+      "source_location": "L655",
       "weight": 1.0
     },
     {
@@ -83663,7 +84223,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L724",
+      "source_location": "L699",
       "weight": 1.0
     },
     {
@@ -84103,7 +84663,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L112",
+      "source_location": "L111",
       "weight": 1.0
     },
     {
@@ -84114,7 +84674,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L117",
+      "source_location": "L116",
       "weight": 1.0
     },
     {
@@ -84125,7 +84685,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L123",
+      "source_location": "L122",
       "weight": 1.0
     },
     {
@@ -84136,7 +84696,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L130",
+      "source_location": "L129",
       "weight": 1.0
     },
     {
@@ -84147,7 +84707,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L136",
+      "source_location": "L135",
       "weight": 1.0
     },
     {
@@ -84158,7 +84718,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L158",
+      "source_location": "L157",
       "weight": 1.0
     },
     {
@@ -84169,7 +84729,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L265",
+      "source_location": "L264",
       "weight": 1.0
     },
     {
@@ -84180,18 +84740,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L323",
-      "weight": 1.0
-    },
-    {
-      "source": "src_ui_facesview_facesview",
-      "target": "src_ui_facesview_facesview_show_face_tile_menu",
-      "relation": "method",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "src/ui/facesview.rs",
-      "source_location": "L441",
+      "source_location": "L321",
       "weight": 1.0
     },
     {
@@ -84202,7 +84751,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L46",
+      "source_location": "L45",
       "weight": 1.0
     },
     {
@@ -85050,6 +85599,28 @@
       "confidence_score": 1.0,
       "source_file": "src/ui/immich.rs",
       "source_location": "L35",
+      "weight": 1.0
+    },
+    {
+      "source": "src_ui_mosaic_rng",
+      "target": "src_ui_mosaic_rng_next",
+      "relation": "method",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/ui/mosaic.rs",
+      "source_location": "L20",
+      "weight": 1.0
+    },
+    {
+      "source": "src_ui_mosaic_rng",
+      "target": "src_ui_mosaic_rng_below",
+      "relation": "method",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/ui/mosaic.rs",
+      "source_location": "L28",
       "weight": 1.0
     },
     {
@@ -87650,7 +88221,7 @@
       "weight": 1.0
     },
     {
-      "source": "src_ui_charactersview_charactersview_build_group_tile",
+      "source": "src_ui_charactersview_fill_style_crop",
       "target": "src_ui_util_texture_from_bytes",
       "relation": "calls",
       "_origin": "ast",
@@ -87658,23 +88229,11 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L574",
+      "source_location": "L872",
       "weight": 1.0
     },
     {
-      "source": "src_ui_charactersview_charactersview_build_tile",
-      "target": "src_ui_util_texture_from_bytes",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "INFERRED",
-      "confidence_score": 0.85,
-      "context": "call",
-      "source_file": "src/ui/charactersview.rs",
-      "source_location": "L436",
-      "weight": 1.0
-    },
-    {
-      "source": "src_ui_charactersview_charactersview_build_tile",
+      "source": "src_ui_charactersview_fill_style_crop",
       "target": "src_ui_state_queue_crop_job",
       "relation": "calls",
       "_origin": "ast",
@@ -87682,7 +88241,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "src/ui/charactersview.rs",
-      "source_location": "L449",
+      "source_location": "L882",
       "weight": 1.0
     },
     {
@@ -87862,7 +88421,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L282",
+      "source_location": "L285",
       "weight": 1.0
     },
     {
@@ -87874,19 +88433,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "src/ui/facesview.rs",
-      "source_location": "L342",
-      "weight": 1.0
-    },
-    {
-      "source": "src_ui_facesview_facesview_show_face_tile_menu",
-      "target": "src_ui_state_show_error",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "INFERRED",
-      "confidence_score": 0.85,
-      "context": "call",
-      "source_file": "src/ui/facesview.rs",
-      "source_location": "L453",
+      "source_location": "L340",
       "weight": 1.0
     },
     {
@@ -89321,5 +89868,5 @@
       "source_file": "HANDOFF.md"
     }
   ],
-  "built_at_commit": "760765cbb98182aba519d98a19d1b2841655fd72"
+  "built_at_commit": "099055c546596a4940c94d89f02172333040e490"
 }

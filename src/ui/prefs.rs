@@ -99,6 +99,10 @@ pub const DEFAULT_EXPORT_JPEG_QUALITY: i32 = 90;
 pub const KEY_SLIDESHOW_SECS: &str = "slideshow.secs";
 pub const KEY_SLIDESHOW_SHUFFLE: &str = "slideshow.shuffle";
 pub const KEY_SLIDESHOW_LOOP: &str = "slideshow.loop";
+/// The sort order of the unidentified groups in the Faces view.
+pub const KEY_FACES_UNNAMED_SORT: &str = "facesview.unnamed_sort";
+/// The sort order of the unidentified groups in the Characters view.
+pub const KEY_CHARS_UNNAMED_SORT: &str = "charactersview.unnamed_sort";
 /// Default per-image slideshow duration in seconds.
 pub const DEFAULT_SLIDESHOW_SECS: i32 = 4;
 

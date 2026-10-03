@@ -19,11 +19,13 @@ use std::rc::Rc;
 use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{
-    Align, Box as GtkBox, Button, FlowBox, GestureClick, Image, Label, Orientation, PolicyType,
-    PopoverMenu, ScrolledWindow, SelectionMode,
+    Box as GtkBox, Button, FlowBox, GestureClick, Image, Label, Orientation, PolicyType,
+    PopoverMenu, ScrolledWindow,
 };
 use gtk4::gio;
 
+use super::groupsort::{sort_groups, tile_flow, GroupSort, UnnamedHeader};
+use super::prefs::KEY_CHARS_UNNAMED_SORT;
 use super::state::{AppState, CropJob, queue_crop_job};
 use super::util::texture_from_bytes;
 
@@ -56,6 +58,10 @@ pub struct CharactersView {
     title: Label,
     back_btn: Button,
     flow: FlowBox,
+    /// The tiles of the unidentified groups, below the line.
+    uflow: FlowBox,
+    /// The line, title, and sort menu above `uflow`.
+    uheader: UnnamedHeader,
     empty: Label,
     state: RefCell<Option<Rc<AppState>>>,
     /// The character group currently browsed, or `0` for the top-level
@@ -109,17 +115,23 @@ impl CharactersView {
         bar.append(&sel_bar);
         root.append(&bar);
 
-        let flow = FlowBox::new();
-        flow.set_selection_mode(SelectionMode::None);
-        flow.set_max_children_per_line(8);
-        flow.set_min_children_per_line(2);
-        flow.set_row_spacing(8);
-        flow.set_column_spacing(8);
-        flow.set_margin_top(8);
-        flow.set_margin_bottom(8);
-        flow.set_margin_start(8);
-        flow.set_margin_end(8);
-        flow.set_valign(Align::Start);
+        let flow = tile_flow();
+        let uflow = tile_flow();
+        // The sort menu needs the view, so the view is set after it is built.
+        let weak: Rc<RefCell<std::rc::Weak<CharactersView>>> =
+            Rc::new(RefCell::new(std::rc::Weak::new()));
+        let uheader = {
+            let weak = weak.clone();
+            UnnamedHeader::new(GroupSort::MostImages, move |s| {
+                if let Some(v) = weak.borrow().upgrade() {
+                    if let Some(st) = v.state.borrow().clone() {
+                        let _ = st.lib.set_setting(KEY_CHARS_UNNAMED_SORT, s.key());
+                    }
+                    v.reload();
+                }
+            })
+        };
+        uheader.root.set_visible(false);
 
         let empty = Label::new(Some(
             "No stylised faces yet. Turn on stylised face detection in \
@@ -137,6 +149,8 @@ impl CharactersView {
         let inner = GtkBox::new(Orientation::Vertical, 0);
         inner.append(&empty);
         inner.append(&flow);
+        inner.append(&uheader.root);
+        inner.append(&uflow);
         scroll.set_child(Some(&inner));
         root.append(&scroll);
 
@@ -145,6 +159,8 @@ impl CharactersView {
             title,
             back_btn: back_btn.clone(),
             flow,
+            uflow,
+            uheader,
             empty,
             state: RefCell::new(None),
             scope: RefCell::new(0),
@@ -155,6 +171,7 @@ impl CharactersView {
             sel_label,
         });
 
+        *weak.borrow_mut() = Rc::downgrade(&view);
         {
             let this = view.clone();
             skip_btn.connect_clicked(move |_| this.skip_selected());
@@ -220,6 +237,9 @@ impl CharactersView {
         while let Some(child) = self.flow.first_child() {
             self.flow.remove(&child);
         }
+        while let Some(child) = self.uflow.first_child() {
+            self.uflow.remove(&child);
+        }
         self.tiles.borrow_mut().clear();
         let t = std::time::Instant::now();
         self.refresh();
@@ -261,10 +281,20 @@ impl CharactersView {
                 .into_iter()
                 .filter(|(c, _)| !grouped.contains(&c.id))
                 .collect();
-            (
-                characters,
-                state.lib.unnamed_style_clusters().unwrap_or_default(),
-            )
+            let sort = GroupSort::from_key(
+                &state.lib.get_setting(KEY_CHARS_UNNAMED_SORT, "").unwrap_or_default(),
+            );
+            self.uheader.set_sort(sort);
+            // Compute the sort only on a full reload (no tiles yet). A
+            // refresh keeps existing tiles in place, so it needs no order.
+            let raw = state.lib.unnamed_style_clusters().unwrap_or_default();
+            let clusters = if self.tiles.borrow().is_empty() {
+                let info = state.lib.unnamed_group_info(true).unwrap_or_default();
+                sort_groups(raw, &info, sort)
+            } else {
+                raw
+            };
+            (characters, clusters)
         } else {
             let member_ids = members.get(&scope).cloned().unwrap_or_default();
             let characters: Vec<_> = all_characters
@@ -274,9 +304,14 @@ impl CharactersView {
             (characters, Vec::new())
         };
 
+        self.uheader.set_count(clusters.len());
+        self.uflow.set_visible(!clusters.is_empty());
         if subgroups.is_empty() && characters.is_empty() && clusters.is_empty() {
             while let Some(child) = self.flow.first_child() {
                 self.flow.remove(&child);
+            }
+            while let Some(child) = self.uflow.first_child() {
+                self.uflow.remove(&child);
             }
             self.tiles.borrow_mut().clear();
             self.empty.set_visible(true);
@@ -284,7 +319,7 @@ impl CharactersView {
             return;
         }
         self.empty.set_visible(false);
-        self.flow.set_visible(true);
+        self.flow.set_visible(!(subgroups.is_empty() && characters.is_empty()));
 
         // The wanted set, in stable display order: sub-groups first (like
         // folders in a file browser), then named characters, then unnamed
@@ -315,7 +350,7 @@ impl CharactersView {
                 if still {
                     i += 1;
                 } else {
-                    self.flow.remove(&tiles[i].root);
+                    self.flow_for(tiles[i].key).remove(&tiles[i].root);
                     tiles.remove(i);
                 }
             }
@@ -372,14 +407,29 @@ impl CharactersView {
                     name,
                     faces,
                 };
+                // `tiles` holds the top tiles first, then the cluster tiles.
+                // A cluster tile index in `uflow` is its index minus the
+                // number of top tiles.
+                let top = self
+                    .tiles
+                    .borrow()
+                    .iter()
+                    .filter(|t| !matches!(t.key, TileKey::Cluster(_)))
+                    .count();
+                let is_cluster = matches!(key, TileKey::Cluster(_));
+                let flow = self.flow_for(key);
                 if let Some(idx) = rebuild_at {
                     let mut tiles = self.tiles.borrow_mut();
-                    self.flow.remove(&tiles[idx].root);
-                    self.flow.insert(&entry.root, idx as i32);
+                    let pos = if is_cluster { idx - top } else { idx };
+                    flow.remove(&tiles[idx].root);
+                    flow.insert(&entry.root, pos as i32);
                     tiles[idx] = entry;
-                } else {
-                    self.flow.append(&entry.root);
+                } else if is_cluster {
+                    flow.append(&entry.root);
                     self.tiles.borrow_mut().push(entry);
+                } else {
+                    flow.append(&entry.root);
+                    self.tiles.borrow_mut().insert(top, entry);
                 }
             }
         }
@@ -399,6 +449,14 @@ impl CharactersView {
             }
         }
         self.update_selection_ui();
+    }
+
+    /// The FlowBox that holds the tile with `key`.
+    fn flow_for(&self, key: TileKey) -> &FlowBox {
+        match key {
+            TileKey::Cluster(_) => &self.uflow,
+            _ => &self.flow,
+        }
     }
 
     /// Build one tile. Returns the tile root and its count label. The count
