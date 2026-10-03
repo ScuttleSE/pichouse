@@ -333,28 +333,20 @@ impl Library {
     /// re-groups these faces under a character again. Photos on disk are not
     /// affected.
     pub fn delete_character_and_ban(&self, id: i64) -> Result<()> {
-        let conn = self.lock();
-        let face_ids: Vec<i64> = {
-            let mut stmt =
-                conn.prepare("SELECT id FROM style_faces WHERE character_id = ?1")?;
-            let rows = stmt.query_map(params![id], |r| r.get::<_, i64>(0))?;
-            let mut v = Vec::new();
-            for row in rows {
-                v.push(row?);
-            }
-            v
-        };
-        for fid in &face_ids {
-            conn.execute(
-                "INSERT OR IGNORE INTO style_face_rejections(face_id, character_id) VALUES(?1, ?2)",
-                params![fid, id],
-            )?;
-            conn.execute(
-                "UPDATE style_faces SET character_id = NULL, confirmed = 0, cluster_id = NULL WHERE id = ?1",
-                params![fid],
-            )?;
-        }
-        conn.execute("DELETE FROM characters WHERE id = ?1", params![id])?;
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        tx.execute(
+            "INSERT OR IGNORE INTO style_face_rejections(face_id, character_id) \
+             SELECT id, ?1 FROM style_faces WHERE character_id = ?1",
+            params![id],
+        )?;
+        tx.execute(
+            "UPDATE style_faces SET character_id = NULL, confirmed = 0, cluster_id = NULL \
+             WHERE character_id = ?1",
+            params![id],
+        )?;
+        tx.execute("DELETE FROM characters WHERE id = ?1", params![id])?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -610,27 +602,19 @@ impl Library {
     /// character link, loses its cluster id, and records a rejection. A
     /// re-cluster never groups these faces under this character again.
     pub fn ban_photo_from_character(&self, photo_id: i64, character_id: i64) -> Result<()> {
-        let conn = self.lock();
-        let face_ids: Vec<i64> = {
-            let mut stmt = conn
-                .prepare("SELECT id FROM style_faces WHERE photo_id = ?1 AND character_id = ?2")?;
-            let rows = stmt.query_map(params![photo_id, character_id], |r| r.get::<_, i64>(0))?;
-            let mut v = Vec::new();
-            for row in rows {
-                v.push(row?);
-            }
-            v
-        };
-        for fid in &face_ids {
-            conn.execute(
-                "INSERT OR IGNORE INTO style_face_rejections(face_id, character_id) VALUES(?1, ?2)",
-                params![fid, character_id],
-            )?;
-            conn.execute(
-                "UPDATE style_faces SET character_id = NULL, confirmed = 0, cluster_id = NULL WHERE id = ?1",
-                params![fid],
-            )?;
-        }
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        tx.execute(
+            "INSERT OR IGNORE INTO style_face_rejections(face_id, character_id) \
+             SELECT id, ?2 FROM style_faces WHERE photo_id = ?1 AND character_id = ?2",
+            params![photo_id, character_id],
+        )?;
+        tx.execute(
+            "UPDATE style_faces SET character_id = NULL, confirmed = 0, cluster_id = NULL \
+             WHERE photo_id = ?1 AND character_id = ?2",
+            params![photo_id, character_id],
+        )?;
+        tx.commit()?;
         Ok(())
     }
 

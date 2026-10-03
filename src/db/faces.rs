@@ -420,29 +420,20 @@ impl Library {
     /// re-groups these faces under a person again. Photos on disk are not
     /// affected.
     pub fn delete_person_and_ban(&self, id: i64) -> Result<()> {
-        let conn = self.lock();
-        // Collect the person's face ids first.
-        let face_ids: Vec<i64> = {
-            let mut stmt =
-                conn.prepare("SELECT id FROM faces WHERE person_id = ?1")?;
-            let rows = stmt.query_map(params![id], |r| r.get::<_, i64>(0))?;
-            let mut v = Vec::new();
-            for row in rows {
-                v.push(row?);
-            }
-            v
-        };
-        for fid in &face_ids {
-            conn.execute(
-                "INSERT OR IGNORE INTO face_rejections(face_id, person_id) VALUES(?1, ?2)",
-                params![fid, id],
-            )?;
-            conn.execute(
-                "UPDATE faces SET person_id = NULL, confirmed = 0, cluster_id = NULL WHERE id = ?1",
-                params![fid],
-            )?;
-        }
-        conn.execute("DELETE FROM persons WHERE id = ?1", params![id])?;
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        tx.execute(
+            "INSERT OR IGNORE INTO face_rejections(face_id, person_id) \
+             SELECT id, ?1 FROM faces WHERE person_id = ?1",
+            params![id],
+        )?;
+        tx.execute(
+            "UPDATE faces SET person_id = NULL, confirmed = 0, cluster_id = NULL \
+             WHERE person_id = ?1",
+            params![id],
+        )?;
+        tx.execute("DELETE FROM persons WHERE id = ?1", params![id])?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -883,10 +874,15 @@ pub(super) fn ignore_group(
             conn.execute(&base, params![key])?;
         }
         Some(ids) => {
-            let mut stmt = conn.prepare(&format!("{base} AND photo_id = ?2"))?;
-            for pid in ids {
-                stmt.execute(params![key, pid])?;
+            // One transaction for all photos. The caller holds the lock.
+            let tx = conn.unchecked_transaction()?;
+            {
+                let mut stmt = tx.prepare(&format!("{base} AND photo_id = ?2"))?;
+                for pid in ids {
+                    stmt.execute(params![key, pid])?;
+                }
             }
+            tx.commit()?;
         }
     }
     Ok(())
@@ -895,11 +891,17 @@ pub(super) fn ignore_group(
 /// Un-ignore every ignored face of `table` in the given photos. The faces have
 /// no cluster. The next regroup groups them again.
 pub(super) fn unignore_in(conn: &rusqlite::Connection, table: &str, photo_ids: &[i64]) -> Result<()> {
-    let mut stmt =
-        conn.prepare(&format!("UPDATE {table} SET ignored = 0 WHERE photo_id = ?1 AND ignored = 1"))?;
-    for pid in photo_ids {
-        stmt.execute(params![pid])?;
+    // One transaction for all photos. The caller holds the lock.
+    let tx = conn.unchecked_transaction()?;
+    {
+        let mut stmt = tx.prepare(&format!(
+            "UPDATE {table} SET ignored = 0 WHERE photo_id = ?1 AND ignored = 1"
+        ))?;
+        for pid in photo_ids {
+            stmt.execute(params![pid])?;
+        }
     }
+    tx.commit()?;
     Ok(())
 }
 
@@ -1296,6 +1298,46 @@ mod tests {
         assert_eq!(live[0].bbox_x, 500);
         assert_eq!(lib.ignored_face_boxes(p1).unwrap().len(), 1);
         assert!(lib.photos_needing_face_scan(10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn delete_and_ban_rejects_every_face() {
+        let lib = temp_lib();
+        let p1 = add_photo(&lib, "b");
+        let a = lib.create_person("A").unwrap();
+        let ch = lib.create_character("C").unwrap();
+        for _ in 0..3 {
+            let f = lib
+                .insert_face(&Face { photo_id: p1, cluster_id: 4, ..Default::default() })
+                .unwrap();
+            lib.set_face_person(f, a).unwrap();
+            let s = lib
+                .insert_style_face(&crate::model::StyleFace {
+                    photo_id: p1,
+                    cluster_id: 4,
+                    ..Default::default()
+                })
+                .unwrap();
+            lib.set_style_face_character(s, ch).unwrap();
+        }
+        lib.delete_person_and_ban(a).unwrap();
+        lib.ban_photo_from_character(p1, ch).unwrap();
+        let conn = lib.lock();
+        let n = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
+        assert_eq!(n("SELECT COUNT(*) FROM style_face_rejections"), 3);
+        assert_eq!(n("SELECT COUNT(*) FROM persons"), 0);
+        assert_eq!(
+            n("SELECT COUNT(*) FROM faces WHERE person_id IS NOT NULL OR cluster_id IS NOT NULL"),
+            0
+        );
+        assert_eq!(
+            n("SELECT COUNT(*) FROM style_faces \
+               WHERE character_id IS NOT NULL OR cluster_id IS NOT NULL"),
+            0
+        );
+        drop(conn);
+        lib.delete_character_and_ban(ch).unwrap();
+        assert!(lib.characters().unwrap().is_empty());
     }
 
     #[test]
