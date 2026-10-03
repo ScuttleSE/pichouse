@@ -283,9 +283,9 @@ fn migrate(conn: &Connection) -> Result<()> {
             "CREATE INDEX IF NOT EXISTS idx_var_group ON virtual_album_rules(group_id);",
         )?;
     }
-    conn.execute_batch(
-        "CREATE INDEX IF NOT EXISTS idx_photos_scan_state ON photos(scan_state);",
-    )?;
+    // idx_photos_scan_added (below) starts with scan_state, so it replaces
+    // the single-column index.
+    conn.execute_batch("DROP INDEX IF EXISTS idx_photos_scan_state;")?;
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_photos_added_at ON photos(added_at);",
     )?;
@@ -293,6 +293,25 @@ fn migrate(conn: &Connection) -> Result<()> {
     // missing rows, so the count does not read the full table.
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_photos_missing ON photos(missing) WHERE missing = 1;",
+    )?;
+    // The face scan queries filter on scan_state and missing and sort by
+    // added_at. This index gives the rows in order, so LIMIT stops early.
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_photos_scan_added \
+         ON photos(scan_state, missing, added_at);",
+    )?;
+    // Partial indexes for the ignored faces. The sidebar counts them on each
+    // reload. The `ignored` column comes from migrate, so the index is here.
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_faces_ignored ON faces(photo_id) WHERE ignored = 1;
+         CREATE INDEX IF NOT EXISTS idx_style_faces_ignored ON style_faces(photo_id) WHERE ignored = 1;",
+    )?;
+    // The composite indexes in SCHEMA replace these single-column indexes.
+    conn.execute_batch(
+        "DROP INDEX IF EXISTS idx_faces_person;
+         DROP INDEX IF EXISTS idx_faces_cluster;
+         DROP INDEX IF EXISTS idx_style_faces_character;
+         DROP INDEX IF EXISTS idx_style_faces_cluster;",
     )?;
     migrate_face_stats(conn)?;
     Ok(())

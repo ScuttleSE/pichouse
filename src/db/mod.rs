@@ -4,6 +4,8 @@
 //! (thumbnail blobs).
 
 mod albums;
+#[cfg(test)]
+mod bench;
 mod character_groups;
 mod config;
 mod duplicates;

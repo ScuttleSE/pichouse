@@ -53,8 +53,7 @@ CREATE TABLE IF NOT EXISTS photos (
 );
 
 CREATE INDEX IF NOT EXISTS idx_photos_folder ON photos(folder_id);
--- Fast selection of photos still needing Phase 2 enrichment.
-CREATE INDEX IF NOT EXISTS idx_photos_scan_state ON photos(scan_state);
+-- idx_photos_scan_added (created in migrate) serves the scan_state filters.
 -- Fast selection of recently added photos for the New Files view.
 CREATE INDEX IF NOT EXISTS idx_photos_added_at ON photos(added_at);
 -- Fast bucketing of byte-identical photos for the duplicate finder.
@@ -305,8 +304,10 @@ CREATE TABLE IF NOT EXISTS faces (
 );
 
 CREATE INDEX IF NOT EXISTS idx_faces_photo ON faces(photo_id);
-CREATE INDEX IF NOT EXISTS idx_faces_person ON faces(person_id);
-CREATE INDEX IF NOT EXISTS idx_faces_cluster ON faces(cluster_id);
+-- Composite indexes. They serve the owner and group lookups and the
+-- "best face" sort by det_score with no temp sort.
+CREATE INDEX IF NOT EXISTS idx_faces_person_score ON faces(person_id, det_score);
+CREATE INDEX IF NOT EXISTS idx_faces_cluster_score ON faces(cluster_id, det_score);
 
 -- Per-photo face-scan state, mirroring the two-phase scan_state idea. A photo
 -- with no row here has not had a detection pass. state: 0 = pending,
@@ -371,8 +372,8 @@ CREATE TABLE IF NOT EXISTS style_faces (
 );
 
 CREATE INDEX IF NOT EXISTS idx_style_faces_photo ON style_faces(photo_id);
-CREATE INDEX IF NOT EXISTS idx_style_faces_character ON style_faces(character_id);
-CREATE INDEX IF NOT EXISTS idx_style_faces_cluster ON style_faces(cluster_id);
+CREATE INDEX IF NOT EXISTS idx_style_faces_character_score ON style_faces(character_id, det_score);
+CREATE INDEX IF NOT EXISTS idx_style_faces_cluster_score ON style_faces(cluster_id, det_score);
 
 -- Per-photo stylised-face-scan state. state: 0 = pending, 1 = scanning,
 -- 2 = done, 3 = error.
