@@ -466,6 +466,16 @@ impl Library {
         Ok(v)
     }
 
+    /// The names of all owners by id. `style` selects the characters, else
+    /// the persons. It counts no photos, unlike `persons` and `characters`.
+    pub fn owner_names(&self, style: bool) -> Result<HashMap<i64, String>> {
+        let table = if style { "characters" } else { "persons" };
+        let conn = self.read_lock();
+        let mut stmt = conn.prepare(&format!("SELECT id, name FROM {table}"))?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
     /// The number of distinct photos that contain a face of a person.
     pub fn person_photo_count(&self, id: i64) -> Result<i64> {
         let conn = self.lock();

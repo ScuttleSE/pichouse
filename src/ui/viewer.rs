@@ -521,20 +521,14 @@ impl Viewer {
                     ..Default::default()
                 })
                 .collect();
-            let mut names = std::collections::HashMap::new();
-            for (c, _) in state.lib.characters().unwrap_or_default() {
-                names.insert(c.id, c.name);
-            }
+            let names = state.lib.owner_names(true).unwrap_or_default();
             *self.faces.borrow_mut() = faces;
             *self.person_names.borrow_mut() = names;
         } else {
             self.highlight_person_id.set(state.grid().current_person().unwrap_or(0));
             self.highlight_cluster_id.set(state.grid().current_cluster().unwrap_or(0));
             let faces = state.lib.faces_for_photo(photo.id).unwrap_or_default();
-            let mut names = std::collections::HashMap::new();
-            for (p, _) in state.lib.persons().unwrap_or_default() {
-                names.insert(p.id, p.name);
-            }
+            let names = state.lib.owner_names(false).unwrap_or_default();
             *self.faces.borrow_mut() = faces;
             *self.person_names.borrow_mut() = names;
         }

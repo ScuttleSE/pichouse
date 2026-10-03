@@ -310,6 +310,8 @@ CREATE INDEX IF NOT EXISTS idx_faces_photo ON faces(photo_id);
 -- "best face" sort by det_score with no temp sort.
 CREATE INDEX IF NOT EXISTS idx_faces_person_score ON faces(person_id, det_score);
 CREATE INDEX IF NOT EXISTS idx_faces_cluster_score ON faces(cluster_id, det_score);
+-- Covers the per-person COUNT(DISTINCT photo_id) in persons().
+CREATE INDEX IF NOT EXISTS idx_faces_person_photo ON faces(person_id, photo_id);
 
 -- Per-photo face-scan state, mirroring the two-phase scan_state idea. A photo
 -- with no row here has not had a detection pass. state: 0 = pending,
@@ -376,6 +378,8 @@ CREATE TABLE IF NOT EXISTS style_faces (
 CREATE INDEX IF NOT EXISTS idx_style_faces_photo ON style_faces(photo_id);
 CREATE INDEX IF NOT EXISTS idx_style_faces_character_score ON style_faces(character_id, det_score);
 CREATE INDEX IF NOT EXISTS idx_style_faces_cluster_score ON style_faces(cluster_id, det_score);
+-- Covers the per-character COUNT(DISTINCT photo_id) in characters().
+CREATE INDEX IF NOT EXISTS idx_style_faces_character_photo ON style_faces(character_id, photo_id);
 
 -- Per-photo stylised-face-scan state. state: 0 = pending, 1 = scanning,
 -- 2 = done, 3 = error.
