@@ -318,6 +318,9 @@ struct FaceBoxRect {
     cluster_id: i64,
     /// True for a stylised face. The overlay draws it with a dashed line.
     style: bool,
+    /// The person or character name to draw above the box. Only the
+    /// album view fills it.
+    label: Option<String>,
 }
 
 impl Grid {
@@ -1268,6 +1271,7 @@ impl Grid {
                     person_id: f.character_id,
                     cluster_id: f.cluster_id,
                     style: true,
+                    label: None,
                 });
             }
         } else {
@@ -1281,6 +1285,7 @@ impl Grid {
                     person_id: f.person_id,
                     cluster_id: f.cluster_id,
                     style: false,
+                    label: None,
                 });
             }
         }
@@ -1299,6 +1304,20 @@ impl Grid {
             .filter(|&id| id != 0)
             .collect();
         let mut map: HashMap<i64, Vec<FaceBoxRect>> = HashMap::new();
+        let people: HashMap<i64, String> = self
+            .lib
+            .persons()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(p, _)| (p.id, p.name))
+            .collect();
+        let chars: HashMap<i64, String> = self
+            .lib
+            .characters()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(c, _)| (c.id, c.name))
+            .collect();
         for chunk in ids.chunks(900) {
             for f in self.lib.faces_for_photos(chunk).unwrap_or_default() {
                 map.entry(f.photo_id).or_default().push(FaceBoxRect {
@@ -1310,6 +1329,7 @@ impl Grid {
                     person_id: f.person_id,
                     cluster_id: f.cluster_id,
                     style: false,
+                    label: people.get(&f.person_id).cloned(),
                 });
             }
             for f in self.lib.style_faces_for_photos(chunk).unwrap_or_default() {
@@ -1322,6 +1342,7 @@ impl Grid {
                     person_id: f.character_id,
                     cluster_id: f.cluster_id,
                     style: true,
+                    label: chars.get(&f.character_id).cloned(),
                 });
             }
         }
@@ -2169,6 +2190,22 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
                 let rh = ih * r.h as f64 / 1000.0;
                 let _ = cr.rectangle(rx, ry, rw, rh);
                 let _ = cr.stroke();
+                // The name of the assigned person or character, on a dark
+                // band above the box (below the box at the top edge).
+                if let Some(name) = r.label.as_deref() {
+                    cr.set_font_size(11.0);
+                    if let Ok(ext) = cr.text_extents(name) {
+                        let tw = ext.width() + 6.0;
+                        let th = 14.0;
+                        let ty = if ry - th >= iy { ry - th } else { ry + rh };
+                        cr.set_source_rgba(0.0, 0.0, 0.0, 0.65);
+                        let _ = cr.rectangle(rx, ty, tw, th);
+                        let _ = cr.fill();
+                        cr.set_source_rgba(1.0, 1.0, 1.0, 1.0);
+                        cr.move_to(rx + 3.0 - ext.x_bearing(), ty + 11.0);
+                        let _ = cr.show_text(name);
+                    }
+                }
             }
         });
 
