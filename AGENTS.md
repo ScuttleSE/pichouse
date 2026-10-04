@@ -344,8 +344,9 @@ Both systems take a `ClusterParams` struct. The config builds it with
   `drop_outliers` moves faces farther than `max_dist` from the group centroid
   to noise.
 - The setting keys are `face.cluster_threshold`, `face.cluster_agreement`,
-  `styleface.cluster_epsilon`, `styleface.cluster_max_dist`, and
-  `styleface.min_samples`.
+  `styleface.cluster_epsilon`, `styleface.cluster_max_dist`,
+  `styleface.min_samples`, and `styleface.min_cluster_size` (2..50, default
+  2). A group smaller than the minimum size becomes noise.
 - `prefs::apply_grouping_defaults_v2` writes the defaults one time and sets
   `grouping.defaults_v2`. `build_ui` calls it before the configs load. It then
   starts a regroup after the window shows. To force a new reset after a later

@@ -3,7 +3,9 @@
 //! Values come from the `styleface.*` settings keys in `library.db`. The UI
 //! writes them. `AppState` holds a loaded copy. The feature is off by default.
 
-use super::cluster::{ClusterParams, DEFAULT_EPSILON, DEFAULT_MAX_DIST, DEFAULT_MIN_SAMPLES};
+use super::cluster::{
+    ClusterParams, DEFAULT_EPSILON, DEFAULT_MIN_CLUSTER_SIZE, DEFAULT_MAX_DIST, DEFAULT_MIN_SAMPLES,
+};
 
 /// The stylised face feature settings.
 #[derive(Debug, Clone)]
@@ -28,6 +30,8 @@ pub struct StyleFaceConfig {
     pub cluster_max_dist: f32,
     /// The HDBSCAN `min_samples`, 1..10. Larger stops chains of faces.
     pub min_samples: usize,
+    /// The minimum group size, 2..50. Larger makes fewer small groups.
+    pub min_cluster_size: usize,
     /// The number of worker threads for a scan.
     pub concurrency: usize,
 }
@@ -44,6 +48,7 @@ impl Default for StyleFaceConfig {
             cluster_epsilon: DEFAULT_EPSILON,
             cluster_max_dist: DEFAULT_MAX_DIST,
             min_samples: DEFAULT_MIN_SAMPLES,
+            min_cluster_size: DEFAULT_MIN_CLUSTER_SIZE,
             concurrency: 2,
         }
     }
@@ -66,6 +71,7 @@ impl StyleFaceConfig {
         }
         self.cluster_max_dist = self.cluster_max_dist.clamp(0.01, 2.0);
         self.min_samples = self.min_samples.clamp(1, 10);
+        self.min_cluster_size = self.min_cluster_size.clamp(2, 50);
         if self.concurrency == 0 {
             self.concurrency = 1;
         }
@@ -80,6 +86,7 @@ impl StyleFaceConfig {
             epsilon: self.cluster_epsilon,
             max_dist: self.cluster_max_dist,
             min_samples: self.min_samples,
+            min_cluster_size: self.min_cluster_size,
         }
     }
 

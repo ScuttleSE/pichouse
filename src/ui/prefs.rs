@@ -77,6 +77,7 @@ pub const KEY_STYLEFACE_MIN_SCORE: &str = "styleface.min_score";
 pub const KEY_STYLEFACE_CLUSTER_EPSILON: &str = "styleface.cluster_epsilon";
 pub const KEY_STYLEFACE_CLUSTER_MAX_DIST: &str = "styleface.cluster_max_dist";
 pub const KEY_STYLEFACE_MIN_SAMPLES: &str = "styleface.min_samples";
+pub const KEY_STYLEFACE_MIN_CLUSTER_SIZE: &str = "styleface.min_cluster_size";
 
 /// Show the "Ignored" section in the sidebar. "1" is on. Off by default.
 pub const KEY_SIDEBAR_SHOW_IGNORED: &str = "sidebar.show_ignored";
@@ -407,6 +408,11 @@ pub fn load_styleface_config(lib: &Library) -> StyleFaceConfig {
     if let Ok(v) = lib.get_setting(KEY_STYLEFACE_MIN_SAMPLES, "") {
         if let Ok(n) = v.parse::<usize>() {
             c.min_samples = n;
+        }
+    }
+    if let Ok(v) = lib.get_setting(KEY_STYLEFACE_MIN_CLUSTER_SIZE, "") {
+        if let Ok(n) = v.parse::<usize>() {
+            c.min_cluster_size = n;
         }
     }
     if let Ok(v) = lib.get_setting(KEY_STYLEFACE_CONCURRENCY, "") {

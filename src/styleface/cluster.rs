@@ -17,8 +17,9 @@ use hdbscan::{Center, DistanceMetric, Hdbscan, HdbscanHyperParams};
 /// selection, which makes the smallest groups.
 pub const DEFAULT_EPSILON: f32 = 0.0;
 
-/// The minimum cluster size. Two is the smallest useful group.
-const MIN_CLUSTER_SIZE: usize = 2;
+/// The default minimum group size. Two is the smallest useful group. A larger
+/// value makes fewer small groups. Faces in a smaller group become noise.
+pub const DEFAULT_MIN_CLUSTER_SIZE: usize = 2;
 
 /// The default cosine-distance limit, 0..2. A smaller value is stricter. The
 /// limit applies in two places. An unnamed face joins a named character only
@@ -41,6 +42,8 @@ pub struct ClusterParams {
     pub max_dist: f32,
     /// The HDBSCAN `min_samples`, 1 or more.
     pub min_samples: usize,
+    /// The minimum group size, 2 or more.
+    pub min_cluster_size: usize,
 }
 
 impl Default for ClusterParams {
@@ -49,6 +52,7 @@ impl Default for ClusterParams {
             epsilon: DEFAULT_EPSILON,
             max_dist: DEFAULT_MAX_DIST,
             min_samples: DEFAULT_MIN_SAMPLES,
+            min_cluster_size: DEFAULT_MIN_CLUSTER_SIZE,
         }
     }
 }
@@ -116,7 +120,7 @@ pub struct ClusterAssignment {
 ///    `next_cluster_id`. HDBSCAN noise stays as `NOISE_CLUSTER_ID` (-1).
 /// 4. Each HDBSCAN group drops the faces that are farther than `max_dist` from
 ///    the group centroid. A dropped face becomes noise. A group with fewer
-///    than `MIN_CLUSTER_SIZE` faces left becomes noise.
+///    than `min_cluster_size` faces left becomes noise.
 pub fn cluster(
     items: &[ClusterItem],
     params: ClusterParams,
@@ -124,6 +128,7 @@ pub fn cluster(
 ) -> Vec<ClusterAssignment> {
     let epsilon = params.epsilon;
     let max_dist = params.max_dist;
+    let min_size = params.min_cluster_size.max(2);
     let mut out: Vec<ClusterAssignment> = Vec::with_capacity(items.len());
 
     // Step 1: character centroids from anchored faces.
@@ -193,13 +198,13 @@ pub fn cluster(
         }
     }
 
-    // Step 3: HDBSCAN over the rest. It needs at least MIN_CLUSTER_SIZE points.
-    if rest.len() >= MIN_CLUSTER_SIZE {
+    // Step 3: HDBSCAN over the rest. It needs at least min_size points.
+    if rest.len() >= min_size {
         let data: Vec<Vec<f32>> = rest.iter().map(|it| it.embedding.clone()).collect();
         // HDBSCAN panics when min_samples is larger than the point count.
         let min_samples = params.min_samples.max(1).min(rest.len());
         let hp = HdbscanHyperParams::builder()
-            .min_cluster_size(MIN_CLUSTER_SIZE)
+            .min_cluster_size(min_size)
             .min_samples(min_samples)
             .epsilon(epsilon as f64)
             .dist_metric(DistanceMetric::Euclidean)
@@ -207,7 +212,7 @@ pub fn cluster(
         let model = Hdbscan::new(&data, hp);
         match model.cluster() {
             Ok(labels) => {
-                let labels = drop_outliers(&data, &labels, max_dist);
+                let labels = drop_outliers(&data, &labels, max_dist, min_size);
                 for (i, it) in rest.iter().enumerate() {
                     let lbl = labels[i];
                     let cid = if lbl < 0 {
@@ -246,8 +251,8 @@ pub fn cluster(
 
 /// Set the label of each far-off face to noise (-1). A face is far off when its
 /// cosine distance to its group centroid is above `max_dist`. A group with
-/// fewer than `MIN_CLUSTER_SIZE` faces left becomes noise.
-fn drop_outliers(data: &[Vec<f32>], labels: &[i32], max_dist: f32) -> Vec<i32> {
+/// fewer than `min_size` faces left becomes noise.
+fn drop_outliers(data: &[Vec<f32>], labels: &[i32], max_dist: f32, min_size: usize) -> Vec<i32> {
     use std::collections::HashMap;
     let mut out = labels.to_vec();
     let mut groups: HashMap<i32, Vec<usize>> = HashMap::new();
@@ -272,7 +277,7 @@ fn drop_outliers(data: &[Vec<f32>], labels: &[i32], max_dist: f32) -> Vec<i32> {
                 kept.push(m);
             }
         }
-        if kept.len() < MIN_CLUSTER_SIZE {
+        if kept.len() < min_size {
             for m in kept {
                 out[m] = -1;
             }
@@ -426,14 +431,14 @@ mod tests {
             unit(vec![0.3, 1.0]),
         ];
         let labels = vec![0, 0, 0, 0];
-        let out = drop_outliers(&data, &labels, 0.15);
+        let out = drop_outliers(&data, &labels, 0.15, 2);
         assert_eq!(out, vec![0, 0, 0, -1]);
     }
 
     #[test]
     fn small_remainder_becomes_noise() {
         let data = vec![unit(vec![1.0, 0.0]), unit(vec![0.0, 1.0])];
-        let out = drop_outliers(&data, &[0, 0], 0.15);
+        let out = drop_outliers(&data, &[0, 0], 0.15, 2);
         assert_eq!(out, vec![-1, -1]);
     }
 
@@ -442,5 +447,18 @@ mod tests {
         let items = vec![unnamed(1, vec![1.0, 0.0]), unnamed(2, vec![1.0, 0.01])];
         let p = ClusterParams { min_samples: 10, ..ClusterParams::default() };
         let _ = cluster(&items, p, 1);
+    }
+
+    #[test]
+    fn pair_is_noise_with_larger_min_size() {
+        let items = vec![
+            unnamed(1, unit(vec![1.0, 0.0, 0.0])),
+            unnamed(2, unit(vec![1.0, 0.01, 0.0])),
+            unnamed(3, unit(vec![0.0, 0.0, 1.0])),
+            unnamed(4, unit(vec![0.0, 0.01, 1.0])),
+        ];
+        let p = ClusterParams { min_cluster_size: 5, ..ClusterParams::default() };
+        let asg = cluster(&items, p, 1);
+        assert!(asg.iter().all(|a| a.cluster_id == NOISE_CLUSTER_ID));
     }
 }

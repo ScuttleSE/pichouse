@@ -275,6 +275,34 @@ fn grouping_section(state: &Rc<AppState>) -> GtkBox {
         });
     }
 
+    let row = GtkBox::new(Orientation::Horizontal, 6);
+    let l = Label::new(Some("Minimum group size"));
+    l.set_xalign(0.0);
+    l.set_width_chars(26);
+    row.append(&l);
+    let size_spin = SpinButton::with_range(2.0, 50.0, 1.0);
+    size_spin.set_value(cfg.min_cluster_size as f64);
+    row.append(&size_spin);
+    bx.append(&row);
+    let h = Label::new(Some(
+        "Higher values make fewer small groups. Faces in a smaller group go \
+         to Unclear. Default: 2.",
+    ));
+    h.set_xalign(0.0);
+    h.set_wrap(true);
+    h.add_css_class("dim-label");
+    bx.append(&h);
+    {
+        let state = state.clone();
+        size_spin.connect_value_changed(move |s| {
+            let v = s.value_as_int().max(2) as usize;
+            state.style_face_config.borrow_mut().min_cluster_size = v;
+            let _ = state
+                .lib
+                .set_setting(prefs::KEY_STYLEFACE_MIN_CLUSTER_SIZE, &v.to_string());
+        });
+    }
+
     let regroup = Button::with_label("Regroup now");
     regroup.set_halign(gtk4::Align::Start);
     regroup.set_tooltip_text(Some(
