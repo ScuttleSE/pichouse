@@ -316,6 +316,8 @@ struct FaceBoxRect {
     person_id: i64,
     /// The automatic cluster id, meaningful only when unassigned.
     cluster_id: i64,
+    /// True for a stylised face. The overlay draws it with a dashed line.
+    style: bool,
 }
 
 impl Grid {
@@ -656,6 +658,11 @@ impl Grid {
             rc.faces_btn.connect_clicked(move |btn| {
                 let on = !rc2.show_faces.get();
                 rc2.show_faces.set(on);
+                // A normal album loads its boxes only when the user turns
+                // the toggle on, so the album still opens fast.
+                if rc2.mixed_faces_on() {
+                    rc2.load_mixed_face_boxes();
+                }
                 if on {
                     btn.add_css_class("suggested-action");
                 } else {
@@ -1260,6 +1267,7 @@ impl Grid {
                     assigned: f.character_id != 0,
                     person_id: f.character_id,
                     cluster_id: f.cluster_id,
+                    style: true,
                 });
             }
         } else {
@@ -1272,10 +1280,68 @@ impl Grid {
                     assigned: f.person_id != 0,
                     person_id: f.person_id,
                     cluster_id: f.cluster_id,
+                    style: false,
                 });
             }
         }
         *self.face_boxes.borrow_mut() = map;
+    }
+
+    /// Load the real faces and the stylised faces of all shown photos into
+    /// `face_boxes`. A normal album uses this when the face-box toggle is on.
+    /// The query runs in chunks to stay below the SQLite variable limit.
+    fn load_mixed_face_boxes(&self) {
+        let ids: Vec<i64> = self
+            .all_photos
+            .borrow()
+            .iter()
+            .map(|p| p.id)
+            .filter(|&id| id != 0)
+            .collect();
+        let mut map: HashMap<i64, Vec<FaceBoxRect>> = HashMap::new();
+        for chunk in ids.chunks(900) {
+            for f in self.lib.faces_for_photos(chunk).unwrap_or_default() {
+                map.entry(f.photo_id).or_default().push(FaceBoxRect {
+                    x: f.bbox_x,
+                    y: f.bbox_y,
+                    w: f.bbox_w,
+                    h: f.bbox_h,
+                    assigned: f.person_id != 0,
+                    person_id: f.person_id,
+                    cluster_id: f.cluster_id,
+                    style: false,
+                });
+            }
+            for f in self.lib.style_faces_for_photos(chunk).unwrap_or_default() {
+                map.entry(f.photo_id).or_default().push(FaceBoxRect {
+                    x: f.bbox_x,
+                    y: f.bbox_y,
+                    w: f.bbox_w,
+                    h: f.bbox_h,
+                    assigned: f.character_id != 0,
+                    person_id: f.character_id,
+                    cluster_id: f.cluster_id,
+                    style: true,
+                });
+            }
+        }
+        *self.face_boxes.borrow_mut() = map;
+    }
+
+    /// True when the face-box toggle shows: a face source or a normal album
+    /// (folder, directory, virtual album, or ad-hoc local list).
+    pub fn has_face_toggle(&self) -> bool {
+        self.is_face_source()
+            || matches!(
+                *self.source.borrow(),
+                Source::Folder(..) | Source::RawDir(..) | Source::VirtualAlbum(..) | Source::None
+            )
+    }
+
+    /// True for a normal album with the face-box toggle on. Such a view
+    /// loads both face kinds itself.
+    fn mixed_faces_on(&self) -> bool {
+        self.show_faces.get() && self.has_face_toggle() && !self.is_face_source()
     }
 
     /// Show a scanned library folder, remembering it as the source so the grid
@@ -1432,6 +1498,20 @@ impl Grid {
         self.filtered_photos()
     }
 
+    /// Select only the visible photos whose id is in `ids`. Clear all other
+    /// selections.
+    pub fn select_photo_ids(&self, ids: &std::collections::HashSet<i64>) {
+        let photos = self.filtered_photos();
+        let set = gtk4::Bitset::new_empty();
+        for (i, p) in photos.iter().enumerate() {
+            if ids.contains(&p.id) {
+                set.add(i as u32);
+            }
+        }
+        let mask = gtk4::Bitset::new_range(0, photos.len() as u32);
+        self.selection.set_selection(&set, &mask);
+    }
+
     /// Re-query the current source (folder or raw dir) from the database/disk
     /// and rebuild the view. A true "refresh visible": picks up newly scanned
     /// photos and updated orientations. No-op for ad-hoc lists.
@@ -1580,19 +1660,24 @@ impl Grid {
         // right after, via `set_back`.
         self.hide_back();
         self.exit_dup_mode();
-        // The face-box toggle only makes sense for a face source; leaving one
-        // clears its state so a later face view doesn't inherit a stray
-        // "on"-looking button or stale boxes.
-        self.faces_btn.set_visible(self.is_face_source());
-        if !self.is_face_source() {
+        // The face-box toggle shows for a face source and a normal album. A
+        // face source loads its own boxes. A normal album with the toggle on
+        // loads both face kinds. Any other source clears the toggle state.
+        self.faces_btn.set_visible(self.has_face_toggle());
+        if !self.has_face_toggle() {
             self.show_faces.set(false);
             self.faces_btn.remove_css_class("suggested-action");
+            self.face_boxes.borrow_mut().clear();
+        } else if !self.is_face_source() {
             self.face_boxes.borrow_mut().clear();
         }
         let mut photos = photos;
         self.sort_photos(&mut photos);
         *self.all_photos.borrow_mut() = photos;
         *self.title.borrow_mut() = title.to_string();
+        if self.mixed_faces_on() {
+            self.load_mixed_face_boxes();
+        }
         self.refresh_face_scanned();
         self.rebuild();
     }
@@ -1614,6 +1699,9 @@ impl Grid {
         self.sort_photos(&mut photos);
         *self.all_photos.borrow_mut() = photos;
         *self.title.borrow_mut() = title.to_string();
+        if self.mixed_faces_on() {
+            self.load_mixed_face_boxes();
+        }
         self.refresh_face_scanned();
 
         let filtered = self.filtered_photos();
@@ -2069,6 +2157,12 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
                 let is_active = (hl_person != 0 && r.person_id == hl_person)
                     || (hl_cluster != 0 && r.person_id == 0 && r.cluster_id == hl_cluster);
                 cr.set_line_width(if is_active { 4.0 } else { 2.0 });
+                // A stylised face draws dashed, so it differs from a real face.
+                if r.style {
+                    cr.set_dash(&[6.0, 3.0], 0.0);
+                } else {
+                    cr.set_dash(&[], 0.0);
+                }
                 let rx = ix + iw * r.x as f64 / 1000.0;
                 let ry = iy + ih * r.y as f64 / 1000.0;
                 let rw = iw * r.w as f64 / 1000.0;

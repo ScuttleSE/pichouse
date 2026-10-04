@@ -381,6 +381,20 @@ Both systems take a `ClusterParams` struct. The config builds it with
   folder counts. `album_face_scan_totals` sums them over the sub-albums.
   `face_scan_done` sets the badge visibility in `bind_row`.
 
+### Quick assignment in normal albums
+
+- `Grid::has_face_toggle` shows the face-box toggle for face sources and
+  normal albums (`Folder`, `RawDir`, `VirtualAlbum`, `None`).
+- In a normal album, the toggle calls `load_mixed_face_boxes`. It loads real
+  and stylised faces. A stylised box draws dashed. The toggle stays on when
+  you change albums.
+- The grid menu has "Assign to Character (one-face photos)…" and "Assign to
+  Person (one-face photos)…". `quick_assign` in `src/ui/vmenu.rs` puts the
+  face of each photo with exactly one face into one batch. It skips other
+  photos. After the assignment, it selects the photos with more than one face.
+- "Assign character faces one by one…" also works in a normal album.
+- `people::assign_photos_to_person_dialog` is the person batch dialog.
+
 ### Ignored faces
 
 - `faces.ignored` and `style_faces.ignored` mark an ignored face. `migrate`

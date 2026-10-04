@@ -44,6 +44,135 @@ fn assign_cluster_to_person(
     Ok(())
 }
 
+/// Assign a list of faces to one person. Give the person a cover face when
+/// the person has none.
+fn assign_faces_to_person(
+    state: &Rc<AppState>,
+    face_ids: &[i64],
+    person_id: i64,
+) -> Result<(), String> {
+    for &fid in face_ids {
+        state
+            .lib
+            .set_face_person(fid, person_id)
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(&first) = face_ids.first() {
+        let _ = state.lib.set_person_cover_if_unset(person_id, first);
+    }
+    Ok(())
+}
+
+/// A dialog to assign a list of faces to a new person or to an existing
+/// person. The album grid uses it for photos with exactly one face.
+/// `photo_count` is for the label text only. `on_done` runs after a change.
+pub fn assign_photos_to_person_dialog<F: Fn() + 'static>(
+    state: &Rc<AppState>,
+    face_ids: Vec<i64>,
+    photo_count: usize,
+    on_done: F,
+) {
+    if face_ids.is_empty() {
+        return;
+    }
+    let win = Window::builder()
+        .title("Assign to Person")
+        .modal(true)
+        .default_width(340)
+        .build();
+    if let Some(w) = state.window() {
+        win.set_transient_for(Some(&w));
+    }
+    let root = GtkBox::new(Orientation::Vertical, 8);
+    root.set_margin_top(12);
+    root.set_margin_bottom(12);
+    root.set_margin_start(12);
+    root.set_margin_end(12);
+
+    let people: Vec<crate::model::Person> = state
+        .lib
+        .persons()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(p, _)| p)
+        .collect();
+    let on_done = Rc::new(on_done);
+    let face_ids = Rc::new(face_ids);
+
+    let new_label = if photo_count > 1 {
+        format!("Name these {photo_count} pictures as a new person:")
+    } else {
+        "Name this picture as a new person:".to_string()
+    };
+    root.append(&Label::new(Some(&new_label)));
+    let name_btn = Button::with_label("New person…");
+    name_btn.add_css_class("suggested-action");
+    root.append(&name_btn);
+    {
+        let state = state.clone();
+        let win = win.clone();
+        let on_done = on_done.clone();
+        let face_ids = face_ids.clone();
+        name_btn.connect_clicked(move |_| {
+            let state2 = state.clone();
+            let win2 = win.clone();
+            let on_done2 = on_done.clone();
+            let face_ids2 = face_ids.clone();
+            prompt_text(&state, Some(&win), "New Person", "Person name:", "", move |name| {
+                if name.trim().is_empty() {
+                    return;
+                }
+                let res = state2
+                    .lib
+                    .create_person(&name)
+                    .map_err(|e| e.to_string())
+                    .and_then(|pid| assign_faces_to_person(&state2, &face_ids2, pid));
+                if let Err(e) = res {
+                    show_error(&state2, &e);
+                    return;
+                }
+                on_done2();
+                win2.close();
+            });
+        });
+    }
+
+    if !people.is_empty() {
+        root.append(&Separator::new(Orientation::Horizontal));
+        root.append(&Label::new(Some("Or assign to an existing person:")));
+        let labels: Vec<String> = people.iter().map(|p| p.name.clone()).collect();
+        let label_refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
+        let drop = DropDown::new(Some(StringList::new(&label_refs)), gtk4::Expression::NONE);
+        let assign = Button::with_label("Assign");
+        assign.add_css_class("suggested-action");
+        root.append(&drop);
+        root.append(&assign);
+        let state = state.clone();
+        let win2 = win.clone();
+        let on_done2 = on_done.clone();
+        let face_ids = face_ids.clone();
+        assign.connect_clicked(move |_| {
+            if let Some(p) = people.get(drop.selected() as usize) {
+                if let Err(e) = assign_faces_to_person(&state, &face_ids, p.id) {
+                    show_error(&state, &e);
+                    return;
+                }
+                on_done2();
+            }
+            win2.close();
+        });
+    }
+
+    let cancel = Button::with_label("Cancel");
+    {
+        let win = win.clone();
+        cancel.connect_clicked(move |_| win.close());
+    }
+    root.append(&cancel);
+    win.set_child(Some(&root));
+    win.present();
+}
+
 /// Open a small dialog to assign one face to a person. It lists existing people
 /// and offers a New person option. `on_done` runs after a change.
 pub fn assign_face_dialog<F: Fn() + 'static>(state: &Rc<AppState>, face_id: i64, on_done: F) {

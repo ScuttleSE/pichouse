@@ -331,26 +331,30 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
         let pop = pop.clone();
         act.connect_activate(move |_, _| {
             dismiss(&pop);
-            let Some(cluster_id) = grid.current_style_cluster() else {
-                return;
-            };
             let ids = local_photo_ids(&grid);
             if ids.is_empty() {
                 return;
             }
             let id_set: std::collections::HashSet<i64> = ids.iter().copied().collect();
-            let faces = match state.lib.unassigned_style_faces_in_cluster(cluster_id) {
-                Ok(f) => f,
-                Err(e) => {
-                    show_error(&state, &e.to_string());
-                    return;
-                }
-            };
-            let photo_ids: std::collections::BTreeSet<i64> = faces
-                .iter()
-                .filter(|f| id_set.contains(&f.photo_id))
-                .map(|f| f.photo_id)
-                .collect();
+            // In a style cluster, use the photos of that cluster. In a normal
+            // album, use every selected photo.
+            let photo_ids: std::collections::BTreeSet<i64> =
+                if let Some(cluster_id) = grid.current_style_cluster() {
+                    let faces = match state.lib.unassigned_style_faces_in_cluster(cluster_id) {
+                        Ok(f) => f,
+                        Err(e) => {
+                            show_error(&state, &e.to_string());
+                            return;
+                        }
+                    };
+                    faces
+                        .iter()
+                        .filter(|f| id_set.contains(&f.photo_id))
+                        .map(|f| f.photo_id)
+                        .collect()
+                } else {
+                    ids.iter().copied().collect()
+                };
             let mut groups: Vec<Vec<i64>> = Vec::new();
             for pid in photo_ids {
                 match state.lib.style_faces_for_photo(pid) {
@@ -590,6 +594,22 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
         group.add_action(&act);
     }
 
+    // Assign quickly from a normal album. A photo with exactly one face goes
+    // into the batch. The grid then selects the photos with more than one
+    // face, for the per-face dialog. `style` true means characters.
+    for (name, style) in [("quick-assign-character", true), ("quick-assign-person", false)] {
+        let act = gio::SimpleAction::new(name, None);
+        let state = state.clone();
+        let grid = grid.clone();
+        let sidebar = sidebar.clone();
+        let pop = pop.clone();
+        act.connect_activate(move |_, _| {
+            dismiss(&pop);
+            quick_assign(&state, &grid, &sidebar, style);
+        });
+        group.add_action(&act);
+    }
+
     // Install the action group on the grid's root box. The context-menu popover
     // parents to this same root box (see below), and GTK resolves menu actions
     // by walking up from the popover's parent. The action group must live on
@@ -637,6 +657,93 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
         popover.popup();
         *pop.borrow_mut() = Some(popover);
     });
+}
+
+/// Quick assignment from a normal album. Put the face of each selected photo
+/// with exactly one face into one batch. Open the assign dialog for the
+/// batch. Skip photos with no face or more than one face. After the
+/// assignment, select the photos with more than one face. `style` true
+/// means stylised faces and characters. False means real faces and people.
+fn quick_assign(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar: &Rc<Sidebar>, style: bool) {
+    let ids = local_photo_ids(grid);
+    if ids.is_empty() {
+        return;
+    }
+    let mut per_photo: std::collections::HashMap<i64, Vec<i64>> = std::collections::HashMap::new();
+    for chunk in ids.chunks(900) {
+        let res: Result<Vec<(i64, i64)>, String> = if style {
+            state
+                .lib
+                .style_faces_for_photos(chunk)
+                .map(|v| v.into_iter().map(|f| (f.photo_id, f.id)).collect())
+                .map_err(|e| e.to_string())
+        } else {
+            state
+                .lib
+                .faces_for_photos(chunk)
+                .map(|v| v.into_iter().map(|f| (f.photo_id, f.id)).collect())
+                .map_err(|e| e.to_string())
+        };
+        match res {
+            Ok(pairs) => {
+                for (pid, fid) in pairs {
+                    per_photo.entry(pid).or_default().push(fid);
+                }
+            }
+            Err(e) => {
+                show_error(state, &e);
+                return;
+            }
+        }
+    }
+    let mut batch = Vec::new();
+    let mut multi: std::collections::HashSet<i64> = std::collections::HashSet::new();
+    let mut none = 0usize;
+    for &pid in &ids {
+        match per_photo.get(&pid).map(|v| v.as_slice()) {
+            Some([one]) => batch.push(*one),
+            Some(v) if v.len() > 1 => {
+                multi.insert(pid);
+            }
+            _ => none += 1,
+        }
+    }
+    let kind = if style { "character" } else { "person" };
+    if batch.is_empty() {
+        state.status().set_message_transient(
+            &format!(
+                "No photo with exactly one face. {} with more than one face, {none} with no face.",
+                multi.len()
+            ),
+            8,
+        );
+        if !multi.is_empty() {
+            grid.select_photo_ids(&multi);
+        }
+        return;
+    }
+    let n = batch.len();
+    let (state2, grid2, sidebar2) = (state.clone(), grid.clone(), sidebar.clone());
+    let on_done = move || {
+        grid2.reload_from_source();
+        sidebar2.reload_deferred();
+        state2.status().set_message_transient(
+            &format!(
+                "Assigned {n} faces to the {kind}. Skipped {} photos with more than one face and {none} with no face.",
+                multi.len()
+            ),
+            10,
+        );
+        // Select the photos with more than one face for the next step.
+        if !multi.is_empty() {
+            grid2.select_photo_ids(&multi);
+        }
+    };
+    if style {
+        characters::assign_photos_to_character_dialog(state, batch, n, None, on_done);
+    } else {
+        super::people::assign_photos_to_person_dialog(state, batch, n, on_done);
+    }
 }
 
 /// Build the context menu: a submenu of virtual albums plus "New … from
@@ -754,6 +861,21 @@ fn build_menu(state: &Rc<AppState>, grid: &Rc<Grid>) -> gio::Menu {
         }
         if grid.is_face_source() {
             group_tools.append(Some("Ignore these faces"), Some("grid.ignore-faces"));
+        }
+        // A normal album: quick assignment of photos with exactly one face.
+        if grid.has_face_toggle() && !grid.is_face_source() {
+            group_tools.append(
+                Some("Assign to Character (one-face photos)…"),
+                Some("grid.quick-assign-character"),
+            );
+            group_tools.append(
+                Some("Assign to Person (one-face photos)…"),
+                Some("grid.quick-assign-person"),
+            );
+            group_tools.append(
+                Some("Assign character faces one by one…"),
+                Some("grid.assign-faces-individually"),
+            );
         }
         if grid.current_ignored().is_some() {
             group_tools.append(Some("Un-ignore these faces"), Some("grid.unignore-faces"));
