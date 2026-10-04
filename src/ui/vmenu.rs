@@ -458,6 +458,13 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
                 state.lib.ignore_style_faces(Some(chid), None, Some(&ids))
             } else if let Some(cid) = grid.current_style_cluster() {
                 state.lib.ignore_style_faces(None, Some(cid), Some(&ids))
+            } else if grid.has_face_toggle() {
+                // A normal album: ignore the unassigned real and stylised
+                // faces in the selected photos. Assigned faces stay.
+                state
+                    .lib
+                    .ignore_faces(None, None, Some(&ids))
+                    .and_then(|_| state.lib.ignore_style_faces(None, None, Some(&ids)))
             } else {
                 return;
             };
@@ -875,6 +882,10 @@ fn build_menu(state: &Rc<AppState>, grid: &Rc<Grid>) -> gio::Menu {
             group_tools.append(
                 Some("Assign character faces one by one…"),
                 Some("grid.assign-faces-individually"),
+            );
+            group_tools.append(
+                Some("Ignore unassigned faces"),
+                Some("grid.ignore-faces"),
             );
         }
         if grid.current_ignored().is_some() {

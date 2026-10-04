@@ -873,6 +873,9 @@ pub(super) fn ignore_group(
     let (cond, key) = match (owner, cluster) {
         (Some(o), _) => (format!("{owner_col} = ?1"), o),
         (None, Some(c)) => (format!("cluster_id = ?1 AND {owner_col} IS NULL"), c),
+        // No group: the unassigned faces in the given photos only. An album
+        // view uses this. Without photo ids, do nothing.
+        (None, None) if photo_ids.is_some() => (format!("?1 = 0 AND {owner_col} IS NULL"), 0),
         (None, None) => return Ok(()),
     };
     let base = format!(
