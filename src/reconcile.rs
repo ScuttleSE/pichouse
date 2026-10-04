@@ -50,6 +50,65 @@ impl Report {
 }
 
 
+/// The phase of the running reconciliation, for the job indicator.
+pub mod progress {
+    use std::sync::atomic::{AtomicU64, AtomicU8, Ordering::Relaxed};
+
+    pub const IDLE: u8 = 0;
+    pub const SNAPSHOT: u8 = 1;
+    pub const WALK: u8 = 2;
+    pub const CHECK: u8 = 3;
+    pub const VANISHED: u8 = 4;
+    pub const APPLY: u8 = 5;
+
+    pub static PHASE: AtomicU8 = AtomicU8::new(IDLE);
+    /// Directories read in the walk.
+    pub static DIRS: AtomicU64 = AtomicU64::new(0);
+    /// Image files found in the walk.
+    pub static FILES: AtomicU64 = AtomicU64::new(0);
+    /// Directories checked against the DB snapshot.
+    pub static CHECKED_DIRS: AtomicU64 = AtomicU64::new(0);
+    /// Total directories to check.
+    pub static TOTAL_DIRS: AtomicU64 = AtomicU64::new(0);
+    /// `stat()` calls made by this run (metadata and exists).
+    pub static STATS: AtomicU64 = AtomicU64::new(0);
+
+    /// Reset all counters at the start of a run.
+    pub fn reset() {
+        for c in [&DIRS, &FILES, &CHECKED_DIRS, &TOTAL_DIRS, &STATS] {
+            c.store(0, Relaxed);
+        }
+        PHASE.store(SNAPSHOT, Relaxed);
+    }
+
+    pub(super) fn stat() {
+        STATS.fetch_add(1, Relaxed);
+    }
+
+    /// A one-line text of the current phase and counts.
+    pub fn text() -> Option<String> {
+        let stats = STATS.load(Relaxed);
+        let t = match PHASE.load(Relaxed) {
+            SNAPSHOT => "reading the database".to_string(),
+            WALK => format!(
+                "walking: {} folders, {} images",
+                DIRS.load(Relaxed),
+                FILES.load(Relaxed)
+            ),
+            CHECK => format!(
+                "checking folders {} / {}, {} file stats",
+                CHECKED_DIRS.load(Relaxed),
+                TOTAL_DIRS.load(Relaxed),
+                stats
+            ),
+            VANISHED => format!("checking removed folders, {stats} file stats"),
+            APPLY => "saving changes".to_string(),
+            _ => return None,
+        };
+        Some(t)
+    }
+}
+
 /// A batch of database changes computed by walking the disk with no DB lock
 /// held. `Library::apply_reconcile_plan` writes the whole batch in one short
 /// transaction, so a long library walk never starves the UI on the single
@@ -123,10 +182,12 @@ impl DbSnapshot {
 /// no DB lock held, builds a `ReconcilePlan` in memory, then applies the plan
 /// in one short transaction. Stops promptly when `cancel` becomes true.
 pub fn reconcile_all(lib: &Library, cancel: &Arc<AtomicBool>) -> Report {
-    let started = std::time::Instant::now();
+    use std::time::Instant;
+    let started = Instant::now();
+    progress::reset();
     let roots = lib.library_folders().unwrap_or_default();
     let snapshot = DbSnapshot::read(lib);
-    log::debug!(
+    log::info!(
         "reconcile: snapshot read in {:.2?} ({} roots, {} folders)",
         started.elapsed(),
         roots.len(),
@@ -141,7 +202,8 @@ pub fn reconcile_all(lib: &Library, cancel: &Arc<AtomicBool>) -> Report {
             break;
         }
         log::info!("reconcile: walking root {}", root.path);
-        let walk_start = std::time::Instant::now();
+        progress::PHASE.store(progress::WALK, Ordering::Relaxed);
+        let walk_start = Instant::now();
         // Collect image files grouped by directory under this root (no lock).
         let mut by_dir: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
         collect(Path::new(&root.path), cancel, &mut by_dir);
@@ -152,12 +214,25 @@ pub fn reconcile_all(lib: &Library, cancel: &Arc<AtomicBool>) -> Report {
             by_dir.len(),
             by_dir.values().map(Vec::len).sum::<usize>()
         );
+
+        progress::PHASE.store(progress::CHECK, Ordering::Relaxed);
+        progress::CHECKED_DIRS.store(0, Ordering::Relaxed);
+        progress::TOTAL_DIRS.store(by_dir.len() as u64, Ordering::Relaxed);
+        let check_start = Instant::now();
+        let stats_before = progress::STATS.load(Ordering::Relaxed);
         for (dir, files) in &by_dir {
             if cancel.load(Ordering::Relaxed) {
                 break;
             }
             plan_dir(&snapshot, dir, files, &mut plan, &mut report);
+            progress::CHECKED_DIRS.fetch_add(1, Ordering::Relaxed);
         }
+        log::info!(
+            "reconcile: root {} checked in {:.2?} ({} stats)",
+            root.path,
+            check_start.elapsed(),
+            progress::STATS.load(Ordering::Relaxed) - stats_before
+        );
         // A cancelled walk is partial. Every folder it did not reach looks
         // vanished, and the check below stats each of their photos. Stop now.
         if cancel.load(Ordering::Relaxed) {
@@ -165,12 +240,22 @@ pub fn reconcile_all(lib: &Library, cancel: &Arc<AtomicBool>) -> Report {
         }
         // Directories that once held photos but no longer exist on disk: mark
         // all their photos missing.
+        progress::PHASE.store(progress::VANISHED, Ordering::Relaxed);
+        let van_start = Instant::now();
+        let stats_before = progress::STATS.load(Ordering::Relaxed);
         plan_vanished_dirs(&snapshot, &root.path, &by_dir, cancel, &mut plan, &mut report);
+        log::info!(
+            "reconcile: root {} vanished-folder check in {:.2?} ({} stats)",
+            root.path,
+            van_start.elapsed(),
+            progress::STATS.load(Ordering::Relaxed) - stats_before
+        );
     }
 
     // A cancelled walk saw only part of the disk. Its plan can mark present
     // photos as missing. Discard the plan. A newer reconcile does the work.
     if cancel.load(Ordering::Relaxed) {
+        progress::PHASE.store(progress::IDLE, Ordering::Relaxed);
         log::info!(
             "reconcile: cancelled after {:.2?}. The partial plan is discarded.",
             started.elapsed()
@@ -179,12 +264,19 @@ pub fn reconcile_all(lib: &Library, cancel: &Arc<AtomicBool>) -> Report {
     }
 
     // Apply the whole batch in one transaction. This is the only DB write.
-    let apply_start = std::time::Instant::now();
+    progress::PHASE.store(progress::APPLY, Ordering::Relaxed);
+    let apply_start = Instant::now();
     match lib.apply_reconcile_plan(&plan) {
         Ok(added) => report.added = added,
         Err(e) => log::warn!("reconcile: apply plan failed: {e}"),
     }
-    log::debug!("reconcile: plan applied in {:.2?}", apply_start.elapsed());
+    progress::PHASE.store(progress::IDLE, Ordering::Relaxed);
+    log::info!(
+        "reconcile: plan applied in {:.2?} ({} folder upserts, {} inserts)",
+        apply_start.elapsed(),
+        plan.folder_upserts.len(),
+        plan.photo_inserts.len()
+    );
     log::info!(
         "reconcile: done in {:.2?} ({} added, {} missing, {} back, {} moved, {} removed)",
         started.elapsed(),
@@ -217,23 +309,6 @@ fn plan_dir(
         return; // never had photos; nothing to reconcile
     }
 
-    // Upsert a folder row for a directory that holds images.
-    if !files.is_empty() {
-        if let Ok(meta) = std::fs::metadata(dir) {
-            let mtime = mtime_secs(&meta);
-            plan.folder_upserts.push(Folder {
-                path: dir_str.clone(),
-                name: dir
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
-                mtime,
-                year: crate::scan::year_of(mtime),
-                ..Default::default()
-            });
-        }
-    }
-
     // The known rows for this directory, from the snapshot.
     let empty = HashMap::new();
     let index = snap.index_for(&dir_str).unwrap_or(&empty);
@@ -248,49 +323,60 @@ fn plan_dir(
         }
     }
 
+    // Count the changes in this directory. The folder row needs an upsert
+    // only for a new folder or a folder with a change.
+    let mut changes = 0usize;
+    let mut new_files: Vec<(String, String, i64, i64)> = Vec::new();
+
     for path in files {
         let path_str = path.to_string_lossy().into_owned();
-        let meta = match std::fs::metadata(path) {
-            Ok(m) => m,
-            Err(_) => continue,
-        };
-        let size = meta.len() as i64;
         match index.get(&path_str) {
             Some((id, _old_size, true)) => {
                 // A missing row's file is back at the same path.
                 plan.reappeared.push(*id);
                 report.reappeared += 1;
+                changes += 1;
             }
             Some(_) => {
-                // Present and known; nothing to do.
+                // Present and known. Do not stat it. The walk found it.
             }
             None => {
+                // A new path. Only a new path needs the size and the mtime.
+                progress::stat();
+                let meta = match std::fs::metadata(path) {
+                    Ok(m) => m,
+                    Err(_) => continue,
+                };
                 let name = path
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_default();
-                // New path. Try to treat it as a move of a missing row with the
-                // same size (preserves tags/edits); else insert fresh.
-                if let Some(moved_id) = take_move_candidate(&mut missing_by_size, size) {
-                    plan.moves.push(PhotoMove {
-                        id: moved_id,
-                        new_dir: dir_str.clone(),
-                        new_path: path_str.clone(),
-                        new_name: name,
-                    });
-                    report.moved += 1;
-                } else {
-                    plan.photo_inserts.push(PhotoInsert {
-                        dir: dir_str.clone(),
-                        path: path_str.clone(),
-                        filename: name,
-                        size,
-                        mod_time: mtime_secs(&meta),
-                    });
-                    // The id is assigned at apply time and added to the report
-                    // there.
-                }
+                new_files.push((path_str, name, meta.len() as i64, mtime_secs(&meta)));
             }
+        }
+    }
+
+    for (path_str, name, size, mod_time) in new_files {
+        changes += 1;
+        // Try to treat it as a move of a missing row with the same size
+        // (preserves tags/edits). Else insert fresh.
+        if let Some(moved_id) = take_move_candidate(&mut missing_by_size, size) {
+            plan.moves.push(PhotoMove {
+                id: moved_id,
+                new_dir: dir_str.clone(),
+                new_path: path_str,
+                new_name: name,
+            });
+            report.moved += 1;
+        } else {
+            plan.photo_inserts.push(PhotoInsert {
+                dir: dir_str.clone(),
+                path: path_str,
+                filename: name,
+                size,
+                mod_time,
+            });
+            // The id is assigned at apply time and added to the report there.
         }
     }
 
@@ -299,6 +385,26 @@ fn plan_dir(
         if !missing && !on_disk.contains(path) {
             plan.mark_missing.push(*id);
             report.missing += 1;
+            changes += 1;
+        }
+    }
+
+    // Upsert a folder row for a directory that holds images, when it is new
+    // or changed. Moves and inserts need the row to resolve the folder id.
+    if !files.is_empty() && (!has_folder_row || changes > 0) {
+        progress::stat();
+        if let Ok(meta) = std::fs::metadata(dir) {
+            let mtime = mtime_secs(&meta);
+            plan.folder_upserts.push(Folder {
+                path: dir_str.clone(),
+                name: dir
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                mtime,
+                year: crate::scan::year_of(mtime),
+                ..Default::default()
+            });
         }
     }
 
@@ -379,8 +485,25 @@ fn plan_vanished_dirs(
         }
         // Directory gone (or now empty). Mark its non-missing photos missing.
         if let Some(index) = snap.index_by_folder.get(fid) {
+            if !index.values().any(|(_, _, m)| !*m) {
+                continue; // all rows already missing
+            }
+            // The walk reads every readable directory. A directory that is
+            // gone needs no per-file stat. Stat each file only when the
+            // directory still exists (for example, it is unreadable).
+            progress::stat();
+            let dir_exists = Path::new(path).exists();
             for (p, (id, _size, missing)) in index {
-                if !*missing && !Path::new(p).exists() {
+                if *missing {
+                    continue;
+                }
+                let gone = if dir_exists {
+                    progress::stat();
+                    !Path::new(p).exists()
+                } else {
+                    true
+                };
+                if gone {
                     plan.mark_missing.push(*id);
                     report.missing += 1;
                 }
@@ -401,6 +524,7 @@ fn collect(dir: &Path, cancel: &Arc<AtomicBool>, by_dir: &mut HashMap<PathBuf, V
     // Ensure the directory itself has an entry even if it holds no images, so a
     // now-empty folder is reconciled (its photos marked missing).
     by_dir.entry(dir.to_path_buf()).or_default();
+    progress::DIRS.fetch_add(1, Ordering::Relaxed);
     for entry in entries.flatten() {
         if cancel.load(Ordering::Relaxed) {
             return;
@@ -414,6 +538,7 @@ fn collect(dir: &Path, cancel: &Arc<AtomicBool>, by_dir: &mut HashMap<PathBuf, V
             collect(&path, cancel, by_dir);
         } else if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
             if is_image(name) {
+                progress::FILES.fetch_add(1, Ordering::Relaxed);
                 let parent = path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
                 by_dir.entry(parent).or_default().push(path);
             }

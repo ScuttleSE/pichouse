@@ -111,7 +111,14 @@ fn activity_indicator(state: &Rc<AppState>) -> MenuButton {
                         any = true;
                         let stopping = ctl.stopping();
                         let status = if stopping { "Stopping" } else { "Running" };
-                        detail.set_text(&format!("{status} for {}", fmt_elapsed(elapsed)));
+                        let mut text = format!("{status} for {}", fmt_elapsed(elapsed));
+                        if std::ptr::eq(ctl, &state.reconcile_job) {
+                            if let Some(d) = crate::reconcile::progress::text() {
+                                text.push_str(": ");
+                                text.push_str(&d);
+                            }
+                        }
+                        detail.set_text(&text);
                         cancel.set_sensitive(!stopping);
                         row.set_visible(true);
                     }
