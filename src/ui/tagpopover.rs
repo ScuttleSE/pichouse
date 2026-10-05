@@ -21,19 +21,16 @@ pub fn show(anchor: &impl IsA<gtk4::Widget>, lib: Arc<Library>, ids: Vec<i64>, o
     popover.set_parent(anchor);
     popover.set_position(gtk4::PositionType::Bottom);
 
-    let root = GtkBox::new(Orientation::Vertical, 6);
-    root.set_margin_top(6);
-    root.set_margin_bottom(6);
-    root.set_margin_start(6);
-    root.set_margin_end(6);
-    root.set_width_request(260);
+    let root = GtkBox::new(Orientation::Vertical, 3);
+    root.set_width_request(190);
+    popover.add_css_class("tag-popover");
 
     let title = Label::new(None);
     title.set_xalign(0.0);
     title.add_css_class("heading");
     root.append(&title);
 
-    let list = GtkBox::new(Orientation::Vertical, 2);
+    let list = GtkBox::new(Orientation::Vertical, 0);
     let scroll = ScrolledWindow::new();
     scroll.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
     scroll.set_propagate_natural_height(true);
@@ -64,7 +61,7 @@ pub fn show(anchor: &impl IsA<gtk4::Widget>, lib: Arc<Library>, ids: Vec<i64>, o
                     list.append(&l);
                 }
                 for t in tags {
-                    let row = GtkBox::new(Orientation::Horizontal, 4);
+                    let row = GtkBox::new(Orientation::Horizontal, 2);
                     let text = if n == 1 { t.name.clone() } else { format!("{} ({}/{n})", t.name, t.count) };
                     let l = Label::new(Some(&text));
                     l.set_xalign(0.0);
@@ -78,6 +75,7 @@ pub fn show(anchor: &impl IsA<gtk4::Widget>, lib: Arc<Library>, ids: Vec<i64>, o
                     let act = |icon: &str, tip: &str, f: Box<dyn Fn(&Library, &[i64], &str)>| {
                         let b = Button::from_icon_name(icon);
                         b.set_has_frame(false);
+                        b.add_css_class("tag-row-btn");
                         b.set_tooltip_text(Some(tip));
                         let (lib, ids, name, weak, on_changed) = (lib.clone(), ids.clone(), t.name.clone(), weak.clone(), on_changed.clone());
                         b.connect_clicked(move |_| {

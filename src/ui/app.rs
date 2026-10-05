@@ -292,6 +292,8 @@ fn install_css() {
         .thumb-cell .tag-btn.tag-none { opacity: 0; } \
         .thumb-cell:hover .tag-btn.tag-none { opacity: 1; } \
         .tag-ai { color: #6f8fc0; } \
+        .tag-popover contents { padding: 4px; } \
+        .tag-row-btn { min-width: 0; min-height: 0; padding: 0 2px; } \
         .face-scan-badge { \
             color: #33bf4d; \
         } \
