@@ -131,6 +131,24 @@ pub fn show(anchor: &impl IsA<gtk4::Widget>, lib: Arc<Library>, ids: Vec<i64>, o
             gtk4::glib::idle_add_local_once(move || p.unparent());
         });
     }
+    if let Some(root) = anchor.as_ref().root().and_downcast::<gtk4::Window>() {
+        let h = root.connect_focus_widget_notify(|w| {
+            eprintln!("[tagdbg] focus -> {:?}", w.focus_widget().map(|f| f.type_().name()));
+        });
+        let root2 = root.clone();
+        let hc = std::cell::Cell::new(Some(h));
+        popover.connect_closed(move |_| {
+            if let Some(h) = hc.take() {
+                root2.disconnect(h);
+            }
+        });
+    }
+    {
+        let a = anchor.as_ref().clone();
+        popover.connect_closed(move |_| {
+            eprintln!("[tagdbg] at close: anchor mapped={} parent={:?}", a.is_mapped(), a.parent().map(|p| p.type_().name()));
+        });
+    }
     popover.popup();
     eprintln!("[tagdbg] popup called visible={} mapped={}", popover.is_visible(), popover.is_mapped());
     entry.entry.grab_focus();

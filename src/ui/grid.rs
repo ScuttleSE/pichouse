@@ -731,6 +731,7 @@ impl Grid {
         {
             let rc2 = rc.clone();
             rc.selection.connect_selection_changed(move |sel, _, _| {
+                eprintln!("[tagdbg] selection changed");
                 let bitset = sel.selection();
                 if bitset.size() == 0 {
                     return;
