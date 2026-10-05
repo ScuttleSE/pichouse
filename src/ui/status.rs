@@ -125,7 +125,8 @@ fn activity_indicator(state: &Rc<AppState>) -> MenuButton {
                     None => row.set_visible(false),
                 }
             }
-            if !any {
+            if !any && popover.is_visible() {
+                eprintln!("[tagdbg] status timer popdown");
                 popover.popdown();
             }
             button.set_visible(any);
