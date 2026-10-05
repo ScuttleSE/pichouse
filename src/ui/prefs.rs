@@ -108,6 +108,11 @@ pub const KEY_SLIDESHOW_LOOP: &str = "slideshow.loop";
 pub const KEY_FACES_UNNAMED_SORT: &str = "facesview.unnamed_sort";
 /// The sort order of the unidentified groups in the Characters view.
 pub const KEY_CHARS_UNNAMED_SORT: &str = "charactersview.unnamed_sort";
+/// "1" when a section of a face view is collapsed.
+pub const KEY_FACES_IDENTIFIED_COLLAPSED: &str = "facesview.identified_collapsed";
+pub const KEY_FACES_UNNAMED_COLLAPSED: &str = "facesview.unnamed_collapsed";
+pub const KEY_CHARS_IDENTIFIED_COLLAPSED: &str = "charactersview.identified_collapsed";
+pub const KEY_CHARS_UNNAMED_COLLAPSED: &str = "charactersview.unnamed_collapsed";
 /// Default per-image slideshow duration in seconds.
 pub const DEFAULT_SLIDESHOW_SECS: i32 = 4;
 

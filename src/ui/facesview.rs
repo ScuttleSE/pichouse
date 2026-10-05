@@ -23,8 +23,8 @@ use gtk4::{
     ScrolledWindow,
 };
 
-use super::groupsort::{sort_groups, tile_flow, GroupSort, UnnamedHeader};
-use super::prefs::KEY_FACES_UNNAMED_SORT;
+use super::groupsort::{sort_groups, tile_flow, GroupSort, SectionHeader, UnnamedHeader};
+use super::prefs::{KEY_FACES_IDENTIFIED_COLLAPSED, KEY_FACES_UNNAMED_COLLAPSED, KEY_FACES_UNNAMED_SORT};
 use super::state::AppState;
 use super::util::texture_from_bytes;
 
@@ -38,6 +38,8 @@ pub struct FacesView {
     uflow: FlowBox,
     /// The line, title, and sort menu above `uflow`.
     uheader: UnnamedHeader,
+    /// The collapsible "Identified" header above `flow`.
+    iheader: SectionHeader,
     empty: Label,
     state: RefCell<Option<Rc<AppState>>>,
     /// The person group currently browsed, or `0` for the top-level People
@@ -74,16 +76,29 @@ impl FacesView {
         let weak: Rc<RefCell<std::rc::Weak<FacesView>>> = Rc::new(RefCell::new(std::rc::Weak::new()));
         let uheader = {
             let weak = weak.clone();
-            UnnamedHeader::new(GroupSort::MostImages, move |s| {
-                if let Some(v) = weak.borrow().upgrade() {
-                    if let Some(st) = v.state.borrow().clone() {
-                        let _ = st.lib.set_setting(KEY_FACES_UNNAMED_SORT, s.key());
+            let weak2 = weak.clone();
+            UnnamedHeader::new(
+                &uflow,
+                GroupSort::MostImages,
+                move |s| {
+                    if let Some(v) = weak.borrow().upgrade() {
+                        if let Some(st) = v.state.borrow().clone() {
+                            let _ = st.lib.set_setting(KEY_FACES_UNNAMED_SORT, s.key());
+                        }
+                        v.reload();
                     }
-                    v.reload();
-                }
+                },
+                move |c| save_collapsed(&weak2, KEY_FACES_UNNAMED_COLLAPSED, c),
+            )
+        };
+        uheader.header.root.set_visible(false);
+        let iheader = {
+            let weak = weak.clone();
+            SectionHeader::new("Identified", &flow, None, move |c| {
+                save_collapsed(&weak, KEY_FACES_IDENTIFIED_COLLAPSED, c)
             })
         };
-        uheader.root.set_visible(false);
+        iheader.root.set_visible(false);
 
         let empty = Label::new(Some(
             "No faces yet. Turn on face detection in Settings → Faces, then scan.",
@@ -99,8 +114,9 @@ impl FacesView {
             .build();
         let inner = GtkBox::new(Orientation::Vertical, 0);
         inner.append(&empty);
+        inner.append(&iheader.root);
         inner.append(&flow);
-        inner.append(&uheader.root);
+        inner.append(&uheader.header.root);
         inner.append(&uflow);
         scroll.set_child(Some(&inner));
         root.append(&scroll);
@@ -112,6 +128,7 @@ impl FacesView {
             flow,
             uflow,
             uheader,
+            iheader,
             empty,
             state: RefCell::new(None),
             scope: RefCell::new(0),
@@ -214,6 +231,9 @@ impl FacesView {
                 &state.lib.get_setting(KEY_FACES_UNNAMED_SORT, "").unwrap_or_default(),
             );
             self.uheader.set_sort(sort);
+            let on = |k: &str| state.lib.get_setting(k, "0").unwrap_or_default() == "1";
+            self.iheader.set_collapsed(on(KEY_FACES_IDENTIFIED_COLLAPSED));
+            self.uheader.header.set_collapsed(on(KEY_FACES_UNNAMED_COLLAPSED));
             let info = state.lib.unnamed_group_info(false).unwrap_or_default();
             let clusters = sort_groups(state.lib.unnamed_clusters().unwrap_or_default(), &info, sort);
             (people, clusters)
@@ -227,14 +247,14 @@ impl FacesView {
         };
 
         self.uheader.set_count(clusters.len());
-        self.uflow.set_visible(!clusters.is_empty());
         if subgroups.is_empty() && people.is_empty() && clusters.is_empty() {
             self.empty.set_visible(true);
-            self.flow.set_visible(false);
+            self.iheader.apply(0, false);
             return;
         }
         self.empty.set_visible(false);
-        self.flow.set_visible(!(subgroups.is_empty() && people.is_empty()));
+        self.iheader
+            .apply(subgroups.len() + people.len(), scope == 0);
 
         // One query each for all representative faces.
         let reps = state.lib.representative_faces(false).unwrap_or_default();
@@ -465,4 +485,13 @@ fn person_folder_faces(
         .map(|p| (*p, all_reps.get(p).copied().unwrap_or(0)))
         .collect();
     super::mosaic::pick_faces(group_id, &owners, &reps, &pool)
+}
+
+/// Save the collapsed state of a section under `key`.
+fn save_collapsed(weak: &Rc<RefCell<std::rc::Weak<FacesView>>>, key: &str, collapsed: bool) {
+    if let Some(v) = weak.borrow().upgrade() {
+        if let Some(st) = v.state.borrow().clone() {
+            let _ = st.lib.set_setting(key, if collapsed { "1" } else { "0" });
+        }
+    }
 }

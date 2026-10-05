@@ -24,8 +24,8 @@ use gtk4::{
 };
 use gtk4::gio;
 
-use super::groupsort::{sort_groups, tile_flow, GroupSort, UnnamedHeader};
-use super::prefs::KEY_CHARS_UNNAMED_SORT;
+use super::groupsort::{sort_groups, tile_flow, GroupSort, SectionHeader, UnnamedHeader};
+use super::prefs::{KEY_CHARS_IDENTIFIED_COLLAPSED, KEY_CHARS_UNNAMED_COLLAPSED, KEY_CHARS_UNNAMED_SORT};
 use super::state::{AppState, CropJob, queue_crop_job};
 use super::util::texture_from_bytes;
 
@@ -62,6 +62,8 @@ pub struct CharactersView {
     uflow: FlowBox,
     /// The line, title, and sort menu above `uflow`.
     uheader: UnnamedHeader,
+    /// The collapsible "Identified" header above `flow`.
+    iheader: SectionHeader,
     empty: Label,
     state: RefCell<Option<Rc<AppState>>>,
     /// The character group currently browsed, or `0` for the top-level
@@ -122,16 +124,29 @@ impl CharactersView {
             Rc::new(RefCell::new(std::rc::Weak::new()));
         let uheader = {
             let weak = weak.clone();
-            UnnamedHeader::new(GroupSort::MostImages, move |s| {
-                if let Some(v) = weak.borrow().upgrade() {
-                    if let Some(st) = v.state.borrow().clone() {
-                        let _ = st.lib.set_setting(KEY_CHARS_UNNAMED_SORT, s.key());
+            let weak2 = weak.clone();
+            UnnamedHeader::new(
+                &uflow,
+                GroupSort::MostImages,
+                move |s| {
+                    if let Some(v) = weak.borrow().upgrade() {
+                        if let Some(st) = v.state.borrow().clone() {
+                            let _ = st.lib.set_setting(KEY_CHARS_UNNAMED_SORT, s.key());
+                        }
+                        v.reload();
                     }
-                    v.reload();
-                }
+                },
+                move |c| save_collapsed(&weak2, KEY_CHARS_UNNAMED_COLLAPSED, c),
+            )
+        };
+        uheader.header.root.set_visible(false);
+        let iheader = {
+            let weak = weak.clone();
+            SectionHeader::new("Identified", &flow, None, move |c| {
+                save_collapsed(&weak, KEY_CHARS_IDENTIFIED_COLLAPSED, c)
             })
         };
-        uheader.root.set_visible(false);
+        iheader.root.set_visible(false);
 
         let empty = Label::new(Some(
             "No stylised faces yet. Turn on stylised face detection in \
@@ -148,8 +163,9 @@ impl CharactersView {
             .build();
         let inner = GtkBox::new(Orientation::Vertical, 0);
         inner.append(&empty);
+        inner.append(&iheader.root);
         inner.append(&flow);
-        inner.append(&uheader.root);
+        inner.append(&uheader.header.root);
         inner.append(&uflow);
         scroll.set_child(Some(&inner));
         root.append(&scroll);
@@ -161,6 +177,7 @@ impl CharactersView {
             flow,
             uflow,
             uheader,
+            iheader,
             empty,
             state: RefCell::new(None),
             scope: RefCell::new(0),
@@ -285,6 +302,9 @@ impl CharactersView {
                 &state.lib.get_setting(KEY_CHARS_UNNAMED_SORT, "").unwrap_or_default(),
             );
             self.uheader.set_sort(sort);
+            let on = |k: &str| state.lib.get_setting(k, "0").unwrap_or_default() == "1";
+            self.iheader.set_collapsed(on(KEY_CHARS_IDENTIFIED_COLLAPSED));
+            self.uheader.header.set_collapsed(on(KEY_CHARS_UNNAMED_COLLAPSED));
             // Compute the sort only on a full reload (no tiles yet). A
             // refresh keeps existing tiles in place, so it needs no order.
             let raw = state.lib.unnamed_style_clusters().unwrap_or_default();
@@ -305,7 +325,6 @@ impl CharactersView {
         };
 
         self.uheader.set_count(clusters.len());
-        self.uflow.set_visible(!clusters.is_empty());
         if subgroups.is_empty() && characters.is_empty() && clusters.is_empty() {
             while let Some(child) = self.flow.first_child() {
                 self.flow.remove(&child);
@@ -315,11 +334,12 @@ impl CharactersView {
             }
             self.tiles.borrow_mut().clear();
             self.empty.set_visible(true);
-            self.flow.set_visible(false);
+            self.iheader.apply(0, false);
             return;
         }
         self.empty.set_visible(false);
-        self.flow.set_visible(!(subgroups.is_empty() && characters.is_empty()));
+        self.iheader
+            .apply(subgroups.len() + characters.len(), scope == 0);
 
         // The wanted set, in stable display order: sub-groups first (like
         // folders in a file browser), then named characters, then unnamed
@@ -670,7 +690,8 @@ impl CharactersView {
         {
             let tiles = self.tiles.borrow();
             let mut sel = self.selected.borrow_mut();
-            for entry in &tiles[from..=to] {
+            // Skip the tiles in a collapsed section.
+            for entry in tiles[from..=to].iter().filter(|e| e.root.is_mapped()) {
                 if !sel.iter().any(|k| *k == entry.key) {
                     sel.push(entry.key);
                 }
@@ -979,4 +1000,13 @@ fn character_folder_faces(
         .map(|c| (*c, all_reps.get(c).copied().unwrap_or(0)))
         .collect();
     super::mosaic::pick_faces(group_id, &owners, &reps, &pool)
+}
+
+/// Save the collapsed state of a section under `key`.
+fn save_collapsed(weak: &Rc<RefCell<std::rc::Weak<CharactersView>>>, key: &str, collapsed: bool) {
+    if let Some(v) = weak.borrow().upgrade() {
+        if let Some(st) = v.state.borrow().clone() {
+            let _ = st.lib.set_setting(key, if collapsed { "1" } else { "0" });
+        }
+    }
 }

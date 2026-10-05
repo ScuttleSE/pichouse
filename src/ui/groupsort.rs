@@ -128,19 +128,36 @@ pub fn order_by_similarity(centroids: &[Vec<f32>]) -> Vec<usize> {
     out
 }
 
-/// The "Unidentified" section header: a horizontal line, a title with the
-/// group count, and a sort menu. `on_change` runs when the user picks a new
-/// sort. The caller saves the sort and reloads the view.
-pub struct UnnamedHeader {
+/// A collapsible section header: a horizontal line, an arrow button, a title
+/// with a count, and an optional trailing widget. The header shows or hides
+/// its `content` FlowBox. `on_toggle` runs with the new collapsed state when
+/// the user clicks the arrow or the title.
+pub struct SectionHeader {
     pub root: gtk4::Box,
     pub title: gtk4::Label,
-    dd: gtk4::DropDown,
-    /// True while `set_sort` changes the menu. Then `on_change` does not run.
-    quiet: std::rc::Rc<std::cell::Cell<bool>>,
+    arrow: gtk4::Button,
+    name: String,
+    content: gtk4::FlowBox,
+    collapsed: std::rc::Rc<std::cell::Cell<bool>>,
+    /// The item count from the last `apply`.
+    count: std::rc::Rc<std::cell::Cell<usize>>,
 }
 
-impl UnnamedHeader {
-    pub fn new(initial: GroupSort, on_change: impl Fn(GroupSort) + 'static) -> UnnamedHeader {
+fn arrow_icon(collapsed: bool) -> &'static str {
+    if collapsed {
+        "pan-end-symbolic"
+    } else {
+        "pan-down-symbolic"
+    }
+}
+
+impl SectionHeader {
+    pub fn new(
+        name: &str,
+        content: &gtk4::FlowBox,
+        trailing: Option<&gtk4::Widget>,
+        on_toggle: impl Fn(bool) + 'static,
+    ) -> SectionHeader {
         use gtk4::prelude::*;
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
         root.set_margin_top(8);
@@ -148,12 +165,94 @@ impl UnnamedHeader {
         root.set_margin_end(8);
         root.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
         let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
-        let title = gtk4::Label::new(Some("Unidentified"));
+        let arrow = gtk4::Button::from_icon_name(arrow_icon(false));
+        arrow.add_css_class("flat");
+        arrow.set_tooltip_text(Some("Collapse or expand this section"));
+        row.append(&arrow);
+        let title = gtk4::Label::new(Some(name));
         title.set_xalign(0.0);
         title.set_hexpand(true);
         title.add_css_class("heading");
         row.append(&title);
-        row.append(&gtk4::Label::new(Some("Sort:")));
+        if let Some(w) = trailing {
+            row.append(w);
+        }
+        root.append(&row);
+        let collapsed = std::rc::Rc::new(std::cell::Cell::new(false));
+        let count = std::rc::Rc::new(std::cell::Cell::new(0usize));
+        let on_toggle = std::rc::Rc::new(on_toggle);
+        let toggle = {
+            let collapsed = collapsed.clone();
+            let count = count.clone();
+            let arrow = arrow.clone();
+            let content = content.clone();
+            let on_toggle = on_toggle.clone();
+            std::rc::Rc::new(move || {
+                let c = !collapsed.get();
+                collapsed.set(c);
+                arrow.set_icon_name(arrow_icon(c));
+                content.set_visible(count.get() > 0 && !c);
+                on_toggle(c);
+            })
+        };
+        {
+            let t = toggle.clone();
+            arrow.connect_clicked(move |_| t());
+        }
+        let click = gtk4::GestureClick::new();
+        click.connect_released(move |_, _, _, _| toggle());
+        title.add_controller(click);
+        SectionHeader {
+            root,
+            title,
+            arrow,
+            name: name.to_string(),
+            content: content.clone(),
+            collapsed,
+            count,
+        }
+    }
+
+    /// Set the collapsed state. This does not run `on_toggle`.
+    pub fn set_collapsed(&self, c: bool) {
+        use gtk4::prelude::*;
+        self.collapsed.set(c);
+        self.arrow.set_icon_name(arrow_icon(c));
+        self.content.set_visible(self.count.get() > 0 && !c);
+    }
+
+    /// Set the item count. Show the header only when `show_header` is true
+    /// and `n` is over 0. Without a header, the content is never collapsed.
+    pub fn apply(&self, n: usize, show_header: bool) {
+        use gtk4::prelude::*;
+        self.count.set(n);
+        self.title.set_text(&format!("{} ({n})", self.name));
+        self.root.set_visible(show_header && n > 0);
+        self.content
+            .set_visible(n > 0 && (!show_header || !self.collapsed.get()));
+    }
+}
+
+/// The "Unidentified" section header: a collapsible `SectionHeader` with a
+/// sort menu. `on_change` runs when the user picks a new sort. The caller
+/// saves the sort and reloads the view.
+pub struct UnnamedHeader {
+    pub header: SectionHeader,
+    dd: gtk4::DropDown,
+    /// True while `set_sort` changes the menu. Then `on_change` does not run.
+    quiet: std::rc::Rc<std::cell::Cell<bool>>,
+}
+
+impl UnnamedHeader {
+    pub fn new(
+        content: &gtk4::FlowBox,
+        initial: GroupSort,
+        on_change: impl Fn(GroupSort) + 'static,
+        on_toggle: impl Fn(bool) + 'static,
+    ) -> UnnamedHeader {
+        use gtk4::prelude::*;
+        let trailing = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+        trailing.append(&gtk4::Label::new(Some("Sort:")));
         let labels: Vec<&str> = GroupSort::ALL.iter().map(|s| s.label()).collect();
         let dd = gtk4::DropDown::from_strings(&labels);
         dd.set_tooltip_text(Some("Sort the unidentified groups"));
@@ -169,9 +268,9 @@ impl UnnamedHeader {
                 on_change(*s);
             }
         });
-        row.append(&dd);
-        root.append(&row);
-        UnnamedHeader { root, title, dd, quiet }
+        trailing.append(&dd);
+        let header = SectionHeader::new("Unidentified", content, Some(trailing.upcast_ref()), on_toggle);
+        UnnamedHeader { header, dd, quiet }
     }
 
     /// Show `sort` in the menu. This does not run `on_change`.
@@ -184,9 +283,7 @@ impl UnnamedHeader {
 
     /// Set the group count in the title. Hide the header when `n` is 0.
     pub fn set_count(&self, n: usize) {
-        use gtk4::prelude::*;
-        self.title.set_text(&format!("Unidentified ({n})"));
-        self.root.set_visible(n > 0);
+        self.header.apply(n, true);
     }
 }
 

@@ -358,8 +358,15 @@ Both systems take a `ClusterParams` struct. The config builds it with
 
 - The Faces and Characters views have two FlowBoxes. `flow` holds the
   sub-groups and the named tiles. `uflow` holds the unnamed groups.
-- `UnnamedHeader` in `src/ui/groupsort.rs` is the line, the title, and the
-  sort menu between them. It hides when there are no unnamed groups.
+- `SectionHeader` in `src/ui/groupsort.rs` is a collapsible header: a line,
+  an arrow, a title with a count, and an optional trailing widget. It shows
+  or hides its FlowBox. The "Identified" header above `flow` is a
+  `SectionHeader`. It shows only at the top level.
+- `UnnamedHeader` wraps a `SectionHeader` with the sort menu. It hides when
+  there are no unnamed groups.
+- The collapsed keys are `facesview.identified_collapsed`,
+  `facesview.unnamed_collapsed`, `charactersview.identified_collapsed`, and
+  `charactersview.unnamed_collapsed` ("1" or "0").
 - `sort_groups` sorts the unnamed groups. The noise group (-1) stays last.
   `order_by_similarity` chains each group to its nearest unused group.
 - `Library::unnamed_group_info` in `src/db/faces.rs` gives the newest face
