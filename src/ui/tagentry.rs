@@ -76,7 +76,8 @@ impl TagEntry {
                 let c = c.clone();
                 gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(200), move || {
                     if let Some(t) = w.upgrade() {
-                        if !c.contains_focus() {
+                        eprintln!("[tagdbg] entry leave timer: focus_in={} sugg_visible={}", c.contains_focus(), t.popover.is_visible());
+                        if !c.contains_focus() && t.popover.is_visible() {
                             t.popover.popdown();
                         }
                     }
