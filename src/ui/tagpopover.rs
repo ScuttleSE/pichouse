@@ -125,12 +125,14 @@ pub fn show(anchor: &impl IsA<gtk4::Widget>, lib: Arc<Library>, ids: Vec<i64>, o
     {
         let keep = entry.clone();
         popover.connect_closed(move |p| {
+            eprintln!("[tagdbg] popover closed");
             let _ = &keep;
             let p = p.clone();
             gtk4::glib::idle_add_local_once(move || p.unparent());
         });
     }
     popover.popup();
+    eprintln!("[tagdbg] popup called visible={} mapped={}", popover.is_visible(), popover.is_mapped());
     entry.entry.grab_focus();
 }
 

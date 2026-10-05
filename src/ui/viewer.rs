@@ -64,6 +64,11 @@ pub struct Viewer {
     /// Bumped on every `show()` so a late async image load for a previous photo
     /// is discarded instead of flashing on screen.
     generation: std::cell::Cell<u64>,
+    /// Decoded images of the current, next, and previous photos. The key is
+    /// from `cache_key`. The cache keeps at most `CACHE_MAX` entries.
+    cache: RefCell<Vec<(String, gtk4::gdk::Texture)>>,
+    /// The keys that a background pre-read decodes now.
+    pending: RefCell<std::collections::HashSet<String>>,
     /// True while the interactive crop overlay is active.
     crop_mode: std::cell::Cell<bool>,
     /// The crop rectangle being edited, in per-mille.
@@ -168,6 +173,8 @@ impl Viewer {
             state: RefCell::new(None),
             show_original: std::cell::Cell::new(false),
             generation: std::cell::Cell::new(0),
+            cache: RefCell::new(Vec::new()),
+            pending: RefCell::new(std::collections::HashSet::new()),
             crop_mode: std::cell::Cell::new(false),
             crop_rect: RefCell::new((0, 0, 0, 0)),
             crop_cb: RefCell::new(None),
@@ -338,6 +345,7 @@ impl Viewer {
 
     /// Re-render the current photo (for example after edits change).
     pub fn reload_current(self: &Rc<Self>) {
+        self.cache.borrow_mut().clear();
         self.show();
     }
 
@@ -801,50 +809,8 @@ impl Viewer {
         state.grid().reload_from_source();
     }
 
-    fn show(self: &Rc<Self>) {
-        let idx = *self.index.borrow();
-        let photo = {
-            let photos = self.photos.borrow();
-            match photos.get(idx) {
-                Some(p) => p.clone(),
-                None => return,
-            }
-        };
-        self.header.set_text(&photo.filename);
-        if let Some(state) = self.state.borrow().clone() {
-            state.properties().show(&photo);
-        }
-
-        // Clear the previous image immediately so it is not left on screen while
-        // the new file is read and decoded.
-        self.picture.set_paintable(gtk4::gdk::Paintable::NONE);
-
-        // Bump the generation so a late result for a previously shown photo is
-        // ignored (e.g. opening a second photo before the first finished loading).
-        let generation = self.generation.get().wrapping_add(1);
-        self.generation.set(generation);
-
-        // Read the image bytes off-thread, then decode + rotate on the UI
-        // thread (Pixbuf is not Send). Local photos read from disk; Immich
-        // photos download the preview over HTTP.
-        let (tx, rx) = glib::MainContext::channel::<Option<Vec<u8>>>(glib::Priority::DEFAULT);
-        let path = photo.path.clone();
-        let server = immich_server_for(&self.state.borrow().clone(), &path);
-        std::thread::spawn(move || {
-            let bytes = match server {
-                Some((server, asset_id)) => {
-                    let client = crate::immich::Client::new(&server.base_url, &server.api_key);
-                    client.asset_preview(&asset_id).ok()
-                }
-                None => std::fs::read(&path).ok(),
-            };
-            let _ = tx.send(bytes);
-        });
-        let picture = self.picture.clone();
-        let rot = photo.orientation;
-        let this = self.clone();
-        // The non-destructive edit to apply on the decoded pixels, unless the
-        // user asked to see the original.
+    /// The edit to apply when the viewer shows `photo`.
+    fn edit_for(&self, photo: &Photo) -> crate::model::PhotoEdit {
         let mut edit = if self.show_original.get() {
             crate::model::PhotoEdit::default()
         } else {
@@ -862,23 +828,181 @@ impl Viewer {
             edit.crop_w = 0;
             edit.crop_h = 0;
         }
-        rx.attach(None, move |bytes| {
-            // Drop stale results from an earlier show().
-            if this.generation.get() != generation {
-                return glib::ControlFlow::Break;
-            }
-            match bytes.and_then(|b| decode_edited(&b, rot, &edit)) {
-                Some(pb) => picture.set_pixbuf(Some(&pb)),
-                None => picture.set_paintable(gtk4::gdk::Paintable::NONE),
-            }
-            this.crop_area.queue_draw();
-            if this.faces_mode.get() {
-                this.load_faces();
-                this.face_area.queue_draw();
+        edit
+    }
+
+    fn cache_get(&self, key: &str) -> Option<gtk4::gdk::Texture> {
+        self.cache.borrow().iter().find(|(k, _)| k == key).map(|(_, t)| t.clone())
+    }
+
+    fn cache_put(&self, key: String, tex: gtk4::gdk::Texture) {
+        let mut c = self.cache.borrow_mut();
+        c.retain(|(k, _)| *k != key);
+        c.push((key, tex));
+        while c.len() > CACHE_MAX {
+            c.remove(0);
+        }
+    }
+
+    /// Read and decode `photo` on a worker thread. `done` runs on the UI
+    /// thread with the texture, or `None` when the decode fails.
+    fn load_async(
+        self: &Rc<Self>,
+        photo: &Photo,
+        edit: crate::model::PhotoEdit,
+        done: impl FnOnce(Option<gtk4::gdk::Texture>) + 'static,
+    ) {
+        let (tx, rx) = glib::MainContext::channel::<Decoded>(glib::Priority::DEFAULT);
+        let path = photo.path.clone();
+        let server = immich_server_for(&self.state.borrow().clone(), &path);
+        let rot = photo.orientation;
+        let edit2 = edit.clone();
+        std::thread::spawn(move || {
+            let bytes = match server {
+                Some((server, asset_id)) => {
+                    let client = crate::immich::Client::new(&server.base_url, &server.api_key);
+                    client.asset_preview(&asset_id).ok()
+                }
+                None => std::fs::read(&path).ok(),
+            };
+            let out = match bytes {
+                None => Decoded::Failed,
+                Some(b) => match decode_rgba(&b, rot, &edit2) {
+                    Some(img) => Decoded::Rgba(img),
+                    // The `image` crate cannot read this format. Let GTK try
+                    // on the UI thread.
+                    None => Decoded::Raw(b),
+                },
+            };
+            let _ = tx.send(out);
+        });
+        let mut done = Some(done);
+        rx.attach(None, move |d| {
+            let tex = match d {
+                Decoded::Rgba(img) => Some(rgba_to_texture(img)),
+                Decoded::Raw(b) => decode_edited(&b, rot, &edit).map(|pb| gtk4::gdk::Texture::for_pixbuf(&pb)),
+                Decoded::Failed => None,
+            };
+            if let Some(f) = done.take() {
+                f(tex);
             }
             glib::ControlFlow::Break
         });
     }
+
+    /// Pre-read the next and previous photos into the cache.
+    fn prefetch_neighbors(self: &Rc<Self>) {
+        let idx = *self.index.borrow();
+        let neighbors: Vec<Photo> = {
+            let photos = self.photos.borrow();
+            [idx + 1, idx.wrapping_sub(1)].iter().filter_map(|i| photos.get(*i).cloned()).collect()
+        };
+        for p in neighbors {
+            let edit = self.edit_for(&p);
+            let key = cache_key(&p, &edit);
+            if self.cache_get(&key).is_some() || !self.pending.borrow_mut().insert(key.clone()) {
+                continue;
+            }
+            let this = self.clone();
+            self.load_async(&p, edit, move |tex| {
+                this.pending.borrow_mut().remove(&key);
+                if let Some(t) = tex {
+                    this.cache_put(key, t);
+                }
+            });
+        }
+    }
+
+    /// Put a decoded image on screen and refresh the overlays.
+    fn present(self: &Rc<Self>, tex: Option<&gtk4::gdk::Texture>) {
+        match tex {
+            Some(t) => self.picture.set_paintable(Some(t)),
+            None => self.picture.set_paintable(gtk4::gdk::Paintable::NONE),
+        }
+        self.crop_area.queue_draw();
+        if self.faces_mode.get() {
+            self.load_faces();
+            self.face_area.queue_draw();
+        }
+    }
+
+    fn show(self: &Rc<Self>) {
+        let idx = *self.index.borrow();
+        let photo = {
+            let photos = self.photos.borrow();
+            match photos.get(idx) {
+                Some(p) => p.clone(),
+                None => return,
+            }
+        };
+        self.header.set_text(&photo.filename);
+        if let Some(state) = self.state.borrow().clone() {
+            state.properties().show(&photo);
+        }
+
+        // Bump the generation so a late result for a previously shown photo is
+        // ignored (e.g. opening a second photo before the first finished loading).
+        let generation = self.generation.get().wrapping_add(1);
+        self.generation.set(generation);
+
+        let edit = self.edit_for(&photo);
+        let key = cache_key(&photo, &edit);
+        if let Some(tex) = self.cache_get(&key) {
+            self.present(Some(&tex));
+            self.prefetch_neighbors();
+            return;
+        }
+
+        // Keep the old image on screen until the new image is ready.
+        let this = self.clone();
+        self.load_async(&photo, edit, move |tex| {
+            if let Some(t) = &tex {
+                this.cache_put(key, t.clone());
+            }
+            // Drop stale results from an earlier show().
+            if this.generation.get() != generation {
+                return;
+            }
+            this.present(tex.as_ref());
+            this.prefetch_neighbors();
+        });
+    }
+}
+
+/// The most decoded images that the viewer keeps.
+const CACHE_MAX: usize = 4;
+
+/// The result of a worker-thread decode.
+enum Decoded {
+    Rgba(image::RgbaImage),
+    Raw(Vec<u8>),
+    Failed,
+}
+
+/// The cache key of a photo as shown with `edit`.
+fn cache_key(photo: &Photo, edit: &crate::model::PhotoEdit) -> String {
+    format!("{}|{}|{}|{:?}", photo.id, photo.path, photo.orientation, edit)
+}
+
+/// Decode, rotate, and edit on a worker thread with the `image` crate.
+fn decode_rgba(bytes: &[u8], degrees: i32, edit: &crate::model::PhotoEdit) -> Option<image::RgbaImage> {
+    let img = image::load_from_memory(bytes).ok()?.to_rgba8();
+    let img = match ((degrees % 360) + 360) % 360 {
+        90 => image::imageops::rotate90(&img),
+        180 => image::imageops::rotate180(&img),
+        270 => image::imageops::rotate270(&img),
+        _ => img,
+    };
+    if edit.is_identity() {
+        return Some(img);
+    }
+    Some(crate::edit::apply_edits(img, edit))
+}
+
+fn rgba_to_texture(img: image::RgbaImage) -> gtk4::gdk::Texture {
+    let (w, h) = (img.width() as i32, img.height() as i32);
+    let data = glib::Bytes::from_owned(img.into_raw());
+    gtk4::gdk::MemoryTexture::new(w, h, gtk4::gdk::MemoryFormat::R8g8b8a8, &data, (w * 4) as usize).upcast()
 }
 
 /// Decode image bytes, apply the stored 90-degree rotation, then apply the
