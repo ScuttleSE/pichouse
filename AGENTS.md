@@ -223,6 +223,10 @@ virtual albums when these tables are empty.
                          (shares src/face/runtime): config, models (catalog+
                          download), detector (anime YOLOv8n), embedder (CCIP
                          CaFormer), cluster (HDBSCAN crate)
+    src/ptr/             optional local copy of the Hydrus PTR (client,
+                         update parser, ptr.db schema, sync loop). See
+                         PTR_PLAN.md. Branch ptr-tags only.
+    src/bin/ptr-sync.rs  CLI for the initial PTR sync (shares src/ptr/)
     src/immich/          Immich server integration (blocking HTTP client)
     src/ui/              GTK4 UI (app, state, grid, sidebar, viewer, editor,
                          export, properties, toolbar, status, settings,

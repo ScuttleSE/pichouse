@@ -9,6 +9,10 @@ license = "Unlicense"
 name = "pichouse"
 path = "src/main.rs"
 
+[[bin]]
+name = "ptr-sync"
+path = "src/bin/ptr-sync.rs"
+
 [dependencies]
 # GUI. Pinned to a gtk4-rs release that targets GLib 2.84 / GTK 4.10 (Debian 13).
 # Do not upgrade past the GLib version Debian 13 ships.

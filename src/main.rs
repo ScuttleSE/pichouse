@@ -8,6 +8,7 @@ mod immich;
 mod dedup;
 mod model;
 mod phash;
+mod ptr;
 mod reconcile;
 mod scan;
 mod styleface;
