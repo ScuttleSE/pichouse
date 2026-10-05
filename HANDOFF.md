@@ -2,8 +2,9 @@
 
 This document is for an agent with no memory of the last session. It uses
 Simplified Technical English (ASD-STE100, Strict). Read AGENTS.md first. Read
-ROADMAP.md for planned features. Read section 0000000000000000000 first — it
-describes the most recent work (found and fixed the real cause of the Phase 1
+ROADMAP.md for planned features. Read section PTR first — it describes the most recent work (the PTR tag
+database). Then read section 0000000000000000000 — it
+describes earlier work (found and fixed the real cause of the Phase 1
 scan slowdown past 1M photos: a per-file re-stat that grew expensive on a
 network mount). Then read section 000000000000000000 — it
 describes an earlier, partial fix (stopping O(total-photos) sidebar work during
@@ -41,7 +42,44 @@ Then read section 00 — it describes four earlier follow-up features. Then read
 section 0 — it describes the Immich integration. The later sections describe
 earlier features and are still correct.
 
-## 0000000000000000000. Found and fixed the real Phase 1 scan slowdown (most recent work — read this first)
+## PTR. The PTR tag database (most recent work — read this first)
+
+### Current task
+
+The PTR tag database is on `main`. It is complete. The user must now test the
+UI by hand. Read `PTR_PLAN.md` ("Handoff" and "Full sync results") and the
+"PTR tag database" section in AGENTS.md.
+
+### State
+
+- The `ptr-tags` branch was squash-merged into `main`. The branch stays as an
+  archive. Its early commits hold the public PTR key. `main` does not.
+- `mappings` has the key `(hash_id, tag_id)` and no second index.
+- `ptr-sync` skips hash definitions that are not SHA-256. The PTR history
+  holds some (index 1321: a 40-character SHA-1. Index 1327: "0000").
+- `ptr-sync` and "Refresh now" run `PtrDb::checkpoint`
+  (`PRAGMA wal_checkpoint(TRUNCATE)`) at the end.
+- CI ships `ptr-sync-linux-amd64` next to `pichouse-linux-amd64` in the
+  rolling and named releases.
+- The user ran a full sync: `ptr.db` 74.4 GB, 203 M hashes, 0.2 ms for each
+  lookup, 1.3% of 3.5 M library photos match.
+- The settings tab is Settings → Tagging → Tag Database (PTR)
+  (`src/ui/ptrui.rs`). It sets every `ptr.*` key. It can move `ptr.db` to a
+  new location.
+
+### Next steps
+
+1. Ask the user for the result of the manual UI test: the settings tab, the
+   PTR tags in the popover, "Add PTR tags", "Refresh now", and the move.
+2. Ask the user whether the manual WAL checkpoint on the desktop worked.
+3. Fix the problems that the user reports.
+
+### Open questions
+
+- The in-app refresh inserts with the `hashes_sha256` index present. Each
+  insert is slower. Measure only if the user reports a slow refresh.
+
+## 0000000000000000000. Found and fixed the real Phase 1 scan slowdown
 
 This section describes the last session. All work is complete, on `main`, and
 pushed. Two functional commits (diagnostic logging, then the fix). CI

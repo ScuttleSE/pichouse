@@ -15,7 +15,8 @@ This section is for an agent with no memory of the earlier session.
   refresh, location move), and Phase 4 (PTR tags in the popover, import).
 - `mappings` uses the key `(hash_id, tag_id)`. A/B test, indexes 0–1200:
   apply 43 s against 112 s, file 378 MB against 607 MB, same data.
-- No full sync ran. Never run a full sync on the development machine.
+- The user ran a full sync on the desktop. See "Full sync results".
+  Never run a full sync on the development machine.
 
 ### Files
 
@@ -38,9 +39,9 @@ Do not put the key in code or docs.
 
 ### Next steps
 
-1. Ask the user for the results of a full `ptr-sync` on the desktop (time,
-   size, errors). Update the size numbers in this file and in README.md.
-2. Measure the lookup speed in the popover with a full database.
+1. Ask the user for the results of the manual UI test: the settings tab,
+   the PTR tags in the popover, "Add PTR tags", and "Refresh now".
+2. Fix the problems that the user reports.
 
 ### Open questions
 
@@ -120,7 +121,21 @@ DefinitionsUpdate, ContentUpdate), `hydrus/core/HydrusSerialisable.py`,
 - A file download takes about 0.1 s. The server sent no bandwidth errors.
 - Estimated full download: about 21 GB.
 - Estimated rows: 150–205 M hashes, 18–45 M tags, about 4 000 M mappings.
-- Estimated full `ptr.db`: about 100–125 GB. This is a rough number.
+- Estimated full `ptr.db`: about 100–125 GB. This was wrong. See the
+  full sync results.
+
+## Full sync results (measured 2026-10-05, on the user's desktop)
+
+- Last index 4680. Rows: 203 M hashes, 54 M tags, 578 K siblings,
+  37 K parents. 0 hashes with a length other than 32 bytes.
+- `ptr.db` 74.4 GB. The `-wal` was 19.1 GB, because `ptr-sync` did not
+  checkpoint. `ptr-sync` and the in-app refresh now run
+  `PRAGMA wal_checkpoint(TRUNCATE)` at the end.
+- 148 sibling cycles of two tags. The lookup stops on a cycle.
+- Longest tag: 1024 characters.
+- One lookup by SHA-256: about 0.2 ms. The popover lookup can stay on the
+  main thread.
+- Match rate: 46,962 of 3,524,605 library photos (1.3%).
 - The format agrees with the Hydrus source. The parser in `src/ptr/` reads
   all sampled files with no error.
 

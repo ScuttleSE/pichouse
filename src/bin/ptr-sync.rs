@@ -46,7 +46,7 @@ fn main() {
             ptr::place::FsVerdict::Warn(m) => eprintln!("warning: {m}"),
             ptr::place::FsVerdict::Ok => {}
         }
-        println!("free space: {} GB. A full sync needs about 60-80 GB (estimate).", free / 1_000_000_000);
+        println!("free space: {} GB. A full sync needs about 75 GB (measured 2026-10).", free / 1_000_000_000);
     }
     let mut db = ptr::db::PtrDb::open(std::path::Path::new(&path)).unwrap_or_else(|e| die(&e.to_string()));
     let client = Client::new(&url, &key).unwrap_or_else(|e| die(&e));
@@ -74,6 +74,8 @@ fn main() {
     if stop_at.is_none() {
         println!("building lookup indexes (this can take a long time) ...");
         db.build_lookup_indexes().unwrap_or_else(|e| die(&e.to_string()));
+        println!("writing the WAL into the database ...");
+        db.checkpoint().unwrap_or_else(|e| die(&e.to_string()));
     }
     println!("done in {:.0} s", start.elapsed().as_secs_f64());
 }

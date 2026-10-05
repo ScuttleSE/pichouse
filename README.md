@@ -121,7 +121,7 @@ shows PTR tags for photos that are byte-identical to a file in the PTR. A
 re-saved or resized copy does not match. This is most useful for booru,
 anime, and furry art.
 
-The database is large (estimate: 60–80 GB, not measured). Put it on an SSD.
+The database is large (about 75 GB, measured in October 2026). Put it on an SSD.
 Do not put it on a network drive or a FAT32 drive.
 
 1. Get the public access key at

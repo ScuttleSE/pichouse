@@ -61,6 +61,12 @@ impl PtrDb {
         self.conn.execute_batch(LOOKUP_INDEXES)
     }
 
+    /// Write the WAL into the main file and empty the WAL. Without this,
+    /// the `-wal` file can stay very large (19 GB after a full sync).
+    pub fn checkpoint(&self) -> rusqlite::Result<()> {
+        self.conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
+    }
+
     /// Apply all updates of one index in one transaction. The caller gives
     /// the updates in any order. This function applies the definitions first.
     pub fn apply_index(&mut self, index: u64, next_due: i64, mut updates: Vec<Update>) -> rusqlite::Result<()> {

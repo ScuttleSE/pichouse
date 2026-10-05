@@ -239,7 +239,7 @@ pub fn ptr_tab(state: &Rc<AppState>) -> gtk4::ScrolledWindow {
     root.append(&note(
         "A local copy of the Hydrus Public Tag Repository (PTR). pichouse shows PTR tags for photos that are \
          byte-identical to a file in the PTR. A re-saved or resized copy does not match. The database is large \
-         (estimate: 60–80 GB). Put it on an SSD with enough free space.",
+         (about 75 GB). Put it on an SSD with enough free space.",
     ));
 
     let enabled = CheckButton::with_label("Use the PTR tag database");
@@ -573,6 +573,7 @@ fn start_refresh(state: &Rc<AppState>, ui: &JobUi) {
                 return Ok(format!("Cancelled after {n} indexes."));
             }
             db.build_lookup_indexes().map_err(|e| e.to_string())?;
+            db.checkpoint().map_err(|e| e.to_string())?;
             Ok(format!("Up to date. Applied {n} new indexes. {}", status_text(&s)))
         })();
         let _ = tx.send(Msg::Done(r));
