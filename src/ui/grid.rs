@@ -731,7 +731,6 @@ impl Grid {
         {
             let rc2 = rc.clone();
             rc.selection.connect_selection_changed(move |sel, _, _| {
-                eprintln!("[tagdbg] selection changed");
                 let bitset = sel.selection();
                 if bitset.size() == 0 {
                     return;
@@ -1302,7 +1301,6 @@ impl Grid {
     /// Open the tag popover for a cell. The targets are all selected photos
     /// when the clicked photo is selected, else only the clicked photo.
     fn open_tag_popover(self: &std::rc::Rc<Self>, anchor: &Button, photo_id: i64) {
-        eprintln!("[tagdbg] open_tag_popover id={photo_id}");
         if photo_id == 0 {
             return;
         }
@@ -2426,7 +2424,6 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
             let g = grid_setup.clone();
             tag_btn.connect_clicked(move |b| {
                 let id: i64 = unsafe { b.data::<i64>("photo-id").map(|p| *p.as_ref()).unwrap_or(0) };
-                eprintln!("[tagdbg] clicked id={id} mapped={} opacity={}", b.is_mapped(), b.opacity());
                 if let Some(g) = g.upgrade() {
                     g.open_tag_popover(b, id);
                 }
