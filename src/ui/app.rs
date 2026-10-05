@@ -298,6 +298,7 @@ fn install_css() {
         .thumbs.tagicon-hover .thumb-cell .tag-btn { opacity: 0; } \
         .thumbs.tagicon-hover .thumb-cell:hover .tag-btn { opacity: 1; } \
         .thumbs.tagicon-always .thumb-cell .tag-btn.tag-none { opacity: 1; } \
+        .thumb-cell .tag-btn.tag-open { opacity: 1; } \
         .tag-row-btn { min-width: 0; min-height: 0; padding: 0 2px; } \
         .face-scan-badge { \
             color: #33bf4d; \

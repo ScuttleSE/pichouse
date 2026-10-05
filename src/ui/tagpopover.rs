@@ -149,6 +149,13 @@ pub fn show(anchor: &impl IsA<gtk4::Widget>, lib: Arc<Library>, ids: Vec<i64>, o
             eprintln!("[tagdbg] at close: anchor mapped={} parent={:?}", a.is_mapped(), a.parent().map(|p| p.type_().name()));
         });
     }
+    // Keep the anchor visible while the popover is open. A `tag-none` icon
+    // hides when the cell loses the hover.
+    anchor.as_ref().add_css_class("tag-open");
+    {
+        let a = anchor.as_ref().clone();
+        popover.connect_closed(move |_| a.remove_css_class("tag-open"));
+    }
     popover.popup();
     eprintln!("[tagdbg] popup called visible={} mapped={}", popover.is_visible(), popover.is_mapped());
     entry.entry.grab_focus();
