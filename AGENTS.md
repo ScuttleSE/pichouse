@@ -331,6 +331,7 @@ so a focus face stays visible. It does not zoom more than the cell needs.
 `Library::crop_focus_for_photos` picks the face: the largest identified face,
 then the largest unnamed face, then the largest ignored face.
 `refresh_face_scanned` fills `Grid::crop_focus`. The key `grid.crop` ("1" or "0") turns the crop on or off.
+The key `grid.hover_fade` turns the mouseover fade on or off.
 The cell margin is the key
 `grid.cell_margin` (CSS on `gridview.thumbs > child`).
 

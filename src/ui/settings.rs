@@ -408,6 +408,19 @@ fn thumb_pane(state: &Rc<AppState>) -> GtkBox {    let root = pane_box();
         root.append(&check);
     }
     {
+        let check = gtk4::CheckButton::with_label("Fade to the whole photo on mouseover");
+        check.set_active(
+            state.lib.get_setting(prefs::KEY_GRID_HOVER_FADE, "1").unwrap_or_default() != "0",
+        );
+        let state = state.clone();
+        check.connect_toggled(move |c| {
+            let on = c.is_active();
+            let _ = state.lib.set_setting(prefs::KEY_GRID_HOVER_FADE, if on { "1" } else { "0" });
+            state.grid().set_fade(on);
+        });
+        root.append(&check);
+    }
+    {
         let row = GtkBox::new(Orientation::Horizontal, 6);
         let name = Label::new(Some("Thumbnail margin (px)"));
         name.set_xalign(0.0);

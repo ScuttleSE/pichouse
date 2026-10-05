@@ -121,6 +121,9 @@ fn build_ui(app: &Application) {
         state.enrich_pause_until.clone(),
     );
     *state.grid.borrow_mut() = Some(grid.clone());
+    grid.set_fade(
+        lib.get_setting(super::prefs::KEY_GRID_HOVER_FADE, "1").unwrap_or_default() != "0",
+    );
     grid.set_crop(
         lib.get_setting(super::prefs::KEY_GRID_CROP, "1").unwrap_or_default() != "0",
     );

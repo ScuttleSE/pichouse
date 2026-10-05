@@ -2071,6 +2071,11 @@ impl Grid {
     }
 
     /// Change the active thumbnail size and rebuild (new factory + jobs).
+    /// Turn the mouseover fade on or off.
+    pub fn set_fade(&self, on: bool) {
+        super::thumbpic::set_fade_enabled(on);
+    }
+
     /// Turn the square crop on or off, and redraw the cells.
     pub fn set_crop(&self, on: bool) {
         super::thumbpic::set_crop_enabled(on);
@@ -2362,7 +2367,7 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
             .and_downcast::<Label>();
         let (image, label) = overlay_parts(&overlay);
         label.set_text(&photo.filename());
-        image.set_fit(false);
+        image.reset_fit();
         image.set_focus_box(
             grid_bind
                 .upgrade()

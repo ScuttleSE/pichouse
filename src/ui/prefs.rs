@@ -116,6 +116,8 @@ pub const KEY_CHARS_UNNAMED_COLLAPSED: &str = "charactersview.unnamed_collapsed"
 /// The padding around each grid cell in pixels (0..24).
 /// "1" to crop thumbnails to a square, "0" to show the whole photo.
 pub const KEY_GRID_CROP: &str = "grid.crop";
+/// "1" to fade between the crop and the whole photo on mouseover.
+pub const KEY_GRID_HOVER_FADE: &str = "grid.hover_fade";
 pub const KEY_GRID_CELL_MARGIN: &str = "grid.cell_margin";
 /// Default per-image slideshow duration in seconds.
 pub const DEFAULT_SLIDESHOW_SECS: i32 = 4;
