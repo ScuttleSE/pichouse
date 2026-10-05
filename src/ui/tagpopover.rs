@@ -156,6 +156,14 @@ pub fn show(anchor: &impl IsA<gtk4::Widget>, lib: Arc<Library>, ids: Vec<i64>, o
         let a = anchor.as_ref().clone();
         popover.connect_closed(move |_| a.remove_css_class("tag-open"));
     }
+    // TEMP debug: no autohide, to test whether an outside click closes it.
+    popover.set_autohide(false);
+    {
+        let p2 = popover.clone();
+        popover.connect_notify_local(Some("visible"), move |_, _| {
+            eprintln!("[tagdbg] visible -> {}", p2.is_visible());
+        });
+    }
     popover.popup();
     eprintln!("[tagdbg] popup called visible={} mapped={}", popover.is_visible(), popover.is_mapped());
     entry.entry.grab_focus();
