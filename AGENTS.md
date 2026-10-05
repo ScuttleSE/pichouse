@@ -325,6 +325,12 @@ source. `show_photos` is the simplest entry point for a remote photo set.
 `AppState::show_virtual_album` in `src/ui/state.rs` is the wiring template. It
 sets the current view, calls the grid loader, and updates the status bar.
 
+The grid has a fixed column count. `Grid::update_columns` sets it from the
+scroller width, the thumbnail size, and the cell margin. A tick callback runs
+it when the width changes. The cells grow to fill the width. The thumbnail is
+a `Picture` with `ContentFit::Contain`. `Grid::set_cell_margin` sets the cell
+padding with CSS (`gridview.thumbs > child`). The key is `grid.cell_margin`.
+
 A photo in the grid is a `PhotoObject`. `PhotoObject` is a GObject wrapper of a
 `model::Photo`. `PhotoObject::from_photo` builds one. The grid fills the
 `texture` property from the thumbnail cache.

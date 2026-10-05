@@ -91,6 +91,15 @@ pub struct Grid {
     grid_view: GridView,
     selection: MultiSelection,
     thumb_size: std::cell::Cell<i32>,
+    /// The padding around each cell in pixels (setting `grid.cell_margin`).
+    cell_margin: std::cell::Cell<i32>,
+    /// The current cell side in pixels. It is `thumb_size` or larger, so a
+    /// fixed column count fills the scroller width.
+    cell_px: std::cell::Cell<i32>,
+    /// The scroller width at the last column update.
+    last_width: std::cell::Cell<i32>,
+    /// The CSS provider for the cell margin.
+    margin_css: gtk4::CssProvider,
     generation: Arc<AtomicU64>,
     jobs: mpsc::Sender<Job>,
     /// Job channel to the Immich thumbnail worker pool.
@@ -535,6 +544,7 @@ impl Grid {
         let grid_view = GridView::new(Some(selection.clone()), Some(factory));
         grid_view.set_min_columns(1);
         grid_view.set_max_columns(20);
+        grid_view.add_css_class("thumbs");
 
         let scroller = ScrolledWindow::builder()
             .hscrollbar_policy(PolicyType::Never)
@@ -598,6 +608,10 @@ impl Grid {
             grid_view,
             selection,
             thumb_size: std::cell::Cell::new(thumb_size),
+            cell_margin: std::cell::Cell::new(2),
+            cell_px: std::cell::Cell::new(thumb_size),
+            last_width: std::cell::Cell::new(0),
+            margin_css: gtk4::CssProvider::new(),
             generation,
             jobs: job_tx,
             immich_jobs: immich_tx,
@@ -645,6 +659,28 @@ impl Grid {
         {
             let factory = build_factory(rc.thumb_size.get(), Rc::downgrade(&rc));
             rc.grid_view.set_factory(Some(&factory));
+        }
+        // The cell margin CSS and the fixed column count. A tick callback
+        // reads the scroller width. The work runs only when the width changes.
+        gtk4::style_context_add_provider_for_display(
+            &gdk::Display::default().expect("display"),
+            &rc.margin_css,
+            gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+        rc.load_margin_css();
+        {
+            let weak = Rc::downgrade(&rc);
+            rc.scroller.add_tick_callback(move |sc, _| {
+                let Some(g) = weak.upgrade() else {
+                    return glib::ControlFlow::Break;
+                };
+                let w = sc.width();
+                if w != g.last_width.get() {
+                    g.last_width.set(w);
+                    g.update_columns();
+                }
+                glib::ControlFlow::Continue
+            });
         }
         // The sort dropdown re-orders the current photos and persists the choice.
         {
@@ -2051,8 +2087,52 @@ impl Grid {
     }
 
     /// Change the active thumbnail size and rebuild (new factory + jobs).
+    /// Set the padding around each cell and lay out the columns again.
+    pub fn set_cell_margin(&self, m: i32) {
+        self.cell_margin.set(m.clamp(0, 24));
+        self.load_margin_css();
+        self.update_columns();
+    }
+
+    fn load_margin_css(&self) {
+        let m = self.cell_margin.get();
+        self.margin_css.load_from_data(&format!(
+            "gridview.thumbs > child {{ padding: {m}px; margin: 0; }}"
+        ));
+    }
+
+    /// Fix the column count from the scroller width. Scrolling then cannot
+    /// change it. The cells grow to fill the extra width.
+    fn update_columns(&self) {
+        let w = self.scroller.width();
+        if w <= 0 {
+            return;
+        }
+        let m = self.cell_margin.get();
+        let thumb = self.thumb_size.get();
+        let slot = thumb + 2 * m;
+        let cols = (w / slot.max(1)).clamp(1, 50);
+        // Keep a few pixels of slack. Too wide cells make the grid overflow.
+        let cell = ((w - 4) / cols - 2 * m).max(thumb.min(w - 2 * m).max(16));
+        self.grid_view.set_min_columns(cols as u32);
+        self.grid_view.set_max_columns(cols as u32);
+        if cell != self.cell_px.get() {
+            self.cell_px.set(cell);
+            self.face_areas.borrow_mut().retain(|a| {
+                if let Some(a) = a.upgrade() {
+                    a.set_size_request(cell, cell);
+                    true
+                } else {
+                    false
+                }
+            });
+        }
+    }
+
     pub fn set_thumb_size(self: &Rc<Grid>, size: i32) {
         self.thumb_size.set(size);
+        self.cell_px.set(size);
+        self.update_columns();
         let factory = build_factory(size, Rc::downgrade(self));
         self.grid_view.set_factory(Some(&factory));
         self.rebuild();
@@ -2153,14 +2233,18 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
 
         let label = Label::new(None);
         label.set_wrap(true);
+        label.set_ellipsize(gtk4::pango::EllipsizeMode::Middle);
+        label.set_max_width_chars(12);
+        label.set_lines(3);
         label.set_justify(gtk4::Justification::Center);
         label.set_halign(Align::Center);
         label.set_valign(Align::Center);
         label.add_css_class("dim-label");
         overlay.set_child(Some(&label));
 
-        let image = Image::new();
-        image.set_pixel_size(thumb_size);
+        let image = gtk4::Picture::new();
+        image.set_content_fit(gtk4::ContentFit::Contain);
+        image.set_can_shrink(true);
         overlay.add_overlay(&image);
 
         // The face-box overlay: a transparent DrawingArea stacked on top of the
@@ -2169,7 +2253,8 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
         // "photo-id" data (set in `connect_bind`) via the grid's `face_boxes`
         // map, so no per-cell signal wiring is needed.
         let face_area = DrawingArea::new();
-        face_area.set_size_request(thumb_size, thumb_size);
+        let cell = grid_setup.upgrade().map(|g| g.cell_px.get()).unwrap_or(thumb_size);
+        face_area.set_size_request(cell, cell);
         face_area.set_can_target(false);
         overlay.add_overlay(&face_area);
         // Register this cell's DrawingArea so a later toggle can queue a
@@ -2395,7 +2480,7 @@ fn human_size(bytes: i64) -> String {
 }
 
 /// Set the image from a texture (or clear it and show the label if `None`).
-fn apply_texture(image: &Image, label: &Label, texture: Option<gdk::Texture>) {
+fn apply_texture(image: &gtk4::Picture, label: &Label, texture: Option<gdk::Texture>) {
     match texture {
         Some(t) => {
             image.set_paintable(Some(&t));
@@ -2409,12 +2494,12 @@ fn apply_texture(image: &Image, label: &Label, texture: Option<gdk::Texture>) {
 }
 
 /// Extract the `Image` (overlay child) and fallback `Label` from a cell.
-fn overlay_parts(overlay: &Overlay) -> (Image, Label) {
+fn overlay_parts(overlay: &Overlay) -> (gtk4::Picture, Label) {
     let label = overlay.first_child().and_downcast::<Label>().unwrap();
     let image = overlay
         .first_child()
         .and_then(|c| c.next_sibling())
-        .and_downcast::<Image>()
+        .and_downcast::<gtk4::Picture>()
         .unwrap();
     (image, label)
 }
@@ -2456,7 +2541,7 @@ fn draw_face_badge(cr: &gtk4::cairo::Context, right: f64, bottom: f64) {
 /// The displayed rect of `image`'s texture inside a `(w, h)` area, honouring
 /// aspect-preserving centering (mirrors `Viewer::image_rect`). Used to map a
 /// face box's per-mille coordinates onto the letterboxed thumbnail.
-fn image_rect(image: &Image, w: i32, h: i32) -> Option<(f64, f64, f64, f64)> {
+fn image_rect(image: &gtk4::Picture, w: i32, h: i32) -> Option<(f64, f64, f64, f64)> {
     let paintable = image.paintable()?;
     let iw = paintable.intrinsic_width() as f64;
     let ih = paintable.intrinsic_height() as f64;
