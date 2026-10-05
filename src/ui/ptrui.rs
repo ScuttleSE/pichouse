@@ -96,6 +96,30 @@ pub fn lookup(lib: &Library, ids: &[i64]) -> Option<HashMap<i64, Vec<String>>> {
     Some(out)
 }
 
+/// The ids of the photos that have one or more PTR tags. Each item is a
+/// photo id and its SHA-256. Returns an empty set when lookups are off.
+pub fn photos_with_tags(lib: &Library, photos: &[(i64, &str)]) -> std::collections::HashSet<i64> {
+    let mut out = std::collections::HashSet::new();
+    if photos.is_empty() {
+        return out;
+    }
+    let s = load(lib);
+    if !s.enabled || MOVING.load(Ordering::Relaxed) {
+        return out;
+    }
+    let Ok(reader) = ptr::lookup::PtrReader::open(&s.path) else { return out };
+    let opts = ptr::lookup::LookupOptions { exclude_namespaces: s.exclude, add_parents: s.add_parents };
+    for (id, hash) in photos {
+        if hash.is_empty() {
+            continue;
+        }
+        if reader.tags_for_sha256(hash, &opts).map(|t| !t.is_empty()).unwrap_or(false) {
+            out.insert(*id);
+        }
+    }
+    out
+}
+
 /// True when PTR lookups are possible now.
 pub fn available(lib: &Library) -> bool {
     let s = load(lib);

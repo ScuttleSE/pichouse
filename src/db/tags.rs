@@ -14,6 +14,8 @@ pub enum TagState {
     AiOnly,
     /// At least one user tag or confirmed AI tag.
     User,
+    /// No tags in the library, but the PTR has tags for the file.
+    PtrOnly,
 }
 
 /// One tag over a set of photos: the number of photos that have it, and

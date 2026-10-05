@@ -1284,7 +1284,17 @@ impl Grid {
     /// Re-read the tag state of the shown photos and update the tag icons.
     pub fn refresh_tag_state(&self) {
         let ids: Vec<i64> = self.all_photos.borrow().iter().map(|p| p.id).collect();
-        *self.tag_state.borrow_mut() = self.lib.tag_state_for_photos(&ids).unwrap_or_default();
+        let mut st = self.lib.tag_state_for_photos(&ids).unwrap_or_default();
+        {
+            // Photos with no library tags: ask the PTR.
+            let photos = self.all_photos.borrow();
+            let rest: Vec<(i64, &str)> =
+                photos.iter().filter(|p| !st.contains_key(&p.id)).map(|p| (p.id, p.hash.as_str())).collect();
+            for id in crate::ui::ptrui::photos_with_tags(&self.lib, &rest) {
+                st.insert(id, crate::db::tags::TagState::PtrOnly);
+            }
+        }
+        *self.tag_state.borrow_mut() = st;
         let state = self.tag_state.borrow();
         self.tag_btns.borrow_mut().retain(|w| match w.upgrade() {
             Some(b) => {
@@ -2612,6 +2622,9 @@ fn build_tag_icon() -> DrawingArea {
             (Some((1.0, 1.0, 1.0)), (0.0, 0.0, 0.0, 0.7))
         } else if has("tag-ai") {
             (Some((0.45, 0.6, 0.85)), (0.0, 0.0, 0.0, 0.7))
+        } else if has("tag-ptr-only") {
+            // The same color as the `tag-ptr` text (#b08a4f).
+            (Some((0.69, 0.54, 0.31)), (0.0, 0.0, 0.0, 0.7))
         } else {
             (None, (0.6, 0.6, 0.6, 0.95))
         };
@@ -2684,12 +2697,13 @@ fn build_tag_icon() -> DrawingArea {
 /// Set the tag icon style for a tag state and redraw it.
 fn style_tag_btn(btn: &Button, state: Option<crate::db::tags::TagState>) {
     use crate::db::tags::TagState;
-    for c in ["tag-none", "tag-ai", "tag-user"] {
+    for c in ["tag-none", "tag-ai", "tag-user", "tag-ptr-only"] {
         btn.remove_css_class(c);
     }
     let (class, tip) = match state {
         None => ("tag-none", "No tags. Click to add tags."),
         Some(TagState::AiOnly) => ("tag-ai", "AI tags only. Click to see them."),
+        Some(TagState::PtrOnly) => ("tag-ptr-only", "PTR tags only. Click to see them."),
         Some(TagState::User) => ("tag-user", "Tagged. Click to see the tags."),
     };
     btn.add_css_class(class);
