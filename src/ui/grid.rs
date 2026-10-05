@@ -2191,8 +2191,12 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
         label.add_css_class("dim-label");
         overlay.set_child(Some(&label));
 
-        let image = Image::new();
-        image.set_pixel_size(thumb_size);
+        // The thumbnail fills the square cell (crop). On mouseover it shows
+        // the whole photo (fit), so the user sees the full frame.
+        let image = gtk4::Picture::new();
+        image.set_size_request(thumb_size, thumb_size);
+        image.set_can_shrink(true);
+        image.set_content_fit(gtk4::ContentFit::Cover);
         overlay.add_overlay(&image);
 
         // The face-box overlay: a transparent DrawingArea stacked on top of the
@@ -2204,6 +2208,20 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
         face_area.set_size_request(thumb_size, thumb_size);
         face_area.set_can_target(false);
         overlay.add_overlay(&face_area);
+        {
+            let motion = gtk4::EventControllerMotion::new();
+            let (img, fa) = (image.clone(), face_area.clone());
+            motion.connect_enter(move |_, _, _| {
+                img.set_content_fit(gtk4::ContentFit::Contain);
+                fa.queue_draw();
+            });
+            let (img, fa) = (image.clone(), face_area.clone());
+            motion.connect_leave(move |_| {
+                img.set_content_fit(gtk4::ContentFit::Cover);
+                fa.queue_draw();
+            });
+            overlay.add_controller(motion);
+        }
         // Register this cell's DrawingArea so a later toggle can queue a
         // redraw on it directly (see `face_areas`'s doc comment).
         if let Some(grid) = grid_setup.upgrade() {
@@ -2226,7 +2244,7 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
             // The face-scan badge: a small green face in the bottom-right
             // corner of the thumbnail. It shows in every view.
             if grid.face_scanned.borrow().contains(&photo_id) {
-                draw_face_badge(cr, ix + iw, iy + ih);
+                draw_face_badge(cr, (ix + iw).min(w as f64), (iy + ih).min(h as f64));
             }
             if !grid.show_faces.get() {
                 return;
@@ -2427,7 +2445,7 @@ fn human_size(bytes: i64) -> String {
 }
 
 /// Set the image from a texture (or clear it and show the label if `None`).
-fn apply_texture(image: &Image, label: &Label, texture: Option<gdk::Texture>) {
+fn apply_texture(image: &gtk4::Picture, label: &Label, texture: Option<gdk::Texture>) {
     match texture {
         Some(t) => {
             image.set_paintable(Some(&t));
@@ -2441,12 +2459,12 @@ fn apply_texture(image: &Image, label: &Label, texture: Option<gdk::Texture>) {
 }
 
 /// Extract the `Image` (overlay child) and fallback `Label` from a cell.
-fn overlay_parts(overlay: &Overlay) -> (Image, Label) {
+fn overlay_parts(overlay: &Overlay) -> (gtk4::Picture, Label) {
     let label = overlay.first_child().and_downcast::<Label>().unwrap();
     let image = overlay
         .first_child()
         .and_then(|c| c.next_sibling())
-        .and_downcast::<Image>()
+        .and_downcast::<gtk4::Picture>()
         .unwrap();
     (image, label)
 }
@@ -2488,7 +2506,7 @@ fn draw_face_badge(cr: &gtk4::cairo::Context, right: f64, bottom: f64) {
 /// The displayed rect of `image`'s texture inside a `(w, h)` area, honouring
 /// aspect-preserving centering (mirrors `Viewer::image_rect`). Used to map a
 /// face box's per-mille coordinates onto the letterboxed thumbnail.
-fn image_rect(image: &Image, w: i32, h: i32) -> Option<(f64, f64, f64, f64)> {
+fn image_rect(image: &gtk4::Picture, w: i32, h: i32) -> Option<(f64, f64, f64, f64)> {
     let paintable = image.paintable()?;
     let iw = paintable.intrinsic_width() as f64;
     let ih = paintable.intrinsic_height() as f64;
@@ -2496,7 +2514,12 @@ fn image_rect(image: &Image, w: i32, h: i32) -> Option<(f64, f64, f64, f64)> {
         return None;
     }
     let (aw, ah) = (w as f64, h as f64);
-    let scale = (aw / iw).min(ah / ih);
+    // Cover fills the cell (crop). Contain fits the whole photo.
+    let scale = if image.content_fit() == gtk4::ContentFit::Cover {
+        (aw / iw).max(ah / ih)
+    } else {
+        (aw / iw).min(ah / ih)
+    };
     let (dw, dh) = (iw * scale, ih * scale);
     Some(((aw - dw) / 2.0, (ah - dh) / 2.0, dw, dh))
 }
