@@ -12,6 +12,11 @@ pub const CONTENT_PARENTS: u64 = 2;
 pub const ACTION_ADD: u64 = 0;
 pub const ACTION_DELETE: u64 = 1;
 
+/// The number of hash definitions skipped because they are not SHA-256.
+/// The PTR history holds some (for example a 40-character SHA-1 at index
+/// 1321 and "0000" at index 1327). They can never match a photo.
+pub static SKIPPED_HASHES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// One parsed update file.
 #[derive(Debug)]
 pub enum Update {
@@ -43,7 +48,12 @@ pub fn parse(v: &Value) -> Result<Update, String> {
                     let id = r.get(0).and_then(Value::as_u64).ok_or_else(|| bad("def id"))?;
                     let s = r.get(1).and_then(Value::as_str).ok_or_else(|| bad("def val"))?;
                     match kind {
-                        0 => hashes.push((id, unhex32(s).ok_or_else(|| bad("hash hex"))?)),
+                        0 => match unhex32(s) {
+                            Some(h) => hashes.push((id, h)),
+                            None => {
+                                SKIPPED_HASHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            }
+                        },
                         1 => tags.push((id, s.to_string())),
                         _ => return Err(bad("def kind value")),
                     }
@@ -93,4 +103,19 @@ fn unhex32(s: &str) -> Option<[u8; 32]> {
         *b = u8::from_str_radix(s.get(i * 2..i * 2 + 2)?, 16).ok()?;
     }
     Some(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn skips_non_sha256_hashes() {
+        let good = "AB".repeat(32);
+        let v = serde_json::json!([36, 1, [[0, [[1, "8714c697021770b263dd23256ab97b3e2093a9cb"], [2, "0000"], [3, good]]]]]);
+        let Update::Definitions { hashes, .. } = parse(&v).unwrap() else { panic!() };
+        assert_eq!(hashes.len(), 1);
+        assert_eq!(hashes[0].0, 3);
+        assert!(SKIPPED_HASHES.load(std::sync::atomic::Ordering::Relaxed) >= 2);
+    }
 }

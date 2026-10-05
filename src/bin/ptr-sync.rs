@@ -65,7 +65,10 @@ fn main() {
         );
     });
     match res {
-        Ok(n) => println!("applied {n} indexes"),
+        Ok(n) => println!(
+            "applied {n} indexes, skipped {} hashes that are not SHA-256",
+            ptr::update::SKIPPED_HASHES.load(std::sync::atomic::Ordering::Relaxed)
+        ),
         Err(e) => die(&e),
     }
     if stop_at.is_none() {
