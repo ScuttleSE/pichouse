@@ -143,6 +143,8 @@ pub struct Grid {
     tag_state: RefCell<HashMap<i64, crate::db::tags::TagState>>,
     /// The live cell tag icons, so a tag change can redraw them.
     tag_btns: RefCell<Vec<gtk4::glib::WeakRef<Button>>>,
+    /// The background PTR check for the tag icons.
+    ptr: RefCell<PtrCheck>,
     /// Called after the tag popover changes tags.
     on_tags_changed: RefCell<Option<Box<dyn Fn()>>>,
     /// The "show face boxes" toggle button, visible only for a face source.
@@ -636,6 +638,7 @@ impl Grid {
             face_scanned: RefCell::new(std::collections::HashSet::new()),
             tag_state: RefCell::new(HashMap::new()),
             tag_btns: RefCell::new(Vec::new()),
+            ptr: RefCell::new(PtrCheck::default()),
             on_tags_changed: RefCell::new(None),
             faces_btn,
             sort_dropdown,
@@ -1286,12 +1289,15 @@ impl Grid {
         let ids: Vec<i64> = self.all_photos.borrow().iter().map(|p| p.id).collect();
         let mut st = self.lib.tag_state_for_photos(&ids).unwrap_or_default();
         {
-            // Photos with no library tags: ask the PTR.
-            let photos = self.all_photos.borrow();
-            let rest: Vec<(i64, &str)> =
-                photos.iter().filter(|p| !st.contains_key(&p.id)).map(|p| (p.id, p.hash.as_str())).collect();
-            for id in crate::ui::ptrui::photos_with_tags(&self.lib, &rest) {
-                st.insert(id, crate::db::tags::TagState::PtrOnly);
+            // Read the PTR settings again. A change clears the known results.
+            let mut ptr = self.ptr.borrow_mut();
+            ptr.reload_params(&self.lib);
+            // Photos with no library tags: use the PTR results that are known.
+            // The cell bind asks the background thread for the other photos.
+            for id in &ids {
+                if !st.contains_key(id) && ptr.known.get(id) == Some(&true) {
+                    st.insert(*id, crate::db::tags::TagState::PtrOnly);
+                }
             }
         }
         *self.tag_state.borrow_mut() = st;
@@ -1304,6 +1310,80 @@ impl Grid {
             }
             None => false,
         });
+    }
+
+    /// Ask the background thread if the PTR has tags for a photo. The answer
+    /// updates the tag icon of the photo when it comes back.
+    fn request_ptr(self: &Rc<Self>, id: i64, hash: String) {
+        let mut ptr = self.ptr.borrow_mut();
+        if !ptr.loaded {
+            ptr.reload_params(&self.lib);
+        }
+        let Some((path, opts)) = ptr.params.clone() else { return };
+        if hash.is_empty() || ptr.known.contains_key(&id) || !ptr.pending.insert(id) {
+            return;
+        }
+        if ptr.tx.is_none() {
+            ptr.tx = Some(self.start_ptr_worker());
+        }
+        let job = PtrJob { gen: ptr.gen, id, hash, path, opts };
+        if ptr.tx.as_ref().map(|tx| tx.send(job).is_err()).unwrap_or(true) {
+            ptr.tx = None;
+            ptr.pending.remove(&id);
+        }
+    }
+
+    /// Start the PTR worker thread. Returns the job sender.
+    fn start_ptr_worker(self: &Rc<Self>) -> mpsc::Sender<PtrJob> {
+        let (job_tx, job_rx) = mpsc::channel::<PtrJob>();
+        let (tx, rx) = glib::MainContext::channel::<(u64, i64, bool)>(glib::Priority::DEFAULT_IDLE);
+        std::thread::spawn(move || {
+            let mut reader: Option<(std::path::PathBuf, crate::ptr::lookup::PtrReader)> = None;
+            while let Ok(job) = job_rx.recv() {
+                if reader.as_ref().map(|(p, _)| p != &job.path).unwrap_or(true) {
+                    reader = crate::ptr::lookup::PtrReader::open(&job.path).ok().map(|r| (job.path.clone(), r));
+                }
+                let has = reader
+                    .as_ref()
+                    .map(|(_, r)| r.tags_for_sha256(&job.hash, &job.opts).map(|t| !t.is_empty()).unwrap_or(false))
+                    .unwrap_or(false);
+                if tx.send((job.gen, job.id, has)).is_err() {
+                    break;
+                }
+            }
+        });
+        let weak = Rc::downgrade(self);
+        rx.attach(None, move |(gen, id, has)| {
+            let Some(g) = weak.upgrade() else { return glib::ControlFlow::Break };
+            {
+                let mut ptr = g.ptr.borrow_mut();
+                if ptr.gen != gen {
+                    return glib::ControlFlow::Continue;
+                }
+                ptr.pending.remove(&id);
+                ptr.known.insert(id, has);
+            }
+            if !has {
+                return glib::ControlFlow::Continue;
+            }
+            {
+                let mut st = g.tag_state.borrow_mut();
+                if st.contains_key(&id) {
+                    return glib::ControlFlow::Continue;
+                }
+                st.insert(id, crate::db::tags::TagState::PtrOnly);
+            }
+            for w in g.tag_btns.borrow().iter() {
+                if let Some(b) = w.upgrade() {
+                    let bid: i64 = unsafe { b.data::<i64>("photo-id").map(|p| *p.as_ref()).unwrap_or(0) };
+                    if bid == id {
+                        style_tag_btn(&b, Some(crate::db::tags::TagState::PtrOnly));
+                    }
+                }
+            }
+            glib::ControlFlow::Continue
+        });
+        job_tx
     }
 
     /// Set the callback that runs after the tag popover changes tags.
@@ -2526,8 +2606,14 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
                 unsafe {
                     tag_btn.set_data("photo-id", photo.id());
                 }
-                let st = grid_bind.upgrade().and_then(|g| g.tag_state.borrow().get(&photo.id()).copied());
+                let g = grid_bind.upgrade();
+                let st = g.as_ref().and_then(|g| g.tag_state.borrow().get(&photo.id()).copied());
                 style_tag_btn(&tag_btn, st);
+                if st.is_none() && photo.id() != 0 {
+                    if let Some(g) = &g {
+                        g.request_ptr(photo.id(), photo.property::<String>("hash"));
+                    }
+                }
                 tag_btn.set_visible(photo.id() != 0 && !TAG_ICON_OFF.load(Ordering::Relaxed));
             }
         }
@@ -2600,6 +2686,47 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
         }
     });
     factory
+}
+
+/// One PTR check job for the background thread.
+struct PtrJob {
+    gen: u64,
+    id: i64,
+    hash: String,
+    path: std::path::PathBuf,
+    opts: crate::ptr::lookup::LookupOptions,
+}
+
+/// The state of the background PTR check for the tag icons.
+#[derive(Default)]
+struct PtrCheck {
+    /// True after the first settings read.
+    loaded: bool,
+    /// The `ptr.db` path and the lookup options. `None` when lookups are off.
+    params: Option<(std::path::PathBuf, crate::ptr::lookup::LookupOptions)>,
+    /// Increases when the settings change. Old answers are dropped.
+    gen: u64,
+    /// The known answers: photo id to "has PTR tags".
+    known: HashMap<i64, bool>,
+    /// The photo ids sent to the thread with no answer yet.
+    pending: std::collections::HashSet<i64>,
+    /// The job sender of the thread.
+    tx: Option<mpsc::Sender<PtrJob>>,
+}
+
+impl PtrCheck {
+    /// Read the PTR settings. A change clears the known answers.
+    fn reload_params(&mut self, lib: &crate::db::Library) {
+        let p = crate::ui::ptrui::lookup_params(lib);
+        let key = |p: &Option<(std::path::PathBuf, crate::ptr::lookup::LookupOptions)>| format!("{p:?}");
+        if !self.loaded || key(&p) != key(&self.params) {
+            self.gen += 1;
+            self.known.clear();
+            self.pending.clear();
+        }
+        self.params = p;
+        self.loaded = true;
+    }
 }
 
 /// The tag icon shape: 0 = tag, 1 = dot, 2 = hash sign.

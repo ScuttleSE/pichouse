@@ -96,28 +96,15 @@ pub fn lookup(lib: &Library, ids: &[i64]) -> Option<HashMap<i64, Vec<String>>> {
     Some(out)
 }
 
-/// The ids of the photos that have one or more PTR tags. Each item is a
-/// photo id and its SHA-256. Returns an empty set when lookups are off.
-pub fn photos_with_tags(lib: &Library, photos: &[(i64, &str)]) -> std::collections::HashSet<i64> {
-    let mut out = std::collections::HashSet::new();
-    if photos.is_empty() {
-        return out;
-    }
+/// The `ptr.db` path and the lookup options for a background lookup.
+/// Returns `None` when the feature is off or a move runs. It does not open
+/// the database, so it is safe on the GTK main thread.
+pub fn lookup_params(lib: &Library) -> Option<(PathBuf, ptr::lookup::LookupOptions)> {
     let s = load(lib);
     if !s.enabled || MOVING.load(Ordering::Relaxed) {
-        return out;
+        return None;
     }
-    let Ok(reader) = ptr::lookup::PtrReader::open(&s.path) else { return out };
-    let opts = ptr::lookup::LookupOptions { exclude_namespaces: s.exclude, add_parents: s.add_parents };
-    for (id, hash) in photos {
-        if hash.is_empty() {
-            continue;
-        }
-        if reader.tags_for_sha256(hash, &opts).map(|t| !t.is_empty()).unwrap_or(false) {
-            out.insert(*id);
-        }
-    }
-    out
+    Some((s.path, ptr::lookup::LookupOptions { exclude_namespaces: s.exclude, add_parents: s.add_parents }))
 }
 
 /// True when PTR lookups are possible now.
