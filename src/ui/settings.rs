@@ -394,28 +394,6 @@ fn thumb_pane(state: &Rc<AppState>) -> GtkBox {    let root = pane_box();
         });
     }
     root.append(&apply);
-    {
-        let row = GtkBox::new(Orientation::Horizontal, 6);
-        let name = Label::new(Some("Thumbnail margin (px)"));
-        name.set_xalign(0.0);
-        let cur: i32 = state
-            .lib
-            .get_setting(prefs::KEY_GRID_CELL_MARGIN, "2")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(2);
-        let spin = SpinButton::with_range(0.0, 24.0, 1.0);
-        spin.set_value(cur as f64);
-        let state = state.clone();
-        spin.connect_value_changed(move |s| {
-            let v = s.value() as i32;
-            let _ = state.lib.set_setting(prefs::KEY_GRID_CELL_MARGIN, &v.to_string());
-            state.grid().set_cell_margin(v);
-        });
-        row.append(&name);
-        row.append(&spin);
-        root.append(&row);
-    }
     root.append(&Separator::new(Orientation::Horizontal));
 
     let regen = CheckButton::with_label("Regenerate thumbnails when moving the slider");

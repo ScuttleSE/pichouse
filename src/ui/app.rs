@@ -121,12 +121,6 @@ fn build_ui(app: &Application) {
         state.enrich_pause_until.clone(),
     );
     *state.grid.borrow_mut() = Some(grid.clone());
-    grid.set_cell_margin(
-        lib.get_setting(super::prefs::KEY_GRID_CELL_MARGIN, "2")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(2),
-    );
 
     let new_files = super::newfiles::NewFilesView::new(gen.clone(), prefs.active_size());
     *state.new_files.borrow_mut() = Some(new_files.clone());
