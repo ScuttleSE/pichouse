@@ -113,6 +113,8 @@ pub const KEY_FACES_IDENTIFIED_COLLAPSED: &str = "facesview.identified_collapsed
 pub const KEY_FACES_UNNAMED_COLLAPSED: &str = "facesview.unnamed_collapsed";
 pub const KEY_CHARS_IDENTIFIED_COLLAPSED: &str = "charactersview.identified_collapsed";
 pub const KEY_CHARS_UNNAMED_COLLAPSED: &str = "charactersview.unnamed_collapsed";
+/// The padding around each grid cell in pixels (0..24).
+pub const KEY_GRID_CELL_MARGIN: &str = "grid.cell_margin";
 /// Default per-image slideshow duration in seconds.
 pub const DEFAULT_SLIDESHOW_SECS: i32 = 4;
 

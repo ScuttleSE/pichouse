@@ -91,6 +91,10 @@ pub struct Grid {
     grid_view: GridView,
     selection: MultiSelection,
     thumb_size: std::cell::Cell<i32>,
+    /// The padding around each cell in pixels (setting `grid.cell_margin`).
+    cell_margin: std::cell::Cell<i32>,
+    /// The CSS provider for the cell margin.
+    margin_css: gtk4::CssProvider,
     generation: Arc<AtomicU64>,
     jobs: mpsc::Sender<Job>,
     /// Job channel to the Immich thumbnail worker pool.
@@ -535,6 +539,7 @@ impl Grid {
         let grid_view = GridView::new(Some(selection.clone()), Some(factory));
         grid_view.set_min_columns(1);
         grid_view.set_max_columns(20);
+        grid_view.add_css_class("thumbs");
 
         let scroller = ScrolledWindow::builder()
             .hscrollbar_policy(PolicyType::Never)
@@ -598,6 +603,8 @@ impl Grid {
             grid_view,
             selection,
             thumb_size: std::cell::Cell::new(thumb_size),
+            cell_margin: std::cell::Cell::new(2),
+            margin_css: gtk4::CssProvider::new(),
             generation,
             jobs: job_tx,
             immich_jobs: immich_tx,
@@ -646,6 +653,15 @@ impl Grid {
             let factory = build_factory(rc.thumb_size.get(), Rc::downgrade(&rc));
             rc.grid_view.set_factory(Some(&factory));
         }
+        // The cell margin CSS.
+        if let Some(display) = gdk::Display::default() {
+            gtk4::style_context_add_provider_for_display(
+                &display,
+                &rc.margin_css,
+                gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+            );
+        }
+        rc.load_margin_css();
         // The sort dropdown re-orders the current photos and persists the choice.
         {
             let rc2 = rc.clone();
@@ -2051,6 +2067,19 @@ impl Grid {
     }
 
     /// Change the active thumbnail size and rebuild (new factory + jobs).
+    /// Set the padding around each cell.
+    pub fn set_cell_margin(&self, m: i32) {
+        self.cell_margin.set(m.clamp(0, 24));
+        self.load_margin_css();
+    }
+
+    fn load_margin_css(&self) {
+        let m = self.cell_margin.get();
+        self.margin_css.load_from_data(&format!(
+            "gridview.thumbs > child {{ padding: {m}px; margin: 0; }}"
+        ));
+    }
+
     pub fn set_thumb_size(self: &Rc<Grid>, size: i32) {
         self.thumb_size.set(size);
         let factory = build_factory(size, Rc::downgrade(self));
@@ -2153,6 +2182,9 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
 
         let label = Label::new(None);
         label.set_wrap(true);
+        label.set_ellipsize(gtk4::pango::EllipsizeMode::Middle);
+        label.set_max_width_chars(12);
+        label.set_lines(3);
         label.set_justify(gtk4::Justification::Center);
         label.set_halign(Align::Center);
         label.set_valign(Align::Center);
