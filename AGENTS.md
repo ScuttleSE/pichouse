@@ -447,6 +447,13 @@ deserializes JSON responses into `serde` structs.
 
 Reuse this pattern for the Immich client.
 
+## Paused work: PTR tag database
+
+The branch `ptr-tags` holds an optional local copy of the Hydrus Public Tag
+Repository. The work is paused. Read `PTR_PLAN.md` on that branch first. Its
+"Handoff" section gives the state and the next steps. Do not merge the
+branch without the user's request.
+
 ## CI
 
 `.gitea/workflows/build.yaml` builds on push to `main` on the `debian-go` runner,
