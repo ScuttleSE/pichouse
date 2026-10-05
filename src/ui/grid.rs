@@ -1750,6 +1750,14 @@ impl Grid {
         };
 
         if !same {
+            // When photos only left the set (for example, a face moved to
+            // another character), remove those items in place. A full rebuild
+            // scrolls the view back to the top.
+            if self.remove_gone_items(&filtered) {
+                self.header
+                    .set_text(&format!("{}  ({})", self.title.borrow(), filtered.len()));
+                return;
+            }
             // Structure changed: a full rebuild is required (and a selection
             // reset here is expected — the view genuinely changed).
             self.rebuild();
@@ -1794,6 +1802,39 @@ impl Grid {
             // when the cell scrolls into view. This keeps a huge folder reload
             // from queuing a job for every photo at once.
         }
+    }
+
+    /// Remove the store items that are not in `filtered`. Do this only when
+    /// `filtered` is the current store with some items removed, in the same
+    /// order. Return false and change nothing in all other cases.
+    fn remove_gone_items(&self, filtered: &[Photo]) -> bool {
+        let n = self.store.n_items() as usize;
+        if filtered.is_empty() || filtered.len() >= n {
+            return false;
+        }
+        let mut gone: Vec<u32> = Vec::new();
+        let mut j = 0;
+        for i in 0..n {
+            let path = self
+                .store
+                .item(i as u32)
+                .and_downcast::<PhotoObject>()
+                .map(|o| o.path())
+                .unwrap_or_default();
+            if j < filtered.len() && filtered[j].path == path {
+                j += 1;
+            } else {
+                gone.push(i as u32);
+            }
+        }
+        if j != filtered.len() {
+            return false;
+        }
+        // Remove from the end so the earlier indexes stay valid.
+        for i in gone.into_iter().rev() {
+            self.store.remove(i);
+        }
+        true
     }
 
     /// Enqueue a thumbnail job for one cell (local or Immich).
