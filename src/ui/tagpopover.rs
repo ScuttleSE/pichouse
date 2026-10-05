@@ -42,8 +42,15 @@ pub fn show(anchor: &impl IsA<gtk4::Widget>, lib: Arc<Library>, ids: Vec<i64>, o
     root.append(&scroll);
 
     // PTR tags (potential tags). Hidden when the PTR is off.
+    // The list scrolls, so a photo with many PTR tags cannot make the popover
+    // taller than the screen. On Wayland, the compositor closes such a popup.
     let ptr_box = GtkBox::new(Orientation::Vertical, 0);
-    root.append(&ptr_box);
+    let ptr_scroll = ScrolledWindow::new();
+    ptr_scroll.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
+    ptr_scroll.set_propagate_natural_height(true);
+    ptr_scroll.set_max_content_height(250);
+    ptr_scroll.set_child(Some(&ptr_box));
+    root.append(&ptr_scroll);
 
     let entry = TagEntry::new(lib.clone(), "Add a tag…");
     root.append(&entry.entry);
