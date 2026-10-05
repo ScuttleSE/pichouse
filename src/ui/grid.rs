@@ -2071,6 +2071,20 @@ impl Grid {
     }
 
     /// Change the active thumbnail size and rebuild (new factory + jobs).
+    /// Turn the square crop on or off, and redraw the cells.
+    pub fn set_crop(&self, on: bool) {
+        super::thumbpic::set_crop_enabled(on);
+        self.grid_view.queue_draw();
+        for a in self.face_areas.borrow().iter() {
+            if let Some(a) = a.upgrade() {
+                if let Some(p) = a.prev_sibling() {
+                    p.queue_draw();
+                }
+                a.queue_draw();
+            }
+        }
+    }
+
     /// Set the padding around each cell.
     pub fn set_cell_margin(&self, m: i32) {
         self.cell_margin.set(m.clamp(0, 24));

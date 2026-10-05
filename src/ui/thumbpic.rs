@@ -10,6 +10,16 @@ use gtk4::graphene;
 use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
 
+thread_local! {
+    /// False: never crop. Every thumbnail shows the whole photo.
+    static CROP: Cell<bool> = Cell::new(true);
+}
+
+/// Turn the square crop on or off for all thumbnails.
+pub fn set_crop_enabled(on: bool) {
+    CROP.with(|c| c.set(on));
+}
+
 /// A box in per-mille of the photo: x, y, w, h.
 pub type Focus = (i32, i32, i32, i32);
 
@@ -102,7 +112,7 @@ impl ThumbPic {
         if iw <= 0.0 || ih <= 0.0 || aw <= 0.0 || ah <= 0.0 {
             return None;
         }
-        if imp.fit.get() {
+        if imp.fit.get() || !CROP.with(|c| c.get()) {
             let s = (aw / iw).min(ah / ih);
             let (dw, dh) = (iw * s, ih * s);
             return Some(((aw - dw) / 2.0, (ah - dh) / 2.0, dw, dh));

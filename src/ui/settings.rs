@@ -395,6 +395,19 @@ fn thumb_pane(state: &Rc<AppState>) -> GtkBox {    let root = pane_box();
     }
     root.append(&apply);
     {
+        let check = gtk4::CheckButton::with_label("Crop thumbnails to fill the square cell");
+        check.set_active(
+            state.lib.get_setting(prefs::KEY_GRID_CROP, "1").unwrap_or_default() != "0",
+        );
+        let state = state.clone();
+        check.connect_toggled(move |c| {
+            let on = c.is_active();
+            let _ = state.lib.set_setting(prefs::KEY_GRID_CROP, if on { "1" } else { "0" });
+            state.grid().set_crop(on);
+        });
+        root.append(&check);
+    }
+    {
         let row = GtkBox::new(Orientation::Horizontal, 6);
         let name = Label::new(Some("Thumbnail margin (px)"));
         name.set_xalign(0.0);
