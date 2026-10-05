@@ -199,8 +199,10 @@ impl ThumbPic {
             ),
             None => (dw / 2.0, dh / 2.0),
         };
-        let x = (aw / 2.0 - fx).clamp(aw - dw, 0.0);
-        let y = (ah / 2.0 - fy).clamp(ah - dh, 0.0);
+        // Float rounding can make `aw - dw` a tiny positive value.
+        // `clamp` panics when min > max, so cap the min at 0.
+        let x = (aw / 2.0 - fx).clamp((aw - dw).min(0.0), 0.0);
+        let y = (ah / 2.0 - fy).clamp((ah - dh).min(0.0), 0.0);
         Some((x, y, dw, dh))
     }
 }
