@@ -71,6 +71,22 @@ a thumbnail grid in the center, and a properties panel on the right.
   shows a random photo of that person or character. A new photo shows every
   second. Release Alt or move the pointer away to see the face again.
 
+## Tagging
+
+- Each grid cell has a tag icon in the top-right corner.
+  - A grey outline icon shows on mouseover when the photo has no tags.
+  - A white icon shows when the photo has your tags (or confirmed AI tags).
+  - A muted blue icon shows when the photo has only unconfirmed AI tags.
+- Click the icon to see the tags and to add more. When the photo is part of
+  a selection, the popover works on all selected photos. Each tag shows a
+  count, for example `cat (3/5)`.
+- The tag entry autocompletes from your existing tags. Use Up, Down, and Tab
+  or Enter to pick a suggestion.
+- Unconfirmed AI tags show in muted blue. Click the check mark to confirm one.
+- Search: type `tag:cat` for the exact tag `cat`. Plain text matches
+  filenames and tags.
+- Virtual albums: the "Has tag" rule has the same autocomplete.
+
 ## AI-based tagging (local, optional)
 
 pichouse can generate keyword tags for your photos using a **local** vision

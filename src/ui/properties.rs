@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use gtk4::{
-    Box as GtkBox, Button, Entry, Label, Notebook, Orientation, ScrolledWindow, Separator,
+    Box as GtkBox, Button, Label, Notebook, Orientation, ScrolledWindow, Separator,
 };
 
 use crate::model::{Photo, Tag, TagSource};
@@ -24,7 +24,9 @@ pub struct Properties {
     dims: Label,
 
     tag_list: GtkBox,
-    tag_entry: Entry,
+    /// The tag input row. `bind_state` adds the autocomplete entry to it.
+    tag_row: GtkBox,
+    tag_input: RefCell<Option<Rc<super::tagentry::TagEntry>>>,
     tag_now: Button,
 
     edit: Rc<EditPanel>,
@@ -55,7 +57,7 @@ impl Properties {
         info.append(&field("Dimensions", &dims));
 
         let tag_list = GtkBox::new(Orientation::Vertical, 2);
-        let tag_entry = Entry::new();
+        let tag_row = GtkBox::new(Orientation::Horizontal, 4);
         let tag_now = Button::with_label("Tag this photo with AI");
 
         let notebook = Notebook::new();
@@ -72,7 +74,8 @@ impl Properties {
             date,
             dims,
             tag_list,
-            tag_entry,
+            tag_row,
+            tag_input: RefCell::new(None),
             tag_now,
             edit,
             current: RefCell::new(None),
@@ -96,11 +99,16 @@ impl Properties {
         *self.state.borrow_mut() = Some(state.clone());
         self.edit.bind_state(state.clone());
 
-        // Add-tag on entry activate and button click.
-        let this = self.clone();
-        self.tag_entry.connect_activate(move |_| this.add_tag());
-        // The add button is the last child of the entry's row; we connect it in
-        // build_tags_tab by capturing self. Here we wire tag_now.
+        // The tag entry with autocomplete. Enter adds the tag.
+        let input = super::tagentry::TagEntry::new(state.lib.clone(), "Add a tag…");
+        let w = Rc::downgrade(self);
+        input.set_on_submit(move |name| {
+            if let Some(this) = w.upgrade() {
+                this.add_tag(name);
+            }
+        });
+        self.tag_row.prepend(&input.entry);
+        *self.tag_input.borrow_mut() = Some(input);
         let this = self.clone();
         self.tag_now.connect_clicked(move |_| {
             let cur = this.current.borrow().clone();
@@ -127,14 +135,16 @@ impl Properties {
         box_.set_margin_start(8);
         box_.set_margin_end(8);
 
-        let add_row = GtkBox::new(Orientation::Horizontal, 4);
-        self.tag_entry.set_hexpand(true);
-        self.tag_entry.set_placeholder_text(Some("Add a tag…"));
+        let add_row = self.tag_row.clone();
         let add_btn = Button::from_icon_name("list-add-symbolic");
         add_btn.set_tooltip_text(Some("Add tag"));
         let this = self.clone();
-        add_btn.connect_clicked(move |_| this.add_tag());
-        add_row.append(&self.tag_entry);
+        add_btn.connect_clicked(move |_| {
+            let input = this.tag_input.borrow().clone();
+            if let Some(i) = input {
+                i.submit();
+            }
+        });
         add_row.append(&add_btn);
         box_.append(&add_row);
 
@@ -149,25 +159,31 @@ impl Properties {
         box_
     }
 
-    fn add_tag(self: &Rc<Self>) {
+    /// Reload the tag list and update the grid tag icons.
+    fn tags_changed(self: &Rc<Self>) {
+        self.reload_tags();
+        if let Some(state) = self.state.borrow().clone() {
+            state.grid().refresh_tag_state();
+        }
+    }
+
+    fn add_tag(self: &Rc<Self>, name: String) {
         let cur = self.current.borrow().clone();
         let Some(p) = cur else { return };
         if p.id == 0 {
             return;
         }
-        let name = self.tag_entry.text().to_string();
         if name.trim().is_empty() {
             return;
         }
         let Some(state) = self.state.borrow().clone() else {
             return;
         };
-        if let Err(e) = state.lib.add_photo_tags(p.id, &[name], TagSource::User) {
+        if let Err(e) = state.lib.add_tags_to_photos(&[p.id], &[name]) {
             show_error(&state, &e.to_string());
             return;
         }
-        self.tag_entry.set_text("");
-        self.reload_tags();
+        self.tags_changed();
     }
 
     /// Repopulate the tag list for the current photo.
@@ -213,6 +229,9 @@ impl Properties {
         name.set_xalign(0.0);
         name.set_hexpand(true);
         name.set_wrap(true);
+        if t.source == TagSource::Ai && !t.confirmed {
+            name.add_css_class("tag-ai");
+        }
 
         row.append(&badge);
         row.append(&name);
@@ -229,7 +248,7 @@ impl Properties {
                     show_error(&state, &e.to_string());
                     return;
                 }
-                this.reload_tags();
+                this.tags_changed();
             });
             row.append(&confirm);
         }
@@ -245,7 +264,7 @@ impl Properties {
                 show_error(&state, &e.to_string());
                 return;
             }
-            this.reload_tags();
+            this.tags_changed();
         });
         row.append(&remove);
 

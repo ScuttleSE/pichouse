@@ -227,7 +227,7 @@ virtual albums when these tables are empty.
     src/ui/              GTK4 UI (app, state, grid, sidebar, viewer, editor,
                          export, properties, toolbar, status, settings,
                          settings_ai, settings_immich, settings_faces,
-                         settings_characters, aitag, facescan, stylefacescan,
+                         settings_characters, aitag, tagentry, tagpopover, facescan, stylefacescan,
                          albumscan, people, characters, facesview,
                          charactersview, immich,
                          tagmanager, shortcuts, dialogs, actions, controller,
@@ -338,6 +338,25 @@ The cell margin is the key
 A photo in the grid is a `PhotoObject`. `PhotoObject` is a GObject wrapper of a
 `model::Photo`. `PhotoObject::from_photo` builds one. The grid fills the
 `texture` property from the thumbnail cache.
+
+### Tagging
+
+- The tag tables are `tags`, `photo_tags` (`source` 0 = AI, 1 = user,
+  `confirmed`), and the FTS5 table `photo_tags_fts`. `src/db/tags.rs` keeps
+  the FTS row current. Use its functions. Do not write the tables directly.
+- `Library::tag_state_for_photos` gives `TagState::AiOnly` or
+  `TagState::User` per photo. `Grid::refresh_tag_state` fills
+  `Grid::tag_state`. `refresh_face_scanned` calls it.
+- The cell tag icon is a `Button` (CSS `tag-btn`) after the face-box
+  `DrawingArea` in the cell `Overlay`. `build_tag_icon` draws it.
+  `style_tag_btn` sets `tag-none`, `tag-ai`, or `tag-user`. The CSS in
+  `app.rs` hides `tag-none` until `.thumb-cell:hover`.
+- `src/ui/tagpopover.rs` is the cell popover. `Grid::open_tag_popover`
+  picks the targets (the selection, or the clicked photo).
+- `src/ui/tagentry.rs` is the shared autocomplete entry. The popover, the
+  properties "Tags" tab, and the "Has tag" virtual-album rule use it.
+- The CSS class `tag-ai` (muted blue) marks unconfirmed AI tags.
+- Search: `tag:<name>` is an exact match in `Grid::filtered_photos`.
 
 ### Face and character grouping
 

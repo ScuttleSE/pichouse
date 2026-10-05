@@ -7,7 +7,105 @@ use crate::model::{AiStatus, Tag, TagCount, TagSource};
 use super::library::now;
 use super::{Library, Result};
 
+/// The tag state of one photo. The grid tag icon uses it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TagState {
+    /// Only unconfirmed AI tags.
+    AiOnly,
+    /// At least one user tag or confirmed AI tag.
+    User,
+}
+
+/// One tag over a set of photos: the number of photos that have it, and
+/// whether every link is an unconfirmed AI tag.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GroupTag {
+    pub name: String,
+    pub count: i64,
+    pub ai_only: bool,
+}
+
 impl Library {
+    /// The tag state of each given photo. Photos with no tags are absent.
+    pub fn tag_state_for_photos(&self, ids: &[i64]) -> Result<std::collections::HashMap<i64, TagState>> {
+        let mut out = std::collections::HashMap::new();
+        if ids.is_empty() {
+            return Ok(out);
+        }
+        let conn = self.read_lock();
+        let user = TagSource::User.as_i64();
+        let mut stmt = conn.prepare(
+            "SELECT MAX(source = ?2 OR confirmed = 1) FROM photo_tags WHERE photo_id = ?1",
+        )?;
+        // One small indexed query per photo is fast enough for a grid
+        // (it uses the primary key prefix).
+        for &id in ids {
+            let v: Option<i64> = stmt.query_row(params![id, user], |r| r.get(0))?;
+            if let Some(v) = v {
+                out.insert(id, if v != 0 { TagState::User } else { TagState::AiOnly });
+            }
+        }
+        Ok(out)
+    }
+
+    /// The tags over a set of photos, the most common first.
+    pub fn tags_for_photos(&self, ids: &[i64]) -> Result<Vec<GroupTag>> {
+        let mut map: std::collections::HashMap<String, (i64, bool)> = std::collections::HashMap::new();
+        for &id in ids {
+            for t in self.photo_tags(id)? {
+                let ai = t.source == TagSource::Ai && !t.confirmed;
+                let e = map.entry(t.name).or_insert((0, true));
+                e.0 += 1;
+                e.1 &= ai;
+            }
+        }
+        let mut v: Vec<GroupTag> = map
+            .into_iter()
+            .map(|(name, (count, ai_only))| GroupTag { name, count, ai_only })
+            .collect();
+        v.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+        Ok(v)
+    }
+
+    /// Add user tags to many photos.
+    pub fn add_tags_to_photos(&self, ids: &[i64], tags: &[String]) -> Result<()> {
+        for &id in ids {
+            self.add_photo_tags(id, tags, TagSource::User)?;
+            for t in tags {
+                // A user who types an AI tag confirms it.
+                self.confirm_photo_tag(id, t.trim())?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Remove one tag from many photos.
+    pub fn remove_tag_from_photos(&self, ids: &[i64], name: &str) -> Result<()> {
+        for &id in ids {
+            self.remove_photo_tag(id, name)?;
+        }
+        Ok(())
+    }
+
+    /// Confirm one AI tag on many photos.
+    pub fn confirm_tag_on_photos(&self, ids: &[i64], name: &str) -> Result<()> {
+        for &id in ids {
+            self.confirm_photo_tag(id, name)?;
+        }
+        Ok(())
+    }
+
+    /// The photo ids that have exactly this tag (case-insensitive).
+    pub fn photo_ids_with_tag(&self, name: &str) -> Result<std::collections::HashSet<i64>> {
+        let conn = self.read_lock();
+        let mut stmt = conn.prepare(
+            "SELECT pt.photo_id FROM photo_tags pt JOIN tags t ON t.id = pt.tag_id
+             WHERE t.name = ?1 COLLATE NOCASE",
+        )?;
+        let rows = stmt.query_map(params![name.trim()], |r| r.get::<_, i64>(0))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
     /// Upsert the given tag names into the global vocabulary and link them to
     /// the photo with the given source. Existing links are preserved; a user
     /// tag never downgrades an existing link's source. The photo's FTS row is

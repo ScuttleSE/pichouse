@@ -138,6 +138,13 @@ pub struct Grid {
     /// Ids of the shown photos that have a completed face scan (human or
     /// stylised). Each such cell draws a small green face badge.
     face_scanned: RefCell<std::collections::HashSet<i64>>,
+    /// The tag state per shown photo (see `Library::tag_state_for_photos`).
+    /// Photos with no tags are absent. The cell tag icon reads it.
+    tag_state: RefCell<HashMap<i64, crate::db::tags::TagState>>,
+    /// The live cell tag icons, so a tag change can redraw them.
+    tag_btns: RefCell<Vec<gtk4::glib::WeakRef<Button>>>,
+    /// Called after the tag popover changes tags.
+    on_tags_changed: RefCell<Option<Box<dyn Fn()>>>,
     /// The "show face boxes" toggle button, visible only for a face source.
     faces_btn: Button,
     /// The header dropdown that selects the sort order.
@@ -624,6 +631,9 @@ impl Grid {
             face_boxes: RefCell::new(HashMap::new()),
             face_areas: RefCell::new(Vec::new()),
             face_scanned: RefCell::new(std::collections::HashSet::new()),
+            tag_state: RefCell::new(HashMap::new()),
+            tag_btns: RefCell::new(Vec::new()),
+            on_tags_changed: RefCell::new(None),
             faces_btn,
             sort_dropdown,
             on_activate: RefCell::new(None),
@@ -1212,6 +1222,11 @@ impl Grid {
         if filter.is_empty() {
             return all.clone();
         }
+        // `tag:foo` matches the exact tag "foo" only.
+        if let Some(name) = filter.trim().strip_prefix("tag:") {
+            let ids = self.lib.photo_ids_with_tag(name).unwrap_or_default();
+            return all.iter().filter(|p| ids.contains(&p.id)).cloned().collect();
+        }
         let tag_matches = self
             .lib
             .search_photo_ids_by_tag(&filter)
@@ -1260,6 +1275,47 @@ impl Grid {
         *self.crop_focus.borrow_mut() = self.lib.crop_focus_for_photos(&ids).unwrap_or_default();
         *self.face_scanned.borrow_mut() = set;
         self.redraw_face_areas();
+        self.refresh_tag_state();
+    }
+
+    /// Re-read the tag state of the shown photos and update the tag icons.
+    pub fn refresh_tag_state(&self) {
+        let ids: Vec<i64> = self.all_photos.borrow().iter().map(|p| p.id).collect();
+        *self.tag_state.borrow_mut() = self.lib.tag_state_for_photos(&ids).unwrap_or_default();
+        let state = self.tag_state.borrow();
+        self.tag_btns.borrow_mut().retain(|w| match w.upgrade() {
+            Some(b) => {
+                let id: i64 = unsafe { b.data::<i64>("photo-id").map(|p| *p.as_ref()).unwrap_or(0) };
+                style_tag_btn(&b, state.get(&id).copied());
+                true
+            }
+            None => false,
+        });
+    }
+
+    /// Set the callback that runs after the tag popover changes tags.
+    pub fn set_on_tags_changed<F: Fn() + 'static>(&self, f: F) {
+        *self.on_tags_changed.borrow_mut() = Some(Box::new(f));
+    }
+
+    /// Open the tag popover for a cell. The targets are all selected photos
+    /// when the clicked photo is selected, else only the clicked photo.
+    fn open_tag_popover(self: &std::rc::Rc<Self>, anchor: &Button, photo_id: i64) {
+        if photo_id == 0 {
+            return;
+        }
+        let sel: Vec<i64> = self.selected_photos().iter().map(|p| p.id).filter(|id| *id != 0).collect();
+        let ids = if sel.contains(&photo_id) { sel } else { vec![photo_id] };
+        let weak = std::rc::Rc::downgrade(self);
+        let changed: std::rc::Rc<dyn Fn()> = std::rc::Rc::new(move || {
+            if let Some(g) = weak.upgrade() {
+                g.refresh_tag_state();
+                if let Some(cb) = g.on_tags_changed.borrow().as_ref() {
+                    cb();
+                }
+            }
+        });
+        super::tagpopover::show(anchor, self.lib.clone(), ids, changed);
     }
 
     /// Queue a redraw on every live face-box `DrawingArea`.
@@ -2321,6 +2377,32 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
             }
         });
 
+        // The tag icon in the top-right corner. See `style_tag_btn`.
+        let tag_btn = Button::new();
+        tag_btn.set_child(Some(&build_tag_icon()));
+        tag_btn.set_has_frame(false);
+        tag_btn.set_halign(Align::End);
+        tag_btn.set_valign(Align::Start);
+        tag_btn.set_margin_top(2);
+        tag_btn.set_margin_end(2);
+        tag_btn.add_css_class("tag-btn");
+        tag_btn.add_css_class("tag-none");
+        tag_btn.set_tooltip_text(Some("Tags"));
+        overlay.add_overlay(&tag_btn);
+        if let Some(grid) = grid_setup.upgrade() {
+            grid.tag_btns.borrow_mut().push(tag_btn.downgrade());
+        }
+        {
+            let g = grid_setup.clone();
+            tag_btn.connect_clicked(move |b| {
+                let id: i64 = unsafe { b.data::<i64>("photo-id").map(|p| *p.as_ref()).unwrap_or(0) };
+                if let Some(g) = g.upgrade() {
+                    g.open_tag_popover(b, id);
+                }
+            });
+        }
+        overlay.add_css_class("thumb-cell");
+
         // A vertical cell: the thumbnail overlay on top and an optional filename
         // caption below. The caption is hidden unless "Show filenames" is on.
         // Filename tooltip. Hold Shift to add parent folders step by step.
@@ -2383,6 +2465,14 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
                 face_area.set_data("photo-id", photo.id());
             }
             face_area.queue_draw();
+            if let Some(tag_btn) = face_area.next_sibling().and_downcast::<Button>() {
+                unsafe {
+                    tag_btn.set_data("photo-id", photo.id());
+                }
+                let st = grid_bind.upgrade().and_then(|g| g.tag_state.borrow().get(&photo.id()).copied());
+                style_tag_btn(&tag_btn, st);
+                tag_btn.set_visible(photo.id() != 0);
+            }
         }
 
         // Filename caption (shown only when the setting is on) and a filename
@@ -2453,6 +2543,72 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
         }
     });
     factory
+}
+
+/// The tag icon: a small luggage-tag shape. The draw func reads the parent
+/// button CSS class: `tag-none` (grey outline), `tag-ai` (muted blue fill),
+/// or `tag-user` (white fill).
+fn build_tag_icon() -> DrawingArea {
+    let area = DrawingArea::new();
+    area.set_content_width(18);
+    area.set_content_height(18);
+    area.set_draw_func(|area, cr, w, h| {
+        let btn = area.parent();
+        let has = |c: &str| btn.as_ref().map(|b| b.has_css_class(c)).unwrap_or(false);
+        let (w, h) = (w as f64, h as f64);
+        // A tag pointing up-left: a rectangle with a cut corner and a hole.
+        let s = w.min(h) - 2.0;
+        let (x0, y0) = ((w - s) / 2.0, (h - s) / 2.0);
+        let c = s * 0.38;
+        cr.new_path();
+        cr.move_to(x0 + c, y0);
+        cr.line_to(x0 + s, y0);
+        cr.line_to(x0 + s, y0 + s - c);
+        cr.line_to(x0 + s - c, y0 + s);
+        cr.line_to(x0, y0 + s);
+        cr.line_to(x0, y0 + c);
+        cr.close_path();
+        let (fill, line): (Option<(f64, f64, f64)>, (f64, f64, f64, f64)) = if has("tag-user") {
+            (Some((1.0, 1.0, 1.0)), (0.0, 0.0, 0.0, 0.7))
+        } else if has("tag-ai") {
+            (Some((0.45, 0.6, 0.85)), (0.0, 0.0, 0.0, 0.7))
+        } else {
+            (None, (0.6, 0.6, 0.6, 0.95))
+        };
+        if let Some((r, g, b)) = fill {
+            cr.set_source_rgba(r, g, b, 0.95);
+            let _ = cr.fill_preserve();
+        } else {
+            cr.set_source_rgba(0.0, 0.0, 0.0, 0.35);
+            let _ = cr.fill_preserve();
+        }
+        cr.set_source_rgba(line.0, line.1, line.2, line.3);
+        cr.set_line_width(1.5);
+        let _ = cr.stroke();
+        // The hole.
+        cr.arc(x0 + s * 0.68, y0 + s * 0.32, s * 0.09, 0.0, std::f64::consts::TAU);
+        cr.set_source_rgba(line.0, line.1, line.2, line.3);
+        let _ = cr.fill();
+    });
+    area
+}
+
+/// Set the tag icon style for a tag state and redraw it.
+fn style_tag_btn(btn: &Button, state: Option<crate::db::tags::TagState>) {
+    use crate::db::tags::TagState;
+    for c in ["tag-none", "tag-ai", "tag-user"] {
+        btn.remove_css_class(c);
+    }
+    let (class, tip) = match state {
+        None => ("tag-none", "No tags. Click to add tags."),
+        Some(TagState::AiOnly) => ("tag-ai", "AI tags only. Click to see them."),
+        Some(TagState::User) => ("tag-user", "Tagged. Click to see the tags."),
+    };
+    btn.add_css_class(class);
+    btn.set_tooltip_text(Some(tip));
+    if let Some(c) = btn.child() {
+        c.queue_draw();
+    }
 }
 
 /// Format a byte count as a short human string.

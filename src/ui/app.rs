@@ -160,6 +160,12 @@ fn build_ui(app: &Application) {
     }
     {
         let state = state.clone();
+        grid.set_on_tags_changed(move || {
+            state.properties().reload_tags();
+        });
+    }
+    {
+        let state = state.clone();
         grid.set_on_activate(move |photos, index| {
             state.open_viewer(photos, index);
         });
@@ -279,6 +285,13 @@ fn install_css() {
     let provider = gtk4::CssProvider::new();
     provider.load_from_data(
         "\
+        .tag-btn { \
+            min-width: 0; min-height: 0; padding: 2px; \
+            background: none; \
+        } \
+        .thumb-cell .tag-btn.tag-none { opacity: 0; } \
+        .thumb-cell:hover .tag-btn.tag-none { opacity: 1; } \
+        .tag-ai { color: #6f8fc0; } \
         .face-scan-badge { \
             color: #33bf4d; \
         } \

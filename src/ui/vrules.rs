@@ -409,6 +409,19 @@ fn set_value_widget(
             value_holder.append(&drop);
             *value.borrow_mut() = ValueInput::Picker { drop, choices };
         }
+        None if field == RuleField::Tag => {
+            // A tag entry with autocomplete. The entry keeps the helper alive.
+            let input = super::tagentry::TagEntry::new(state.lib.clone(), "Tag name");
+            let entry = input.entry.clone();
+            if let Some(v) = preset {
+                input.set_text(v);
+            }
+            unsafe {
+                entry.set_data("tag-entry", input);
+            }
+            value_holder.append(&entry);
+            *value.borrow_mut() = ValueInput::Text(entry);
+        }
         None => {
             let entry = Entry::new();
             entry.set_hexpand(true);

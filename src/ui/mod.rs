@@ -2,6 +2,8 @@
 
 mod actions;
 mod aitag;
+mod tagentry;
+mod tagpopover;
 mod albumscan;
 mod albumtree;
 mod altpreview;

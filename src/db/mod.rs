@@ -19,7 +19,7 @@ mod person_groups;
 mod presets;
 mod style_face_thumbs;
 mod style_faces;
-mod tags;
+pub mod tags;
 mod thumbs;
 mod virtual_albums;
 
@@ -100,6 +100,20 @@ mod tests {
         }
     }
 
+    fn new_named_photo(l: &Library, name: &str) -> i64 {
+        let fid = l
+            .upsert_folder(&Folder { path: "/tmp/f".into(), name: "f".into(), mtime: 1, year: 2024, ..Default::default() })
+            .unwrap();
+        l.upsert_photo(&Photo {
+            folder_id: fid,
+            path: format!("/tmp/f/{name}"),
+            filename: name.into(),
+            mod_time: 1,
+            ..Default::default()
+        })
+        .unwrap()
+    }
+
     fn new_test_photo(l: &Library) -> i64 {
         let fid = l
             .upsert_folder(&Folder {
@@ -147,6 +161,33 @@ mod tests {
         assert!(l.search_photo_ids_by_tag("dog").unwrap().contains(&pid));
         // Prefix.
         assert!(l.search_photo_ids_by_tag("sun").unwrap().contains(&pid));
+    }
+
+    #[test]
+    fn tags_state_and_group_ops() {
+        use crate::db::tags::TagState;
+        let (_g, l) = temp_library();
+        let a = new_named_photo(&l, "a.jpg");
+        let b = new_named_photo(&l, "b.jpg");
+        let c = new_named_photo(&l, "c.jpg");
+        l.add_photo_tags(a, &["dog".into()], TagSource::Ai).unwrap();
+        l.add_tags_to_photos(&[b], &["cat".into()]).unwrap();
+        let st = l.tag_state_for_photos(&[a, b, c]).unwrap();
+        assert_eq!(st.get(&a), Some(&TagState::AiOnly));
+        assert_eq!(st.get(&b), Some(&TagState::User));
+        assert!(!st.contains_key(&c));
+
+        l.add_tags_to_photos(&[a, b], &["sky".into()]).unwrap();
+        let g = l.tags_for_photos(&[a, b]).unwrap();
+        assert_eq!(g[0].name, "sky");
+        assert_eq!(g[0].count, 2);
+        assert!(g.iter().find(|t| t.name == "dog").unwrap().ai_only);
+        assert_eq!(l.photo_ids_with_tag("SKY").unwrap().len(), 2);
+
+        l.remove_tag_from_photos(&[a, b], "sky").unwrap();
+        assert!(l.photo_ids_with_tag("sky").unwrap().is_empty());
+        l.confirm_tag_on_photos(&[a], "dog").unwrap();
+        assert_eq!(l.tag_state_for_photos(&[a]).unwrap().get(&a), Some(&TagState::User));
     }
 
     #[test]
