@@ -45,6 +45,9 @@ a thumbnail grid in the center, and a properties panel on the right.
     filed appear under "New folders". Right-click to create Albums and
     Sub-Albums, then move folders into them (multi-select and drag-and-drop
     supported). Album membership is virtual and never moves files on disk.
+    Right-click an album and select "Squash Album" to hide its sub-albums and
+    folders. Click the squashed album to see the photos of all its sub-albums
+    in one grid. "Unsquash Album" shows the tree again. No data changes.
   - **Folders** — a live filesystem tree that drills into each added root's
     subfolders. Thumbnails already generated during scanning are reused, so
     reopening a folder is fast.

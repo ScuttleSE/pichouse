@@ -298,6 +298,9 @@ enum Source {
     RawDir(String),
     /// A virtual album (id, display name).
     VirtualAlbum(i64, String),
+    /// A squashed album: the photos of the album and all its sub-albums
+    /// (id, display name).
+    SquashedAlbum(i64, String),
     /// A person from facial recognition (id, display name).
     Person(i64, String),
     /// An unnamed face cluster (id, display name).
@@ -1431,7 +1434,11 @@ impl Grid {
         self.is_face_source()
             || matches!(
                 *self.source.borrow(),
-                Source::Folder(..) | Source::RawDir(..) | Source::VirtualAlbum(..) | Source::None
+                Source::Folder(..)
+                    | Source::RawDir(..)
+                    | Source::VirtualAlbum(..)
+                    | Source::SquashedAlbum(..)
+                    | Source::None
             )
     }
 
@@ -1464,6 +1471,14 @@ impl Grid {
             .lib
             .photos_in_virtual_album(album_id)
             .unwrap_or_default();
+        self.set_photos(name, photos);
+    }
+
+    /// Show a squashed album: the photos of the album and of all its
+    /// sub-albums in one flat list.
+    pub fn show_squashed_album(&self, album_id: i64, name: &str) {
+        *self.source.borrow_mut() = Source::SquashedAlbum(album_id, name.to_string());
+        let photos = self.lib.photos_in_album_tree(album_id).unwrap_or_default();
         self.set_photos(name, photos);
     }
 
@@ -1625,6 +1640,10 @@ impl Grid {
             }
             Source::VirtualAlbum(id, name) => {
                 let photos = self.lib.photos_in_virtual_album(id).unwrap_or_default();
+                self.set_photos_preserving(&name, photos);
+            }
+            Source::SquashedAlbum(id, name) => {
+                let photos = self.lib.photos_in_album_tree(id).unwrap_or_default();
                 self.set_photos_preserving(&name, photos);
             }
             Source::Person(id, name) => {

@@ -420,6 +420,15 @@ impl AppState {
             .set_message(&format!("Missing Files — {n} gone from disk"));
     }
 
+    /// Show a squashed album: all photos of the album and its sub-albums.
+    pub fn show_squashed_album(self: &Rc<Self>, album_id: i64, name: &str) {
+        *self.current_folder.borrow_mut() = 0;
+        self.grid().show_squashed_album(album_id, name);
+        self.show_grid();
+        let n = self.grid().visible_photos().len();
+        self.status().set_message(&format!("{name} — {n} photos (squashed)"));
+    }
+
     /// Show every photo under a directory and its subdirectories in the grid.
     /// Backs the synthetic directory nodes in the "New folders" sidebar
     /// section, which have no folder row of their own.

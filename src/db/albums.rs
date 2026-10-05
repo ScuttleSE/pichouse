@@ -95,7 +95,7 @@ impl Library {
     pub fn albums(&self) -> Result<Vec<Album>> {
         let conn = self.read_lock();
         let mut stmt = conn.prepare(
-            "SELECT id, name, COALESCE(parent_id, 0), position, kind
+            "SELECT id, name, COALESCE(parent_id, 0), position, kind, squashed
              FROM albums ORDER BY position ASC, name ASC",
         )?;
         let rows = stmt.query_map([], |r| {
@@ -105,9 +105,20 @@ impl Library {
                 parent_id: r.get(2)?,
                 position: r.get(3)?,
                 kind: crate::model::AlbumKind::from_i64(r.get::<_, i64>(4)?),
+                squashed: r.get::<_, i64>(5)? != 0,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Set or clear the squashed flag of an album.
+    pub fn set_album_squashed(&self, id: i64, squashed: bool) -> Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "UPDATE albums SET squashed = ?1 WHERE id = ?2",
+            params![squashed as i64, id],
+        )?;
+        Ok(())
     }
 
     /// Set an album's face-recognition kind (0 inherit, 1 Photo, 2 Art).
@@ -322,10 +333,32 @@ impl Library {
         let mut stmt = conn.prepare(
             "SELECT p.id, p.folder_id, p.path, p.filename, p.size, p.mod_time, p.taken_at, \
                     p.width, p.height, p.hash, p.thumb_ready, p.orientation, p.ai_status, \
-                    p.scan_state, p.missing, p.added_at \
+                    p.scan_state, p.missing, p.added_at, p.phash, p.skip_face_scan \
              FROM photos p \
              JOIN album_folders af ON af.folder_id = p.folder_id \
              WHERE af.album_id = ?1 AND p.missing = 0 \
+             ORDER BY p.taken_at ASC, p.filename ASC",
+        )?;
+        let rows = stmt.query_map([album_id], super::library::map_photo)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Every photo in an album and in all its sub-albums, at all depths.
+    /// Missing photos are not included. Ordered by taken date then filename.
+    /// The grid uses this for a squashed album.
+    pub fn photos_in_album_tree(&self, album_id: i64) -> Result<Vec<crate::model::Photo>> {
+        let conn = self.read_lock();
+        let mut stmt = conn.prepare(
+            "WITH RECURSIVE tree(id) AS ( \
+                 SELECT ?1 \
+                 UNION SELECT a.id FROM albums a JOIN tree t ON a.parent_id = t.id \
+             ) \
+             SELECT DISTINCT p.id, p.folder_id, p.path, p.filename, p.size, p.mod_time, \
+                    p.taken_at, p.width, p.height, p.hash, p.thumb_ready, p.orientation, \
+                    p.ai_status, p.scan_state, p.missing, p.added_at, p.phash, p.skip_face_scan \
+             FROM photos p \
+             JOIN album_folders af ON af.folder_id = p.folder_id \
+             WHERE af.album_id IN (SELECT id FROM tree) AND p.missing = 0 \
              ORDER BY p.taken_at ASC, p.filename ASC",
         )?;
         let rows = stmt.query_map([album_id], super::library::map_photo)?;
@@ -387,6 +420,48 @@ mod tests {
         lib.rename_album(aid, "Renamed").unwrap();
         lib.delete_album(aid).unwrap();
         assert!(lib.albums().unwrap().is_empty());
+
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("db-wal"));
+        let _ = std::fs::remove_file(path.with_extension("db-shm"));
+    }
+
+    #[test]
+    fn squashed_album_shows_photos_of_all_sub_albums() {
+        let (lib, path) = temp_lib();
+        let root = "/tmp/pichouse-squashtest-root";
+        lib.add_library_folder(root).unwrap();
+        let top = lib.create_album("top", 0).unwrap();
+        let mid = lib.create_album("mid", top).unwrap();
+        let leaf = lib.create_album("leaf", mid).unwrap();
+        let other = lib.create_album("other", 0).unwrap();
+        for (i, aid) in [top, mid, leaf, other].into_iter().enumerate() {
+            let fid = lib
+                .upsert_folder(&Folder {
+                    path: format!("{root}/f{i}"),
+                    name: format!("f{i}"),
+                    ..Default::default()
+                })
+                .unwrap();
+            lib.upsert_photo(&Photo {
+                folder_id: fid,
+                path: format!("{root}/f{i}/p{i}.jpg"),
+                filename: format!("p{i}.jpg"),
+                ..Default::default()
+            })
+            .unwrap();
+            lib.add_folder_to_album(fid, aid).unwrap();
+        }
+        assert_eq!(lib.photos_in_album_tree(top).unwrap().len(), 3);
+        assert_eq!(lib.photos_in_album_tree(mid).unwrap().len(), 2);
+        assert_eq!(lib.photos_in_album_tree(leaf).unwrap().len(), 1);
+
+        lib.set_album_squashed(top, true).unwrap();
+        let a = lib.albums().unwrap();
+        assert!(a.iter().find(|x| x.id == top).unwrap().squashed);
+        assert!(!a.iter().find(|x| x.id == mid).unwrap().squashed);
+        lib.set_album_squashed(top, false).unwrap();
+        assert!(!lib.albums().unwrap().iter().any(|x| x.squashed));
 
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(path.with_extension("db-wal"));

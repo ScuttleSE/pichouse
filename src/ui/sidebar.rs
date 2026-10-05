@@ -434,6 +434,9 @@ impl Sidebar {
                 .collect()
         } else if let Some(aid) = album_id_of(id) {
             let mut out = Vec::new();
+            if data.albums.get(&aid).map(|a| a.squashed).unwrap_or(false) {
+                return out;
+            }
             for &child in data.album_children.get(&aid).into_iter().flatten() {
                 out.push(format!("{ALBUM_PREFIX}{child}"));
             }
@@ -709,6 +712,9 @@ impl Sidebar {
                 Some(crate::model::AlbumKind::Art) => " (Art)",
                 _ => "",
             };
+            if album.map(|a| a.squashed).unwrap_or(false) {
+                return (format!("{name}{suffix} ⊟"), "view-dual-symbolic");
+            }
             (format!("{name}{suffix}"), "folder-new-symbolic")
         } else if let Some(fid) = folder_id_of(id) {
             let name = data
@@ -865,6 +871,15 @@ impl Sidebar {
                 if let Some(state) = self.state() {
                     super::immich::show_album(&state, sid, &uuid, &name);
                     return;
+                }
+            }
+            if let Some(aid) = album_id_of(&id) {
+                let album = self.data.borrow().albums.get(&aid).cloned();
+                if let (Some(state), Some(a)) = (self.state(), album) {
+                    if a.squashed {
+                        state.show_squashed_album(aid, &a.name);
+                        return;
+                    }
                 }
             }
             if let Some(fid) = folder_id_of(&id) {
@@ -1619,6 +1634,20 @@ impl Sidebar {
         }
         let Some(state) = self.state() else { return };
         if let Err(e) = state.lib.set_album_kind(id, kind) {
+            show_error(&state, &e.to_string());
+            return;
+        }
+        self.reload_deferred();
+    }
+
+    /// Squash or unsquash an album and refresh the tree. A squashed album
+    /// hides its children. Its grid shows the photos of all sub-albums.
+    fn set_album_squashed(self: &Rc<Self>, id: i64, squashed: bool) {
+        if id == 0 {
+            return;
+        }
+        let Some(state) = self.state() else { return };
+        if let Err(e) = state.lib.set_album_squashed(id, squashed) {
             show_error(&state, &e.to_string());
             return;
         }
@@ -2489,6 +2518,22 @@ impl Sidebar {
         {
             let this = self.clone();
             add(
+                "squash-album",
+                &group,
+                Rc::new(move |t| this.set_album_squashed(album_id_of(t).unwrap_or(0), true)),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "unsquash-album",
+                &group,
+                Rc::new(move |t| this.set_album_squashed(album_id_of(t).unwrap_or(0), false)),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
                 "album-kind-inherit",
                 &group,
                 Rc::new(move |t| this.set_album_kind(album_id_of(t).unwrap_or(0), crate::model::AlbumKind::Inherit.as_i64())),
@@ -3285,6 +3330,15 @@ impl Sidebar {
             menu.append(Some("New Sub-Album…"), Some(&detailed("new-subalbum", id)));
             menu.append(Some("Rename Album…"), Some(&detailed("rename-album", id)));
             menu.append(Some("Delete Album"), Some(&detailed("delete-album", id)));
+            let squashed = album_id_of(id)
+                .and_then(|aid| data.albums.get(&aid))
+                .map(|a| a.squashed)
+                .unwrap_or(false);
+            if squashed {
+                menu.append(Some("Unsquash Album"), Some(&detailed("unsquash-album", id)));
+            } else {
+                menu.append(Some("Squash Album"), Some(&detailed("squash-album", id)));
+            }
             if !self.selected_folder_ids().is_empty() {
                 menu.append(
                     Some("Move selected here"),

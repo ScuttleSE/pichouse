@@ -216,6 +216,11 @@ fn migrate(conn: &Connection) -> Result<()> {
         if !ac.contains("kind") {
             conn.execute_batch("ALTER TABLE albums ADD COLUMN kind INTEGER NOT NULL DEFAULT 0;")?;
         }
+        if !ac.contains("squashed") {
+            conn.execute_batch(
+                "ALTER TABLE albums ADD COLUMN squashed INTEGER NOT NULL DEFAULT 0;",
+            )?;
+        }
     }
     // library_folders.first_scan_done_at (freshness "new files" boundary).
     {

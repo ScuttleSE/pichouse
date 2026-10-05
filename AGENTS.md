@@ -319,6 +319,16 @@ To add a section, do these steps:
 3. Push the header id to the root id list in `reload`.
 4. Handle the ids in `child_ids`, `node_label`, and `on_selection_changed`.
 
+### Squashed albums
+
+- `albums.squashed` (1 or 0) marks a squashed album. `migrate` adds the
+  column. `Library::set_album_squashed` writes it.
+- `child_ids` returns no children for a squashed album.
+- A click on a squashed album calls `AppState::show_squashed_album`. The grid
+  source is `Source::SquashedAlbum`. It loads
+  `Library::photos_in_album_tree` (a recursive CTE over `parent_id`).
+- A click on a normal album does not change the grid.
+
 ### Grid entry points
 
 The grid is in `src/ui/grid.rs`. The `Grid` holds a `Source` enum. The variants

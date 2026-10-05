@@ -295,6 +295,9 @@ pub struct Album {
     /// The face-recognition kind for this album and (by inheritance) its
     /// sub-albums and folders. See `AlbumKind`.
     pub kind: AlbumKind,
+    /// True when the sidebar shows the album as one flat album. The grid then
+    /// shows the photos of all its sub-albums.
+    pub squashed: bool,
 }
 
 /// The face-recognition kind of an album. The integer values are stable and are

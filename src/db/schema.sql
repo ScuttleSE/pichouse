@@ -86,7 +86,10 @@ CREATE TABLE IF NOT EXISTS albums (
     position  INTEGER NOT NULL DEFAULT 0,
     -- Face-recognition kind: 0 = inherit (root default Photo), 1 = Photo,
     -- 2 = Art. Controls which face method scans this album's photos.
-    kind      INTEGER NOT NULL DEFAULT 0
+    kind      INTEGER NOT NULL DEFAULT 0,
+    -- 1 = squashed. The sidebar hides the children of the album. The grid
+    -- shows the photos of the album and of all its sub-albums.
+    squashed  INTEGER NOT NULL DEFAULT 0
 );
 
 -- Membership of a scanned folder in an album. A folder in no album is shown at
