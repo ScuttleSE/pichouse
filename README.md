@@ -114,6 +114,36 @@ model. Nothing leaves your machine and no models are downloaded automatically.
 All tags are stored in `library.db`. AI and user tags share one table and are
 distinguished by a source flag.
 
+## PTR tag database (optional)
+
+pichouse can use a local copy of the Hydrus Public Tag Repository (PTR). It
+shows PTR tags for photos that are byte-identical to a file in the PTR. A
+re-saved or resized copy does not match. This is most useful for booru,
+anime, and furry art.
+
+The database is large (estimate: 60–80 GB, not measured). Put it on an SSD.
+Do not put it on a network drive or a FAT32 drive.
+
+1. Get the public access key at
+   <https://hydrusnetwork.github.io/hydrus/access_keys.html>.
+2. Download `ptr-sync-linux-amd64` from the release page.
+3. Run the first sync. It can take many hours. You can stop it and start it
+   again. It continues from the last applied update.
+
+       PICHOUSE_PTR_KEY=<key> ./ptr-sync-linux-amd64 /path/to/ptr.db
+
+   Add `--max-gb-per-day <GB>` to limit the download rate.
+4. In pichouse, open Settings → Tagging → Tag Database (PTR). Turn on the
+   database. Set the location to the folder of `ptr.db`. Enter the key.
+
+The tab also sets the server, the download limit, the hidden namespaces, and
+the parent tags option. "Refresh now" downloads the new updates. When you
+change the location, pichouse can move the existing database for you.
+
+PTR tags show in the tag popover of a thumbnail, in an italic brown color.
+Click "+" to add one tag, or "Add all". The grid right-click menu has "Add PTR
+tags" for the selected photos. Added PTR tags become user tags.
+
 ## Duplicate image finder
 
 Open the toolbar **Tools** menu and pick **Find Duplicates…**. Choose a scope
@@ -366,7 +396,8 @@ freezes.
 
 ## Releases
 
-Tagged releases (`vX.Y.Z`) publish a prebuilt `linux/amd64` binary as a
+Tagged releases (`vX.Y.Z`) publish prebuilt `linux/amd64` binaries
+(`pichouse` and `ptr-sync`) as a
 [GitHub Release](https://github.com/ScuttleSE/pichouse/releases). If you'd
 rather build from source, see [Build and run](#build-and-run) above.
 

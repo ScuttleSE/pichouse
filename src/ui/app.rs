@@ -293,6 +293,7 @@ fn install_css() {
         .thumb-cell .tag-btn.tag-none { opacity: 0; } \
         .thumb-cell:hover .tag-btn.tag-none { opacity: 1; } \
         .tag-ai { color: #6f8fc0; } \
+        .tag-ptr { color: #b08a4f; font-style: italic; } \
         .tag-popover contents { padding: 4px; } \
         .thumbs.tagicon-hover .thumb-cell .tag-btn { opacity: 0; } \
         .thumbs.tagicon-hover .thumb-cell:hover .tag-btn { opacity: 1; } \

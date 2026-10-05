@@ -31,6 +31,7 @@ mod mosaic;
  mod people;
 mod photo_object;
 mod prefs;
+mod ptrui;
 mod properties;
 mod settings;
 mod settings_ai;

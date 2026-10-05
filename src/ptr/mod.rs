@@ -7,6 +7,8 @@
 
 pub mod client;
 pub mod db;
+pub mod lookup;
+pub mod place;
 pub mod sync;
 pub mod update;
 

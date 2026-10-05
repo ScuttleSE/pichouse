@@ -122,6 +122,20 @@ pub const KEY_GRID_HOVER_FADE: &str = "grid.hover_fade";
 pub const KEY_TAG_ICON_MODE: &str = "tag.icon_mode";
 /// The tag icon shape: "tag", "dot", or "hash".
 pub const KEY_TAG_ICON_SHAPE: &str = "tag.icon_shape";
+/// PTR tag database: "1" to use it.
+pub const KEY_PTR_ENABLED: &str = "ptr.enabled";
+/// PTR tag database: the full path of `ptr.db`. Empty means the data folder.
+pub const KEY_PTR_PATH: &str = "ptr.path";
+/// PTR tag database: the server URL.
+pub const KEY_PTR_URL: &str = "ptr.url";
+/// PTR tag database: the access key.
+pub const KEY_PTR_KEY: &str = "ptr.key";
+/// PTR tag database: the download limit in GB per day. "0" means no limit.
+pub const KEY_PTR_MAX_GB: &str = "ptr.max_gb_per_day";
+/// PTR tag database: the excluded namespaces, comma-separated.
+pub const KEY_PTR_EXCLUDE_NS: &str = "ptr.exclude_ns";
+/// PTR tag database: "1" to add the parent tags.
+pub const KEY_PTR_PARENTS: &str = "ptr.parents";
 pub const KEY_GRID_CELL_MARGIN: &str = "grid.cell_margin";
 /// Default per-image slideshow duration in seconds.
 pub const DEFAULT_SLIDESHOW_SECS: i32 = 4;

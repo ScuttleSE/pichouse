@@ -1,4 +1,4 @@
-//! Tagging settings pane: a "General" tab and an "AI" tab.
+//! Tagging settings pane: "General", "AI", and "Tag Database (PTR)" tabs.
 
 use std::rc::Rc;
 
@@ -23,6 +23,7 @@ pub fn tagging_pane(state: &Rc<AppState>) -> Notebook {
     let nb = Notebook::new();
     nb.append_page(&general_tab(state), Some(&Label::new(Some("General"))));
     nb.append_page(&super::settings_ai::ai_pane(state), Some(&Label::new(Some("AI"))));
+    nb.append_page(&super::ptrui::ptr_tab(state), Some(&Label::new(Some("Tag Database (PTR)"))));
     nb
 }
 

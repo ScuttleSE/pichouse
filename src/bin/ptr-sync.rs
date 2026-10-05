@@ -39,6 +39,15 @@ fn main() {
     }
     let (Some(path), Some(key)) = (path, key) else { return usage() };
 
+    let dir = std::path::Path::new(&path).parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or(std::path::Path::new("."));
+    if let Some((ty, free)) = ptr::place::fs_info(dir) {
+        match ptr::place::check_fs(&ty) {
+            ptr::place::FsVerdict::Refuse(m) => die(&m),
+            ptr::place::FsVerdict::Warn(m) => eprintln!("warning: {m}"),
+            ptr::place::FsVerdict::Ok => {}
+        }
+        println!("free space: {} GB. A full sync needs about 60-80 GB (estimate).", free / 1_000_000_000);
+    }
     let mut db = ptr::db::PtrDb::open(std::path::Path::new(&path)).unwrap_or_else(|e| die(&e.to_string()));
     let client = Client::new(&url, &key).unwrap_or_else(|e| die(&e));
     println!("ptr-sync: {path}, from index {}", db.last_index().unwrap_or(-1) + 1);

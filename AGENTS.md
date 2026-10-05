@@ -225,7 +225,8 @@ virtual albums when these tables are empty.
                          CaFormer), cluster (HDBSCAN crate)
     src/ptr/             optional local copy of the Hydrus PTR (client,
                          update parser, ptr.db schema, sync loop). See
-                         PTR_PLAN.md. Branch ptr-tags only.
+                         lookup.rs (read-only tag lookup), place.rs
+                         (filesystem checks, move of ptr.db). See PTR_PLAN.md.
     src/bin/ptr-sync.rs  CLI for the initial PTR sync (shares src/ptr/)
     src/immich/          Immich server integration (blocking HTTP client)
     src/ui/              GTK4 UI (app, state, grid, sidebar, viewer, editor,
@@ -237,7 +238,8 @@ virtual albums when these tables are empty.
                          tagmanager, shortcuts, dialogs, actions, controller,
                          groupsort,
                          prefs, photo_object, util, enrich, freshness, watcher,
-                         newfiles, vrules, vmenu, dedup_scan, pathtip, altpreview)
+                         newfiles, vrules, vmenu, dedup_scan, pathtip, altpreview,
+                         ptrui)
     .gitea/workflows/    CI (build/test/release on push to main)
 
 ## Architecture patterns
@@ -475,18 +477,30 @@ deserializes JSON responses into `serde` structs.
 
 Reuse this pattern for the Immich client.
 
-## Paused work: PTR tag database
+## PTR tag database
 
-The branch `ptr-tags` holds an optional local copy of the Hydrus Public Tag
-Repository. The work is paused. Read `PTR_PLAN.md` on that branch first. Its
-"Handoff" section gives the state and the next steps. Do not merge the
-branch without the user's request.
+The PTR work is on `main`. Read `PTR_PLAN.md` for the protocol and the
+handoff.
+
+- `ptr-sync` (`src/bin/ptr-sync.rs`) does the first sync. CI ships it as
+  `ptr-sync-linux-amd64`. The app does only the refresh.
+- `mappings` has the key `(hash_id, tag_id)` and no second index. An A/B
+  test gave a 38% smaller file and a 2.5x faster apply.
+- `src/ui/ptrui.rs` holds the settings tab, the refresh and move jobs, and
+  `lookup` and `import`. The setting keys are `ptr.*` in `src/ui/prefs.rs`.
+- `ptrui::lookup` returns `None` when the PTR is off, a move runs, or the
+  file has no lookup index. All PTR UI hides then.
+- The popover (`tagpopover.rs`, `fill_ptr`) and the grid menu
+  ("Add PTR tags") add PTR tags as user tags (`TagSource::User`).
+- Never run a full sync on the development machine. Test with
+  `--stop-at 300` into `/var/tmp`.
 
 ## CI
 
 `.gitea/workflows/build.yaml` builds on push to `main` on the `debian-go` runner,
 reads the version from `Cargo.toml`, runs `cargo test --release` and `cargo build
---release`, and publishes a rolling pre-release on both Gitea and GitHub
+--release`, and publishes a rolling pre-release with two assets
+(`pichouse-linux-amd64` and `ptr-sync-linux-amd64`) on both Gitea and GitHub
 (`ScuttleSE/pichouse`, under the `rolling` tag). Build-only — it does not launch
 the GUI. The runner host must have the system prerequisites installed (see above)
 plus a Rust toolchain (`cargo`).

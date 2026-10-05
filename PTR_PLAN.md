@@ -8,15 +8,14 @@ This section is for an agent with no memory of the earlier session.
 
 ### State
 
-- Branch `ptr-tags` holds all PTR work. `main` has none of it. Do not merge
-  without the user's request.
-- Done: Phase 0 (spike), Phase 1 (`ptr.db` schema), the sync loop, and the
-  `ptr-sync` CLI with retry rules and `--max-gb-per-day`.
-- Not done: Phase 3 (settings pane and in-app refresh) and Phase 4
-  (potential tags in the UI, import action).
-- No full sync ran. The development machine has no disk space for it
-  (about 21 GB download, about 100–125 GB `ptr.db`). Never run a full sync
-  here. Test with `--stop-at 300` or less, and write to `/tmp`.
+- `main` holds all PTR work (squash merge of `ptr-tags`). The `ptr-tags`
+  branch stays as an archive. Its early commits contain the public key.
+  `main` does not.
+- Done: Phase 0, Phase 1, the `ptr-sync` CLI, Phase 3 (settings tab,
+  refresh, location move), and Phase 4 (PTR tags in the popover, import).
+- `mappings` uses the key `(hash_id, tag_id)`. A/B test, indexes 0–1200:
+  apply 43 s against 112 s, file 378 MB against 607 MB, same data.
+- No full sync ran. Never run a full sync on the development machine.
 
 ### Files
 
@@ -40,22 +39,14 @@ Do not put the key in code or docs.
 ### Next steps
 
 1. Ask the user for the results of a full `ptr-sync` on the desktop (time,
-   size, errors). Update the numbers in this file.
-2. Phase 3: settings pane "Tag Database (PTR)" with keys `ptr.enabled`,
-   `ptr.path`, `ptr.url`, `ptr.key`. Add a "Refresh" action that runs
-   `ptr::sync::sync` in the background (pattern: `src/ui/aitag.rs`).
-3. Phase 4: show potential tags in a second text color. Add "Import PTR
-   tags". Read the tagging code on `main` first. It can change before then.
+   size, errors). Update the size numbers in this file and in README.md.
+2. Measure the lookup speed in the popover with a full database.
 
 ### Open questions
 
-- The early commits on `ptr-tags` contain the public PTR key. The user did
-  not decide yet whether to remove it from the history (needs a
-  force-push).
-- `apply_index` does not use `hashes_sha256` during the sync. The refresh
-  in the app runs after the index build, so the inserts are slower there.
-  Measure before you change it.
-
+- `apply_index` does not use `hashes_sha256` during the sync. The in-app
+  refresh runs after the index build, so its inserts are slower. Measure
+  before you change it.
 
 ## Goal
 

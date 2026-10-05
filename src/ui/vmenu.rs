@@ -601,6 +601,21 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
         group.add_action(&act);
     }
 
+    // Add the PTR tags of the selected photos.
+    {
+        let act = gio::SimpleAction::new("import-ptr-tags", None);
+        let state = state.clone();
+        let grid = grid.clone();
+        let pop = pop.clone();
+        act.connect_activate(move |_, _| {
+            dismiss(&pop);
+            let ids = local_photo_ids(&grid);
+            super::ptrui::import_with_status(&state, &ids);
+            grid.refresh_face_scanned();
+        });
+        group.add_action(&act);
+    }
+
     // Assign quickly from a normal album. A photo with exactly one face goes
     // into the batch. The grid then selects the photos with more than one
     // face, for the per-face dialog. `style` true means characters.
@@ -813,6 +828,9 @@ fn build_menu(state: &Rc<AppState>, grid: &Rc<Grid>) -> gio::Menu {
     }
     if selected_local >= 1 {
         tools.append(Some("Export edited copy…"), Some("grid.export"));
+        if super::ptrui::available(&state.lib) {
+            tools.append(Some("Add PTR tags"), Some("grid.import-ptr-tags"));
+        }
     }
     menu.append_section(None, &tools);
 
