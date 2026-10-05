@@ -86,6 +86,9 @@ a thumbnail grid in the center, and a properties panel on the right.
 - Search: type `tag:cat` for the exact tag `cat`. Plain text matches
   filenames and tags.
 - Virtual albums: the "Has tag" rule has the same autocomplete.
+- *Settings → Tagging → General* sets when the tag icon shows (tagged
+  always and untagged on mouseover, only on mouseover, always, or off) and
+  its shape (tag, dot, or hash sign). The AI settings are on the *AI* tab.
 
 ## AI-based tagging (local, optional)
 
@@ -96,7 +99,7 @@ model. Nothing leaves your machine and no models are downloaded automatically.
   (`127.0.0.1:11434`). Install Ollama and pull a vision model, e.g.
   `ollama pull moondream` (small/fast) or `ollama pull llava`.
 - **Runs on CPU or GPU** — whichever Ollama is configured to use.
-- **Enable it** in *Settings → AI Tagging*: toggle it on, choose the model, and
+- **Enable it** in *Settings → Tagging → AI*: toggle it on, choose the model, and
   optionally let pichouse start Ollama automatically. Use *Test Connection* to
   verify the server and model are available.
 - **Run tagging** from the toolbar AI button: *Tag Current Folder* or *Tag

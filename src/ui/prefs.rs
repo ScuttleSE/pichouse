@@ -118,6 +118,10 @@ pub const KEY_CHARS_UNNAMED_COLLAPSED: &str = "charactersview.unnamed_collapsed"
 pub const KEY_GRID_CROP: &str = "grid.crop";
 /// "1" to fade between the crop and the whole photo on mouseover.
 pub const KEY_GRID_HOVER_FADE: &str = "grid.hover_fade";
+/// The tag icon mode: "auto", "hover", "always", or "off".
+pub const KEY_TAG_ICON_MODE: &str = "tag.icon_mode";
+/// The tag icon shape: "tag", "dot", or "hash".
+pub const KEY_TAG_ICON_SHAPE: &str = "tag.icon_shape";
 pub const KEY_GRID_CELL_MARGIN: &str = "grid.cell_margin";
 /// Default per-image slideshow duration in seconds.
 pub const DEFAULT_SLIDESHOW_SECS: i32 = 4;

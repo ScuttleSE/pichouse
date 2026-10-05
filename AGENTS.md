@@ -227,7 +227,7 @@ virtual albums when these tables are empty.
     src/ui/              GTK4 UI (app, state, grid, sidebar, viewer, editor,
                          export, properties, toolbar, status, settings,
                          settings_ai, settings_immich, settings_faces,
-                         settings_characters, aitag, tagentry, tagpopover, facescan, stylefacescan,
+                         settings_characters, settings_tagging, aitag, tagentry, tagpopover, facescan, stylefacescan,
                          albumscan, people, characters, facesview,
                          charactersview, immich,
                          tagmanager, shortcuts, dialogs, actions, controller,
@@ -357,6 +357,11 @@ A photo in the grid is a `PhotoObject`. `PhotoObject` is a GObject wrapper of a
   properties "Tags" tab, and the "Has tag" virtual-album rule use it.
 - The CSS class `tag-ai` (muted blue) marks unconfirmed AI tags.
 - Search: `tag:<name>` is an exact match in `Grid::filtered_photos`.
+- The "Tagging" settings pane (`src/ui/settings_tagging.rs`) is a
+  `Notebook` with "General" and "AI" (`settings_ai::ai_pane`) tabs. The keys
+  `tag.icon_mode` (auto, hover, always, off) and `tag.icon_shape` (tag, dot,
+  hash) go to `Grid::set_tag_icon`. It sets a `tagicon-<mode>` CSS class on
+  the grid view and the static `TAG_ICON_SHAPE` and `TAG_ICON_OFF`.
 
 ### Face and character grouping
 

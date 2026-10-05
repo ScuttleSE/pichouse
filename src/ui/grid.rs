@@ -2132,6 +2132,34 @@ impl Grid {
         super::thumbpic::set_fade_enabled(on);
     }
 
+    /// Set the tag icon mode and shape (see `settings_tagging`).
+    pub fn set_tag_icon(&self, mode: &str, shape: &str) {
+        for m in ["auto", "hover", "always", "off"] {
+            self.grid_view.remove_css_class(&format!("tagicon-{m}"));
+        }
+        self.grid_view.add_css_class(&format!("tagicon-{mode}"));
+        TAG_ICON_OFF.store(mode == "off", Ordering::Relaxed);
+        TAG_ICON_SHAPE.store(
+            match shape {
+                "dot" => 1,
+                "hash" => 2,
+                _ => 0,
+            },
+            Ordering::Relaxed,
+        );
+        self.tag_btns.borrow_mut().retain(|w| match w.upgrade() {
+            Some(b) => {
+                let id: i64 = unsafe { b.data::<i64>("photo-id").map(|p| *p.as_ref()).unwrap_or(0) };
+                b.set_visible(id != 0 && mode != "off");
+                if let Some(c) = b.child() {
+                    c.queue_draw();
+                }
+                true
+            }
+            None => false,
+        });
+    }
+
     /// Turn the square crop on or off, and redraw the cells.
     pub fn set_crop(&self, on: bool) {
         super::thumbpic::set_crop_enabled(on);
@@ -2471,7 +2499,7 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
                 }
                 let st = grid_bind.upgrade().and_then(|g| g.tag_state.borrow().get(&photo.id()).copied());
                 style_tag_btn(&tag_btn, st);
-                tag_btn.set_visible(photo.id() != 0);
+                tag_btn.set_visible(photo.id() != 0 && !TAG_ICON_OFF.load(Ordering::Relaxed));
             }
         }
 
@@ -2545,7 +2573,12 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
     factory
 }
 
-/// The tag icon: a small luggage-tag shape. The draw func reads the parent
+/// The tag icon shape: 0 = tag, 1 = dot, 2 = hash sign.
+static TAG_ICON_SHAPE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+/// True when the tag icon is turned off.
+static TAG_ICON_OFF: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The tag icon: a small luggage-tag shape (or a dot, or a hash sign). The draw func reads the parent
 /// button CSS class: `tag-none` (grey outline), `tag-ai` (muted blue fill),
 /// or `tag-user` (white fill).
 fn build_tag_icon() -> DrawingArea {
@@ -2556,8 +2589,51 @@ fn build_tag_icon() -> DrawingArea {
         let btn = area.parent();
         let has = |c: &str| btn.as_ref().map(|b| b.has_css_class(c)).unwrap_or(false);
         let (w, h) = (w as f64, h as f64);
-        // A tag pointing up-left: a rectangle with a cut corner and a hole.
+        let (fill, line): (Option<(f64, f64, f64)>, (f64, f64, f64, f64)) = if has("tag-user") {
+            (Some((1.0, 1.0, 1.0)), (0.0, 0.0, 0.0, 0.7))
+        } else if has("tag-ai") {
+            (Some((0.45, 0.6, 0.85)), (0.0, 0.0, 0.0, 0.7))
+        } else {
+            (None, (0.6, 0.6, 0.6, 0.95))
+        };
         let s = w.min(h) - 2.0;
+        match TAG_ICON_SHAPE.load(Ordering::Relaxed) {
+            1 => {
+                cr.arc(w / 2.0, h / 2.0, s * 0.35, 0.0, std::f64::consts::TAU);
+                let (r, g, b, a) = fill.map(|f| (f.0, f.1, f.2, 0.95)).unwrap_or((0.0, 0.0, 0.0, 0.35));
+                cr.set_source_rgba(r, g, b, a);
+                let _ = cr.fill_preserve();
+                cr.set_source_rgba(line.0, line.1, line.2, line.3);
+                cr.set_line_width(1.5);
+                let _ = cr.stroke();
+                return;
+            }
+            2 => {
+                // A hash sign with a dark outline, so it shows on any photo.
+                let (x0, y0) = ((w - s) / 2.0, (h - s) / 2.0);
+                let seg = |cr: &gtk4::cairo::Context| {
+                    for f in [0.35, 0.65] {
+                        cr.move_to(x0 + s * (f + 0.05), y0 + s * 0.1);
+                        cr.line_to(x0 + s * (f - 0.05), y0 + s * 0.9);
+                        cr.move_to(x0 + s * 0.1, y0 + s * f);
+                        cr.line_to(x0 + s * 0.9, y0 + s * f);
+                    }
+                };
+                cr.set_line_cap(gtk4::cairo::LineCap::Round);
+                seg(cr);
+                cr.set_source_rgba(0.0, 0.0, 0.0, 0.6);
+                cr.set_line_width(4.5);
+                let _ = cr.stroke();
+                seg(cr);
+                let (r, g, b) = fill.unwrap_or((0.75, 0.75, 0.75));
+                cr.set_source_rgba(r, g, b, 1.0);
+                cr.set_line_width(2.0);
+                let _ = cr.stroke();
+                return;
+            }
+            _ => {}
+        }
+        // A tag pointing up-left: a rectangle with a cut corner and a hole.
         let (x0, y0) = ((w - s) / 2.0, (h - s) / 2.0);
         let c = s * 0.38;
         cr.new_path();
@@ -2568,13 +2644,6 @@ fn build_tag_icon() -> DrawingArea {
         cr.line_to(x0, y0 + s);
         cr.line_to(x0, y0 + c);
         cr.close_path();
-        let (fill, line): (Option<(f64, f64, f64)>, (f64, f64, f64, f64)) = if has("tag-user") {
-            (Some((1.0, 1.0, 1.0)), (0.0, 0.0, 0.0, 0.7))
-        } else if has("tag-ai") {
-            (Some((0.45, 0.6, 0.85)), (0.0, 0.0, 0.0, 0.7))
-        } else {
-            (None, (0.6, 0.6, 0.6, 0.95))
-        };
         if let Some((r, g, b)) = fill {
             cr.set_source_rgba(r, g, b, 0.95);
             let _ = cr.fill_preserve();

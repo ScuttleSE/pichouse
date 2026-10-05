@@ -36,9 +36,9 @@ pub fn show_settings(state: &Rc<AppState>) {
     stack.add_titled(&slideshow_pane(state), Some("slideshow"), "Slideshow");
     stack.add_titled(&appearance_pane(state), Some("appearance"), "Appearance");
     stack.add_titled(
-        &super::settings_ai::ai_pane(state),
-        Some("ai"),
-        "AI Tagging",
+        &super::settings_tagging::tagging_pane(state),
+        Some("tagging"),
+        "Tagging",
     );
     stack.add_titled(
         &super::settings_immich::immich_pane(state),

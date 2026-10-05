@@ -2,6 +2,7 @@
 
 mod actions;
 mod aitag;
+mod settings_tagging;
 mod tagentry;
 mod tagpopover;
 mod albumscan;

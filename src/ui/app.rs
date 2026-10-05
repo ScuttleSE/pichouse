@@ -158,6 +158,7 @@ fn build_ui(app: &Application) {
             state.properties().show(&photo);
         });
     }
+    super::settings_tagging::apply(&state);
     {
         let state = state.clone();
         grid.set_on_tags_changed(move || {
@@ -293,6 +294,9 @@ fn install_css() {
         .thumb-cell:hover .tag-btn.tag-none { opacity: 1; } \
         .tag-ai { color: #6f8fc0; } \
         .tag-popover contents { padding: 4px; } \
+        .thumbs.tagicon-hover .thumb-cell .tag-btn { opacity: 0; } \
+        .thumbs.tagicon-hover .thumb-cell:hover .tag-btn { opacity: 1; } \
+        .thumbs.tagicon-always .thumb-cell .tag-btn.tag-none { opacity: 1; } \
         .tag-row-btn { min-width: 0; min-height: 0; padding: 0 2px; } \
         .face-scan-badge { \
             color: #33bf4d; \
