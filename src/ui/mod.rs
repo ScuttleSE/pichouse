@@ -40,6 +40,7 @@ mod state;
 mod status;
 mod stylefacescan;
 mod tagmanager;
+mod thumbpic;
 mod thumbcache;
 mod toolbar;
 mod util;

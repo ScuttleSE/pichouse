@@ -1574,3 +1574,56 @@ fn insert_face_row(conn: &rusqlite::Connection, face: &Face) -> Result<i64> {
     ])?;
     Ok(conn.last_insert_rowid())
 }
+
+impl Library {
+    /// The crop focus box per photo, in per-mille of the photo. The rank is:
+    /// an identified face (person or character), then an unnamed face, then
+    /// an ignored face. Inside a rank, the largest box wins.
+    pub fn crop_focus_for_photos(
+        &self,
+        photo_ids: &[i64],
+    ) -> Result<HashMap<i64, (i32, i32, i32, i32)>> {
+        let mut best: HashMap<i64, (i32, i64, (i32, i32, i32, i32))> = HashMap::new();
+        if photo_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let conn = self.read_lock();
+        for chunk in photo_ids.chunks(900) {
+            let ph = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            let sql = format!(
+                "SELECT photo_id, bbox_x, bbox_y, bbox_w, bbox_h, \
+                   CASE WHEN ignored = 1 THEN 0 WHEN person_id IS NOT NULL THEN 2 ELSE 1 END \
+                 FROM faces WHERE photo_id IN ({ph}) \
+                 UNION ALL \
+                 SELECT photo_id, bbox_x, bbox_y, bbox_w, bbox_h, \
+                   CASE WHEN ignored = 1 THEN 0 WHEN character_id IS NOT NULL THEN 2 ELSE 1 END \
+                 FROM style_faces WHERE photo_id IN ({ph})"
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let ps: Vec<&dyn rusqlite::ToSql> = chunk
+                .iter()
+                .chain(chunk.iter())
+                .map(|p| p as &dyn rusqlite::ToSql)
+                .collect();
+            let rows = stmt.query_map(ps.as_slice(), |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    (r.get::<_, i32>(1)?, r.get::<_, i32>(2)?, r.get::<_, i32>(3)?, r.get::<_, i32>(4)?),
+                    r.get::<_, i32>(5)?,
+                ))
+            })?;
+            for row in rows {
+                let (pid, b, tier) = row?;
+                let area = b.2 as i64 * b.3 as i64;
+                let better = match best.get(&pid) {
+                    None => true,
+                    Some((t, a, _)) => (tier, area) > (*t, *a),
+                };
+                if better {
+                    best.insert(pid, (tier, area, b));
+                }
+            }
+        }
+        Ok(best.into_iter().map(|(k, (_, _, b))| (k, b)).collect())
+    }
+}

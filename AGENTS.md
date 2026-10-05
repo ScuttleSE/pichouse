@@ -325,6 +325,14 @@ source. `show_photos` is the simplest entry point for a remote photo set.
 `AppState::show_virtual_album` in `src/ui/state.rs` is the wiring template. It
 sets the current view, calls the grid loader, and updates the status bar.
 
+The grid thumbnail is a `ThumbPic` (`src/ui/thumbpic.rs`). It crops the photo
+to fill the square cell and shows the whole photo on mouseover. The crop moves
+so a focus face stays visible. It does not zoom more than the cell needs.
+`Library::crop_focus_for_photos` picks the face: the largest identified face,
+then the largest unnamed face, then the largest ignored face.
+`refresh_face_scanned` fills `Grid::crop_focus`. The cell margin is the key
+`grid.cell_margin` (CSS on `gridview.thumbs > child`).
+
 A photo in the grid is a `PhotoObject`. `PhotoObject` is a GObject wrapper of a
 `model::Photo`. `PhotoObject::from_photo` builds one. The grid fills the
 `texture` property from the thumbnail cache.
