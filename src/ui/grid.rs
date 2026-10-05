@@ -1901,12 +1901,9 @@ impl Grid {
         if width <= 0 || page <= 0.0 {
             return (0, VISIBLE_FALLBACK.min(n));
         }
-        // Use the fixed column count. Take the row height from the real
-        // content height, because the cells grow to fill the width.
-        let _ = size;
-        let cols = (self.grid_view.max_columns().max(1) as usize).min(n.max(1));
-        let rows = n.div_ceil(cols).max(1) as f64;
-        let row_h = (vadj.upper() / rows).max(1.0);
+        let cell_w = (size + CELL_SPACING).max(1);
+        let cols = ((width / cell_w).max(1) as usize).min(20);
+        let row_h = (size + CELL_SPACING).max(1) as f64;
         let first_row = (vadj.value() / row_h).floor() as i64;
         let rows_visible = (page / row_h).ceil() as i64 + 1;
         let margin = VISIBLE_MARGIN_ROWS as i64;
@@ -2123,7 +2120,7 @@ impl Grid {
             self.cell_px.set(cell);
             self.face_areas.borrow_mut().retain(|a| {
                 if let Some(a) = a.upgrade() {
-                    a.set_size_request(-1, cell);
+                    a.set_size_request(cell, cell);
                     true
                 } else {
                     false
@@ -2257,7 +2254,7 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
         // map, so no per-cell signal wiring is needed.
         let face_area = DrawingArea::new();
         let cell = grid_setup.upgrade().map(|g| g.cell_px.get()).unwrap_or(thumb_size);
-        face_area.set_size_request(-1, cell);
+        face_area.set_size_request(cell, cell);
         face_area.set_can_target(false);
         overlay.add_overlay(&face_area);
         // Register this cell's DrawingArea so a later toggle can queue a
