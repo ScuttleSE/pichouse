@@ -448,6 +448,7 @@ pub fn assign_style_faces_per_face_dialog<F: Fn() + 'static, G: Fn(Vec<Option<i6
     // the per-card "Assign" button does.
     let mut drops: Vec<Option<DropDown>> = Vec::with_capacity(n);
     let mut resolved: Vec<Rc<RefCell<Option<i64>>>> = Vec::with_capacity(n);
+    let mut ignored: Vec<Rc<std::cell::Cell<bool>>> = Vec::with_capacity(n);
 
     for (i, &face_id) in face_ids.iter().enumerate() {
         let frame = Frame::new(None);
@@ -505,6 +506,7 @@ pub fn assign_style_faces_per_face_dialog<F: Fn() + 'static, G: Fn(Vec<Option<i6
         card.append(&confirm);
 
         let card_resolved: Rc<RefCell<Option<i64>>> = Rc::new(RefCell::new(None));
+        let card_ignored: Rc<std::cell::Cell<bool>> = Rc::new(std::cell::Cell::new(false));
 
         if !characters.is_empty() {
             let labels: Vec<String> = characters.iter().map(|c| c.name.clone()).collect();
@@ -600,7 +602,34 @@ pub fn assign_style_faces_per_face_dialog<F: Fn() + 'static, G: Fn(Vec<Option<i6
             );
         });
 
+        // "Ignore" marks the face as ignored. The face then has no owner and
+        // no group, and "Done" does not assign it.
+        let ignore_btn = Button::with_label("Ignore");
+        controls.append(&ignore_btn);
+        {
+            let state2 = state.clone();
+            let controls2 = controls.clone();
+            let confirm2 = confirm.clone();
+            let on_assigned2 = on_assigned.clone();
+            let ignored2 = card_ignored.clone();
+            ignore_btn.connect_clicked(move |_| {
+                if let Err(e) = state2.lib.set_style_face_ignored(face_id) {
+                    show_error(&state2, &e.to_string());
+                    return;
+                }
+                if let Some(sb) = state2.sidebar.borrow().as_ref() {
+                    sb.reload_deferred();
+                }
+                controls2.set_visible(false);
+                confirm2.set_text("Ignored");
+                confirm2.set_visible(true);
+                ignored2.set(true);
+                on_assigned2();
+            });
+        }
+
         resolved.push(card_resolved);
+        ignored.push(card_ignored);
     }
 
     // "Swap" trades the two faces' currently-selected characters — handy for
@@ -636,7 +665,7 @@ pub fn assign_style_faces_per_face_dialog<F: Fn() + 'static, G: Fn(Vec<Option<i6
             // dropdown assigns it first, so the user doesn't have to click
             // "Assign" then "Done" for every face.
             for i in 0..face_ids.len() {
-                if resolved[i].borrow().is_some() {
+                if resolved[i].borrow().is_some() || ignored[i].get() {
                     continue;
                 }
                 let Some(drop) = &drops[i] else { continue };

@@ -1,7 +1,7 @@
 # Graph Report - pichouse  (2026-10-07)
 
 ## Corpus Check
-- 123 files · ~197,124 words
+- 123 files · ~197,215 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -10,7 +10,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `d443c156`
+- Built from commit: `17b8c42d`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -174,9 +174,9 @@
   README.md → ROADMAP.md
 
 ## Import Cycles
-- 2-file cycle: `src/ui/properties.rs -> src/ui/state.rs -> src/ui/properties.rs`
-- 2-file cycle: `src/ui/state.rs -> src/ui/status.rs -> src/ui/state.rs`
 - 2-file cycle: `src/ui/state.rs -> src/ui/viewer.rs -> src/ui/state.rs`
+- 2-file cycle: `src/ui/state.rs -> src/ui/status.rs -> src/ui/state.rs`
+- 2-file cycle: `src/ui/properties.rs -> src/ui/state.rs -> src/ui/properties.rs`
 - 3-file cycle: `src/ui/editor.rs -> src/ui/state.rs -> src/ui/properties.rs -> src/ui/editor.rs`
 - 4-file cycle: `src/ui/grid.rs -> src/ui/photo_object.rs -> src/ui/properties.rs -> src/ui/state.rs -> src/ui/grid.rs`
 - 5-file cycle: `src/ui/editor.rs -> src/ui/state.rs -> src/ui/grid.rs -> src/ui/photo_object.rs -> src/ui/properties.rs -> src/ui/editor.rs`

@@ -15864,7 +15864,7 @@
       "file_type": "code",
       "norm_label": "name_style_clusters_dialog()",
       "source_file": "src/ui/characters.rs",
-      "source_location": "L676"
+      "source_location": "L705"
     },
     {
       "id": "src_ui_characters_name_style_faces",
@@ -27452,7 +27452,7 @@
       "source_file": "Cargo.toml",
       "source_location": "L1",
       "type": "package",
-      "version": "0.2.78"
+      "version": "0.2.79"
     },
     {
       "id": "readme_baked_export",
@@ -37437,7 +37437,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/characters.rs",
-      "source_location": "L740",
+      "source_location": "L769",
       "weight": 1.0
     },
     {
@@ -37449,7 +37449,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/ui/characters.rs",
-      "source_location": "L780",
+      "source_location": "L809",
       "weight": 1.0
     },
     {
@@ -56841,7 +56841,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/ui/characters.rs",
-      "source_location": "L676",
+      "source_location": "L705",
       "weight": 1.0
     },
     {
@@ -71121,7 +71121,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/characters.rs",
-      "source_location": "L676",
+      "source_location": "L705",
       "weight": 1.0
     },
     {
@@ -71133,7 +71133,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/characters.rs",
-      "source_location": "L676",
+      "source_location": "L705",
       "weight": 1.0
     },
     {
@@ -71145,7 +71145,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/ui/characters.rs",
-      "source_location": "L676",
+      "source_location": "L705",
       "weight": 1.0
     },
     {
@@ -92026,7 +92026,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/ui/characters.rs",
-      "source_location": "L676",
+      "source_location": "L705",
       "weight": 1.0
     },
     {
@@ -105298,7 +105298,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "src/ui/characters.rs",
-      "source_location": "L471",
+      "source_location": "L472",
       "weight": 1.0
     },
     {
@@ -105310,7 +105310,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "src/ui/characters.rs",
-      "source_location": "L478",
+      "source_location": "L479",
       "weight": 1.0
     },
     {
@@ -105322,7 +105322,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "src/ui/characters.rs",
-      "source_location": "L537",
+      "source_location": "L539",
       "weight": 1.0
     },
     {
@@ -105334,7 +105334,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "src/ui/characters.rs",
-      "source_location": "L569",
+      "source_location": "L571",
       "weight": 1.0
     },
     {
@@ -105346,7 +105346,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "src/ui/characters.rs",
-      "source_location": "L730",
+      "source_location": "L759",
       "weight": 1.0
     },
     {
@@ -105358,7 +105358,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "src/ui/characters.rs",
-      "source_location": "L741",
+      "source_location": "L770",
       "weight": 1.0
     },
     {
@@ -107165,5 +107165,5 @@
       "source_file": "HANDOFF.md"
     }
   ],
-  "built_at_commit": "d443c1564704167f4209b47195c346a1a4e3353a"
+  "built_at_commit": "17b8c42dacfbd40fe46ef96bb9eb8ff28d89c540"
 }
