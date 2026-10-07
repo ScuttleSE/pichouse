@@ -1608,6 +1608,15 @@ mod tests {
         lib.delete_all_face_data().unwrap();
         lib.delete_all_style_face_data().unwrap();
         check("delete all face data");
+        // A broken table comes back with a rebuild.
+        lib.insert_face(&face(p3)).unwrap();
+        lib.lock()
+            .execute_batch("UPDATE folder_unassigned_faces SET n = 0")
+            .unwrap();
+        assert!(lib.folders_with_unassigned_faces().unwrap().is_empty());
+        lib.rebuild_unassigned_faces().unwrap();
+        check("rebuild");
+        assert!(lib.folders_with_unassigned_faces().unwrap().contains(&folder_of(p3)));
     }
 
     #[test]

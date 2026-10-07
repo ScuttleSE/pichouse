@@ -1,8 +1,8 @@
 {
   "Cargo.toml": {
-    "mtime": 1791382399.2657907,
-    "seen": 1791386234.3122673,
-    "ast_hash": "a65841d6275914cf8bd8f0806aaf06a2",
+    "mtime": 1791386404.1386564,
+    "seen": 1791386849.8513296,
+    "ast_hash": "db4a01d58a06a3b18da48ab45e64a897",
     "semantic_hash": ""
   },
   "src/ai/client.rs": {
@@ -66,9 +66,9 @@
     "semantic_hash": ""
   },
   "src/db/faces.rs": {
-    "mtime": 1791385862.6383379,
-    "seen": 1791386234.3124712,
-    "ast_hash": "de6599dcc8e19edcd0492da2b39115be",
+    "mtime": 1791386754.5442793,
+    "seen": 1791386849.8517575,
+    "ast_hash": "8034c0d2c90b4e16c75664e7dbcb753c",
     "semantic_hash": ""
   },
   "src/db/immich.rs": {
@@ -84,9 +84,9 @@
     "semantic_hash": "33a68a5681737ab28a720e2031859771"
   },
   "src/db/library.rs": {
-    "mtime": 1791384024.6109223,
-    "seen": 1791386234.3125048,
-    "ast_hash": "5600f80baa4796cc344ca0328f1b2098",
+    "mtime": 1791386747.4363275,
+    "seen": 1791386849.8518293,
+    "ast_hash": "4a33d06ce51e02613eada326c11db12a",
     "semantic_hash": ""
   },
   "src/db/mod.rs": {
@@ -306,8 +306,8 @@
     "semantic_hash": ""
   },
   "src/ui/app.rs": {
-    "mtime": 1791383584.1418793,
-    "seen": 1791386234.3130107,
+    "mtime": 1791386404.206656,
+    "seen": 1791386849.8531952,
     "ast_hash": "2cf7747751cf1ccf07c9c7a84983c712",
     "semantic_hash": ""
   },
@@ -408,8 +408,8 @@
     "semantic_hash": ""
   },
   "src/ui/people.rs": {
-    "mtime": 1791385977.593555,
-    "seen": 1791386234.313124,
+    "mtime": 1791386404.206656,
+    "seen": 1791386849.8538113,
     "ast_hash": "81b643f1ff5ce5e3f1da0b9c074b3b34",
     "semantic_hash": ""
   },
@@ -432,9 +432,9 @@
     "semantic_hash": ""
   },
   "src/ui/settings.rs": {
-    "mtime": 1791382089.2798707,
-    "seen": 1791386234.3131597,
-    "ast_hash": "70b6daabfcb8b29f475426ba80d8c2d1",
+    "mtime": 1791386752.6042924,
+    "seen": 1791386849.8539336,
+    "ast_hash": "1af30d62449b7beb676448c0e77aa815",
     "semantic_hash": ""
   },
   "src/ui/settings_ai.rs": {
@@ -468,8 +468,8 @@
     "semantic_hash": ""
   },
   "src/ui/sidebar.rs": {
-    "mtime": 1791383602.5177562,
-    "seen": 1791386234.3131666,
+    "mtime": 1791386404.206656,
+    "seen": 1791386849.854117,
     "ast_hash": "6d181bc3ed988165fe6b86eb66fb1f37",
     "semantic_hash": ""
   },
@@ -558,9 +558,9 @@
     "semantic_hash": ""
   },
   "AGENTS.md": {
-    "mtime": 1791386228.1358516,
-    "seen": 1791386234.3133929,
-    "ast_hash": "d3c74a4e4bdc53c2084b46ce7f4f788b",
+    "mtime": 1791386842.8077068,
+    "seen": 1791386849.8546445,
+    "ast_hash": "e9f50e9970b011ff5df324c0b95dcf76",
     "semantic_hash": ""
   },
   "HANDOFF.md": {

@@ -436,6 +436,17 @@ fn create_face_stats_triggers(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// The SQL that fills `folder_unassigned_faces` from a full count.
+const FILL_UNASSIGNED_SQL: &str = "DELETE FROM folder_unassigned_faces;
+     INSERT INTO folder_unassigned_faces(folder_id, n)
+         SELECT folder_id, COUNT(*) FROM (
+             SELECT p.folder_id FROM faces f JOIN photos p ON p.id = f.photo_id
+              WHERE f.person_id IS NULL AND f.ignored = 0 AND p.missing = 0
+             UNION ALL
+             SELECT p.folder_id FROM style_faces f JOIN photos p ON p.id = f.photo_id
+              WHERE f.character_id IS NULL AND f.ignored = 0 AND p.missing = 0)
+         GROUP BY folder_id;";
+
 /// The setting key that marks the one-time fill of `folder_unassigned_faces`.
 const UNASSIGNED_MARKER: &str = "unassigned_faces.v1";
 
@@ -467,17 +478,9 @@ fn migrate_unassigned_faces(conn: &Connection) -> Result<()> {
              DROP TRIGGER IF EXISTS trg_style_faces_unassigned_del;
              DROP TRIGGER IF EXISTS trg_style_faces_unassigned_upd;
              DROP TRIGGER IF EXISTS trg_photos_unassigned_upd;
-             DROP TRIGGER IF EXISTS trg_photos_unassigned_del;
-             DELETE FROM folder_unassigned_faces;
-             INSERT INTO folder_unassigned_faces(folder_id, n)
-                 SELECT folder_id, COUNT(*) FROM (
-                     SELECT p.folder_id FROM faces f JOIN photos p ON p.id = f.photo_id
-                      WHERE f.person_id IS NULL AND f.ignored = 0 AND p.missing = 0
-                     UNION ALL
-                     SELECT p.folder_id FROM style_faces f JOIN photos p ON p.id = f.photo_id
-                      WHERE f.character_id IS NULL AND f.ignored = 0 AND p.missing = 0)
-                 GROUP BY folder_id;",
+             DROP TRIGGER IF EXISTS trg_photos_unassigned_del;",
         )?;
+        conn.execute_batch(FILL_UNASSIGNED_SQL)?;
         create_unassigned_triggers(conn)?;
         conn.execute(
             "INSERT OR REPLACE INTO settings(key, value) VALUES(?1, '1')",
@@ -572,6 +575,14 @@ fn create_unassigned_triggers(conn: &Connection) -> Result<()> {
 }
 
 impl Library {
+    /// Count the unassigned faces again from the face tables. Use it when the
+    /// trigger-kept `folder_unassigned_faces` is out of sync.
+    pub fn rebuild_unassigned_faces(&self) -> Result<()> {
+        let conn = self.lock();
+        conn.execute_batch(&format!("BEGIN; {FILL_UNASSIGNED_SQL} COMMIT;"))?;
+        Ok(())
+    }
+
     /// Open (and initialize) `library.db` in the pichouse data directory.
     pub fn open() -> Result<Library> {
         let dir = super::config::data_dir()?;

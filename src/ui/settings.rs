@@ -582,6 +582,23 @@ fn thumb_pane(state: &Rc<AppState>) -> GtkBox {    let root = pane_box();
         });
     }
     root.append(&empty);
+
+    let rebuild = Button::with_label("Recount Unassigned Faces");
+    rebuild.set_tooltip_text(Some(
+        "Count the unassigned faces in each folder again. Use this when the light-blue face badges in the album tree are wrong.",
+    ));
+    {
+        let state = state.clone();
+        rebuild.connect_clicked(move |_| match state.lib.rebuild_unassigned_faces() {
+            Ok(()) => {
+                if let Some(sb) = state.sidebar.borrow().as_ref() {
+                    sb.reload_deferred();
+                }
+            }
+            Err(e) => show_error(&state, &e.to_string()),
+        });
+    }
+    root.append(&rebuild);
     root
 }
 

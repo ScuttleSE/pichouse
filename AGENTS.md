@@ -452,6 +452,8 @@ Both systems take a `ClusterParams` struct. The config builds it with
   about 0.3 s, so do not replace the table with a live query.
   `Library::folders_with_unassigned_faces` reads it into
   `TreeData.unassigned_faces`. `album_has_unassigned` rolls it up.
+  `Library::rebuild_unassigned_faces` fills the table again from a full
+  count. The Settings button "Recount Unassigned Faces" calls it.
 - A photo delete runs a `BEFORE DELETE` trigger. It deletes the faces first,
   so the face triggers can find the folder.
 - A code path that changes face ownership must call
