@@ -399,7 +399,7 @@ impl Library {
             // Direct folder count and photo count per album.
             let mut stmt = conn.prepare(
                 "SELECT af.album_id, COUNT(DISTINCT af.folder_id), \
-                    COUNT(p.id) \
+                    COUNT(CASE WHEN p.missing = 0 THEN 1 END) \
              FROM album_folders af LEFT JOIN photos p ON p.folder_id = af.folder_id \
              GROUP BY af.album_id",
             )?;
@@ -712,7 +712,20 @@ mod tests {
         want.sort();
         assert_eq!(both, want);
 
-        assert_eq!(lib.delete_empty_albums(true, true).unwrap(), 4);
+        // A folder with only missing photos counts as emptied.
+        let gone = lib.create_album("gone", 0).unwrap();
+        let gf = mk("g", true);
+        lib.add_folder_to_album(gf, gone).unwrap();
+        lib.lock()
+            .execute("UPDATE photos SET missing = 1 WHERE folder_id = ?1", [gf])
+            .unwrap();
+        let mut e = lib.empty_albums(true, false).unwrap();
+        e.sort();
+        let mut w = vec![emptied, gone];
+        w.sort();
+        assert_eq!(e, w);
+
+        assert_eq!(lib.delete_empty_albums(true, true).unwrap(), 5);
         let left: Vec<i64> = lib.albums().unwrap().iter().map(|a| a.id).collect();
         assert_eq!(left, vec![full]);
         assert!(lib.folders().unwrap().iter().all(|f| f.id != ef));
