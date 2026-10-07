@@ -304,6 +304,9 @@ that the cleanup emptied. Settings has a "Remove Empty Albums…" button too.
 `Library::empty_albums` in `src/db/albums.rs` selects "emptied" albums
 (folders but no photos) and "never filled" albums (no folders). A parent goes
 only when all of its sub-albums go.
+The same dialog removes folder rows with no present photos whose path is
+gone from disk (`Library::empty_gone_folders`). A moved folder leaves such a
+row under its old album. `delete_empty_albums_and_folders` does both.
 
 The "New folders" section lists folders with no album membership. A root's
 FIRST scan auto-files every discovered folder into the disk-mirror album tree

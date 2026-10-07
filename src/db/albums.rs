@@ -442,6 +442,65 @@ impl Library {
         Ok(out)
     }
 
+    /// Folder rows with no present photos whose directory is gone from disk.
+    /// A moved folder leaves such a row behind under its old album.
+    pub fn empty_gone_folders(&self) -> Result<Vec<i64>> {
+        let conn = self.read_lock();
+        let mut stmt = conn.prepare(
+            "SELECT f.id, f.path FROM folders f WHERE NOT EXISTS \
+               (SELECT 1 FROM photos p WHERE p.folder_id = f.id AND p.missing = 0)",
+        )?;
+        let rows: Vec<(i64, String)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        Ok(rows
+            .into_iter()
+            .filter(|(_, p)| !std::path::Path::new(p).exists())
+            .map(|(id, _)| id)
+            .collect())
+    }
+
+    /// Remove empty folder rows (see `empty_gone_folders`) and empty albums
+    /// (see `empty_albums`) in one transaction. The album set is computed
+    /// before the folders go, so an album that held only gone folders counts
+    /// as emptied. Returns (albums removed, folders removed).
+    pub fn delete_empty_albums_and_folders(
+        &self,
+        emptied: bool,
+        never_filled: bool,
+        folders: bool,
+    ) -> Result<(usize, usize)> {
+        let album_ids = if emptied || never_filled {
+            self.empty_albums(emptied, never_filled)?
+        } else {
+            Vec::new()
+        };
+        let folder_ids = if folders {
+            self.empty_gone_folders()?
+        } else {
+            Vec::new()
+        };
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        for id in &folder_ids {
+            tx.execute("DELETE FROM folders WHERE id = ?1", params![id])?;
+        }
+        for id in &album_ids {
+            tx.execute(
+                "DELETE FROM folders WHERE id IN \
+                   (SELECT folder_id FROM album_folders WHERE album_id = ?1) \
+                 AND NOT EXISTS (SELECT 1 FROM photos p WHERE p.folder_id = folders.id \
+                                 AND p.missing = 0)",
+                params![id],
+            )?;
+            tx.execute("DELETE FROM albums WHERE id = ?1", params![id])?;
+        }
+        tx.commit()?;
+        drop(conn);
+        self.invalidate_count_cache();
+        Ok((album_ids.len(), folder_ids.len()))
+    }
+
     /// Delete the empty albums that `empty_albums` selects. Folder rows that
     /// belong to a deleted album and have no photos are deleted too, so they
     /// do not show under "New folders". Returns the number of albums deleted.
@@ -730,6 +789,55 @@ mod tests {
         assert_eq!(left, vec![full]);
         assert!(lib.folders().unwrap().iter().all(|f| f.id != ef));
 
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("db-wal"));
+        let _ = std::fs::remove_file(path.with_extension("db-shm"));
+    }
+
+    #[test]
+    fn gone_folder_row_is_removed_album_stays() {
+        let (lib, path) = temp_lib();
+        let dir = std::env::temp_dir().join(format!("pichouse-gone-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let live = dir.to_string_lossy().to_string();
+        let root = "/tmp/pichouse-gone-root";
+        lib.add_library_folder(root).unwrap();
+        let alb = lib.create_album("Airing Out", 0).unwrap();
+        let mk = |p: &str, photo: bool| {
+            let fid = lib
+                .upsert_folder(&Folder {
+                    path: p.into(),
+                    name: "x".into(),
+                    ..Default::default()
+                })
+                .unwrap();
+            if photo {
+                lib.upsert_photo(&Photo {
+                    folder_id: fid,
+                    path: format!("{p}/a.jpg"),
+                    filename: "a.jpg".into(),
+                    ..Default::default()
+                })
+                .unwrap();
+            }
+            fid
+        };
+        let new_f = mk(&live, true);
+        let old_f = mk("/nonexistent/pichouse/old-airing-out", false);
+        lib.add_folder_to_album(new_f, alb).unwrap();
+        lib.add_folder_to_album(old_f, alb).unwrap();
+
+        assert_eq!(lib.empty_gone_folders().unwrap(), vec![old_f]);
+        assert_eq!(
+            lib.delete_empty_albums_and_folders(true, false, true)
+                .unwrap(),
+            (0, 1)
+        );
+        let ids: Vec<i64> = lib.folders().unwrap().iter().map(|f| f.id).collect();
+        assert_eq!(ids, vec![new_f]);
+        assert_eq!(lib.albums().unwrap().len(), 1);
+
+        let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(path.with_extension("db-wal"));
         let _ = std::fs::remove_file(path.with_extension("db-shm"));

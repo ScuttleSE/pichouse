@@ -162,16 +162,21 @@ pub fn remove_empty_albums(state: &Rc<AppState>, parent: Option<&Window>, only_i
         .empty_albums(false, true)
         .map(|v| v.len())
         .unwrap_or(0);
-    if only_if_emptied && n_emptied == 0 {
+    let n_folders = state.lib.empty_gone_folders().map(|v| v.len()).unwrap_or(0);
+    if only_if_emptied && n_emptied == 0 && n_folders == 0 {
         return;
     }
-    if n_emptied == 0 && n_never == 0 {
-        super::state::show_message(state, "Remove Empty Albums", "No empty albums to remove.");
+    if n_emptied == 0 && n_never == 0 && n_folders == 0 {
+        super::state::show_message(
+            state,
+            "Remove Empty Albums",
+            "No empty albums or folders to remove.",
+        );
         return;
     }
 
     let msg = Label::new(Some(
-        "Remove these empty albums from the library? Files on disk are not touched.",
+        "Remove these empty items from the library? Files on disk are not touched.",
     ));
     msg.set_xalign(0.0);
     msg.set_wrap(true);
@@ -182,10 +187,15 @@ pub fn remove_empty_albums(state: &Rc<AppState>, parent: Option<&Window>, only_i
     let c_never =
         gtk4::CheckButton::with_label(&format!("Albums that never had folders ({n_never})"));
     c_never.set_sensitive(n_never > 0);
+    let c_folders = gtk4::CheckButton::with_label(&format!(
+        "Folders with no photos that are gone from disk ({n_folders})"
+    ));
+    c_folders.set_active(n_folders > 0);
+    c_folders.set_sensitive(n_folders > 0);
 
     let yes = Button::with_label("Remove");
     yes.add_css_class("destructive-action");
-    yes.set_sensitive(n_emptied > 0);
+    yes.set_sensitive(n_emptied > 0 || n_folders > 0);
     let no = Button::with_label("Cancel");
     let buttons = GtkBox::new(Orientation::Horizontal, 6);
     buttons.set_halign(gtk4::Align::End);
@@ -200,6 +210,7 @@ pub fn remove_empty_albums(state: &Rc<AppState>, parent: Option<&Window>, only_i
     root.append(&msg);
     root.append(&c_emptied);
     root.append(&c_never);
+    root.append(&c_folders);
     root.append(&buttons);
 
     let window = Window::builder()
@@ -215,9 +226,16 @@ pub fn remove_empty_albums(state: &Rc<AppState>, parent: Option<&Window>, only_i
         window.set_transient_for(Some(p));
     }
 
-    for cb in [&c_emptied, &c_never] {
-        let (a, b, yes) = (c_emptied.clone(), c_never.clone(), yes.clone());
-        cb.connect_toggled(move |_| yes.set_sensitive(a.is_active() || b.is_active()));
+    for cb in [&c_emptied, &c_never, &c_folders] {
+        let (a, b, c, yes) = (
+            c_emptied.clone(),
+            c_never.clone(),
+            c_folders.clone(),
+            yes.clone(),
+        );
+        cb.connect_toggled(move |_| {
+            yes.set_sensitive(a.is_active() || b.is_active() || c.is_active())
+        });
     }
     {
         let window = window.clone();
@@ -228,18 +246,19 @@ pub fn remove_empty_albums(state: &Rc<AppState>, parent: Option<&Window>, only_i
         let state = state.clone();
         yes.connect_clicked(move |_| {
             window.close();
-            match state
-                .lib
-                .delete_empty_albums(c_emptied.is_active(), c_never.is_active())
-            {
-                Ok(n) => {
+            match state.lib.delete_empty_albums_and_folders(
+                c_emptied.is_active(),
+                c_never.is_active(),
+                c_folders.is_active(),
+            ) {
+                Ok((n, nf)) => {
                     if let Some(sb) = state.sidebar.borrow().as_ref() {
                         sb.reload();
                     }
                     super::state::show_message(
                         &state,
                         "Remove Empty Albums",
-                        &format!("Removed {n} empty album(s)."),
+                        &format!("Removed {n} empty album(s) and {nf} empty folder(s)."),
                     );
                 }
                 Err(e) => super::state::show_error(&state, &e.to_string()),
