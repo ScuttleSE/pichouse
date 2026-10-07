@@ -2259,6 +2259,7 @@ impl Sidebar {
                     Ok(_) => {
                         this.reload_deferred();
                         state2.show_missing_files();
+                        super::dialogs::remove_empty_albums(&state2, None, true);
                     }
                     Err(e) => show_error(&state2, &e.to_string()),
                 }

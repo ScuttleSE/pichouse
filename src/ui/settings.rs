@@ -559,6 +559,7 @@ fn thumb_pane(state: &Rc<AppState>) -> GtkBox {    let root = pane_box();
                                 "Clean Up Missing",
                                 &format!("Removed {deleted} missing photo(s)."),
                             );
+                            super::dialogs::remove_empty_albums(&state2, None, true);
                         }
                         Err(e) => show_error(&state2, &e.to_string()),
                     }
@@ -567,6 +568,20 @@ fn thumb_pane(state: &Rc<AppState>) -> GtkBox {    let root = pane_box();
         });
     }
     root.append(&cleanup);
+
+    let empty = Button::with_label("Remove Empty Albums…");
+    empty.add_css_class("destructive-action");
+    empty.set_tooltip_text(Some(
+        "Remove albums that have no photos. You choose which kinds of empty album to remove.",
+    ));
+    {
+        let state = state.clone();
+        empty.connect_clicked(move |btn| {
+            let parent = btn.root().and_downcast::<Window>();
+            super::dialogs::remove_empty_albums(&state, parent.as_ref(), false);
+        });
+    }
+    root.append(&empty);
     root
 }
 

@@ -38,7 +38,11 @@ impl Library {
                 |r| r.get(0),
             )?
         };
-        let parent: Option<i64> = if parent_id == 0 { None } else { Some(parent_id) };
+        let parent: Option<i64> = if parent_id == 0 {
+            None
+        } else {
+            Some(parent_id)
+        };
         conn.execute(
             "INSERT INTO albums(name, parent_id, position) VALUES(?1, ?2, ?3)",
             params![name, parent, pos + 1],
@@ -49,7 +53,10 @@ impl Library {
     /// Change an album's display name.
     pub fn rename_album(&self, id: i64, name: &str) -> Result<()> {
         let conn = self.lock();
-        conn.execute("UPDATE albums SET name = ?1 WHERE id = ?2", params![name, id])?;
+        conn.execute(
+            "UPDATE albums SET name = ?1 WHERE id = ?2",
+            params![name, id],
+        )?;
         Ok(())
     }
 
@@ -76,14 +83,20 @@ impl Library {
                 return Ok(()); // would create a cycle; ignore
             }
             let next: Option<i64> = conn
-                .query_row("SELECT parent_id FROM albums WHERE id = ?1", params![cur], |r| {
-                    r.get(0)
-                })
+                .query_row(
+                    "SELECT parent_id FROM albums WHERE id = ?1",
+                    params![cur],
+                    |r| r.get(0),
+                )
                 .optional()?
                 .flatten();
             cur = next.unwrap_or(0);
         }
-        let parent: Option<i64> = if parent_id == 0 { None } else { Some(parent_id) };
+        let parent: Option<i64> = if parent_id == 0 {
+            None
+        } else {
+            Some(parent_id)
+        };
         conn.execute(
             "UPDATE albums SET parent_id = ?1 WHERE id = ?2",
             params![parent, id],
@@ -228,7 +241,11 @@ impl Library {
         art: bool,
         limit: i64,
     ) -> Result<Vec<i64>> {
-        let scan = if style { "style_face_scan" } else { "face_scan" };
+        let scan = if style {
+            "style_face_scan"
+        } else {
+            "face_scan"
+        };
         let op = if art { "IN" } else { "NOT IN" };
         let sql = format!(
             "{ALBUM_KIND_CTE} \
@@ -363,6 +380,91 @@ impl Library {
         )?;
         let rows = stmt.query_map([album_id], super::library::map_photo)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// The albums that `delete_empty_albums` removes with the same flags.
+    ///
+    /// An album is "emptied" when its subtree has folders but no photos. An
+    /// album is "never filled" when its subtree has no folders. An album
+    /// with photos in its subtree is never selected. A parent is selected only
+    /// when all of its sub-albums are selected too.
+    pub fn empty_albums(&self, emptied: bool, never_filled: bool) -> Result<Vec<i64>> {
+        use std::collections::HashMap;
+        let (albums, mut own) = {
+            let conn = self.read_lock();
+            let mut stmt = conn.prepare("SELECT id, COALESCE(parent_id, 0) FROM albums")?;
+            let albums: Vec<(i64, i64)> = stmt
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect::<rusqlite::Result<_>>()?;
+            // Direct folder count and photo count per album.
+            let mut stmt = conn.prepare(
+                "SELECT af.album_id, COUNT(DISTINCT af.folder_id), \
+                    COUNT(p.id) \
+             FROM album_folders af LEFT JOIN photos p ON p.folder_id = af.folder_id \
+             GROUP BY af.album_id",
+            )?;
+            let own: HashMap<i64, (i64, i64)> = stmt
+                .query_map([], |r| Ok((r.get(0)?, (r.get(1)?, r.get(2)?))))?
+                .collect::<rusqlite::Result<_>>()?;
+            (albums, own)
+        };
+
+        let mut children: HashMap<i64, Vec<i64>> = HashMap::new();
+        for &(id, parent) in &albums {
+            children.entry(parent).or_default().push(id);
+        }
+        // Post-order walk from the roots. Returns (folders, photos, all_selected).
+        fn walk(
+            id: i64,
+            children: &HashMap<i64, Vec<i64>>,
+            own: &mut HashMap<i64, (i64, i64)>,
+            flags: (bool, bool),
+            out: &mut Vec<i64>,
+        ) -> (i64, i64, bool) {
+            let (mut f, mut p) = own.remove(&id).unwrap_or((0, 0));
+            let mut kids_ok = true;
+            for &c in children.get(&id).map(|v| v.as_slice()).unwrap_or(&[]) {
+                let (cf, cp, ok) = walk(c, children, own, flags, out);
+                f += cf;
+                p += cp;
+                kids_ok &= ok;
+            }
+            let pick = kids_ok && p == 0 && ((f > 0 && flags.0) || (f == 0 && flags.1));
+            if pick {
+                out.push(id);
+            }
+            (f, p, pick)
+        }
+        let mut out = Vec::new();
+        for &root in children.get(&0).cloned().unwrap_or_default().iter() {
+            walk(root, &children, &mut own, (emptied, never_filled), &mut out);
+        }
+        Ok(out)
+    }
+
+    /// Delete the empty albums that `empty_albums` selects. Folder rows that
+    /// belong to a deleted album and have no photos are deleted too, so they
+    /// do not show under "New folders". Returns the number of albums deleted.
+    pub fn delete_empty_albums(&self, emptied: bool, never_filled: bool) -> Result<usize> {
+        let ids = self.empty_albums(emptied, never_filled)?;
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        for id in &ids {
+            tx.execute(
+                "DELETE FROM folders WHERE id IN \
+                   (SELECT folder_id FROM album_folders WHERE album_id = ?1) \
+                 AND NOT EXISTS (SELECT 1 FROM photos p WHERE p.folder_id = folders.id)",
+                params![id],
+            )?;
+        }
+        for id in &ids {
+            tx.execute("DELETE FROM albums WHERE id = ?1", params![id])?;
+        }
+        tx.commit()?;
+        Ok(ids.len())
     }
 }
 
@@ -554,6 +656,66 @@ mod tests {
         assert_eq!(got, want);
         // The sub album alone yields only its own folder.
         assert_eq!(lib.folders_under_album(sub).unwrap(), vec![f_sub]);
+
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("db-wal"));
+        let _ = std::fs::remove_file(path.with_extension("db-shm"));
+    }
+
+    #[test]
+    fn empty_albums_by_kind() {
+        let (lib, path) = temp_lib();
+        let root = "/tmp/pichouse-emptyalb-root";
+        lib.add_library_folder(root).unwrap();
+        let mk = |name: &str, photo: bool| {
+            let fid = lib
+                .upsert_folder(&Folder {
+                    path: format!("{root}/{name}"),
+                    name: name.into(),
+                    ..Default::default()
+                })
+                .unwrap();
+            if photo {
+                lib.upsert_photo(&Photo {
+                    folder_id: fid,
+                    path: format!("{root}/{name}/a.jpg"),
+                    filename: "a.jpg".into(),
+                    ..Default::default()
+                })
+                .unwrap();
+            }
+            fid
+        };
+        // top (no folders) > [emptied (empty folder), never (nothing)]
+        let top = lib.create_album("top", 0).unwrap();
+        let emptied = lib.create_album("emptied", top).unwrap();
+        let never = lib.create_album("never", top).unwrap();
+        let ef = mk("e", false);
+        lib.add_folder_to_album(ef, emptied).unwrap();
+        // full > [blank]: full keeps photos, blank is never filled.
+        let full = lib.create_album("full", 0).unwrap();
+        let blank = lib.create_album("blank", full).unwrap();
+        lib.add_folder_to_album(mk("f", true), full).unwrap();
+
+        assert_eq!(lib.empty_albums(true, false).unwrap(), vec![emptied]);
+        let mut n = lib.empty_albums(false, true).unwrap();
+        n.sort();
+        assert_eq!(n, {
+            let mut v = vec![never, blank];
+            v.sort();
+            v
+        });
+        // Both: top cascades since all of its children go.
+        let mut both = lib.empty_albums(true, true).unwrap();
+        both.sort();
+        let mut want = vec![top, emptied, never, blank];
+        want.sort();
+        assert_eq!(both, want);
+
+        assert_eq!(lib.delete_empty_albums(true, true).unwrap(), 4);
+        let left: Vec<i64> = lib.albums().unwrap().iter().map(|a| a.id).collect();
+        assert_eq!(left, vec![full]);
+        assert!(lib.folders().unwrap().iter().all(|f| f.id != ef));
 
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(path.with_extension("db-wal"));

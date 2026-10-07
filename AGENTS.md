@@ -299,6 +299,11 @@ leaf needs an id constant, a `TreeData` count field, a `reload` push when the
 count is over zero, a `node_label` branch, and an `on_selection_changed`
 dispatch. "Missing Files" lists photos with `missing = 1` and offers a
 right-click "Clear Missing Files…" action that calls `delete_missing_photos`.
+After a cleanup, `dialogs::remove_empty_albums` offers to remove the albums
+that the cleanup emptied. Settings has a "Remove Empty Albums…" button too.
+`Library::empty_albums` in `src/db/albums.rs` selects "emptied" albums
+(folders but no photos) and "never filled" albums (no folders). A parent goes
+only when all of its sub-albums go.
 
 The "New folders" section lists folders with no album membership. A root's
 FIRST scan auto-files every discovered folder into the disk-mirror album tree
