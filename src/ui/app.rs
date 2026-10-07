@@ -105,7 +105,6 @@ fn build_ui(app: &Application) {
         gen_thumbs_action: RefCell::new(None),
         current_folder: RefCell::new(0),
         immich_albums: RefCell::new(std::collections::HashMap::new()),
-        last_merged_character: RefCell::new(None),
         face_group_new_counts: RefCell::new(std::collections::HashMap::new()),
     });
     state.apply_thumb_prefs();

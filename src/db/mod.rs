@@ -66,6 +66,11 @@ impl From<std::io::Error> for Error {
 /// A database result.
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// The settings key for the recent-use character ids (newest first).
+pub const RECENT_CHARACTERS_KEY: &str = "recent.characters";
+/// The settings key for the recent-use person ids (newest first).
+pub const RECENT_PERSONS_KEY: &str = "recent.persons";
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,7 +107,13 @@ mod tests {
 
     fn new_named_photo(l: &Library, name: &str) -> i64 {
         let fid = l
-            .upsert_folder(&Folder { path: "/tmp/f".into(), name: "f".into(), mtime: 1, year: 2024, ..Default::default() })
+            .upsert_folder(&Folder {
+                path: "/tmp/f".into(),
+                name: "f".into(),
+                mtime: 1,
+                year: 2024,
+                ..Default::default()
+            })
             .unwrap();
         l.upsert_photo(&Photo {
             folder_id: fid,
@@ -187,7 +198,10 @@ mod tests {
         l.remove_tag_from_photos(&[a, b], "sky").unwrap();
         assert!(l.photo_ids_with_tag("sky").unwrap().is_empty());
         l.confirm_tag_on_photos(&[a], "dog").unwrap();
-        assert_eq!(l.tag_state_for_photos(&[a]).unwrap().get(&a), Some(&TagState::User));
+        assert_eq!(
+            l.tag_state_for_photos(&[a]).unwrap().get(&a),
+            Some(&TagState::User)
+        );
     }
 
     #[test]
@@ -293,6 +307,16 @@ mod tests {
         };
         l.set_photo_edit(&ident).unwrap();
         assert!(l.photo_edit(pid).unwrap().is_identity());
+    }
+
+    #[test]
+    fn recent_ids_order_and_limit() {
+        let (_g, l) = temp_library();
+        for id in [1, 2, 3, 2, 4] {
+            l.note_recent(RECENT_CHARACTERS_KEY, id);
+        }
+        assert_eq!(l.recent_ids(RECENT_CHARACTERS_KEY), vec![4, 2, 3]);
+        assert!(l.recent_ids(RECENT_PERSONS_KEY).is_empty());
     }
 
     #[test]

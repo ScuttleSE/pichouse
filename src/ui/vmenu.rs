@@ -320,6 +320,63 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
         group.add_action(&act);
     }
 
+    // Assign the selection to a recent character or person without a
+    // dialog (target = character or person id). Only the faces of the
+    // current group move.
+    for (name, style) in [
+        ("assign-recent-character", true),
+        ("assign-recent-person", false),
+    ] {
+        let act = gio::SimpleAction::new(name, Some(vt));
+        let state = state.clone();
+        let grid = grid.clone();
+        let sidebar = sidebar.clone();
+        let pop = pop.clone();
+        act.connect_activate(move |_, param| {
+            dismiss(&pop);
+            let Some(target) = param
+                .and_then(|p| p.str())
+                .and_then(|s| s.parse::<i64>().ok())
+            else {
+                return;
+            };
+            let face_ids = match group_face_ids(&state, &grid, style) {
+                Ok(f) => f,
+                Err(e) => {
+                    show_error(&state, &e);
+                    return;
+                }
+            };
+            if face_ids.is_empty() {
+                return;
+            }
+            for &fid in &face_ids {
+                let res = if style {
+                    state.lib.set_style_face_character(fid, target)
+                } else {
+                    state.lib.set_face_person(fid, target)
+                };
+                if let Err(e) = res {
+                    show_error(&state, &e.to_string());
+                    return;
+                }
+            }
+            if let Some(&first) = face_ids.first() {
+                let _ = if style {
+                    state.lib.set_character_cover_if_unset(target, first)
+                } else {
+                    state.lib.set_person_cover_if_unset(target, first)
+                };
+            }
+            grid.reload_from_source();
+            sidebar.reload_deferred();
+            state
+                .status()
+                .set_message_transient(&format!("Assigned {} faces.", face_ids.len()), 6);
+        });
+        group.add_action(&act);
+    }
+
     // In an unnamed style-cluster group, open the per-photo face picker for
     // each selected photo. The picker shows every unassigned face of the
     // photo, in any group.
@@ -681,13 +738,127 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
     });
 }
 
-/// Quick assignment from a normal album. Put the face of each selected photo
-/// with exactly one face into one batch. Open the assign dialog for the
-/// batch. Skip photos with no face or more than one face. After the
-/// assignment, select the photos with more than one face. `style` true
-/// means stylised faces and characters. False means real faces and people.
+/// The face ids of the selected photos that belong to the current group.
+/// `style` true reads a character or a style cluster. False reads a person
+/// or a face cluster. Other faces in the same photos are not included.
+fn group_face_ids(state: &Rc<AppState>, grid: &Rc<Grid>, style: bool) -> Result<Vec<i64>, String> {
+    let ids = local_photo_ids(grid);
+    let id_set: std::collections::HashSet<i64> = ids.iter().copied().collect();
+    let mut fids = Vec::new();
+    if style {
+        if let Some(cid) = grid.current_style_cluster() {
+            let faces = state
+                .lib
+                .unassigned_style_faces_in_cluster(cid)
+                .map_err(|e| e.to_string())?;
+            fids.extend(
+                faces
+                    .into_iter()
+                    .filter(|f| id_set.contains(&f.photo_id))
+                    .map(|f| f.id),
+            );
+        } else if let Some(ch) = grid.current_character() {
+            for &pid in &ids {
+                let faces = state
+                    .lib
+                    .style_faces_for_photo(pid)
+                    .map_err(|e| e.to_string())?;
+                fids.extend(
+                    faces
+                        .into_iter()
+                        .filter(|f| f.character_id == ch)
+                        .map(|f| f.id),
+                );
+            }
+        }
+    } else if let Some(cid) = grid.current_cluster() {
+        let faces = state
+            .lib
+            .unassigned_faces_in_cluster(cid)
+            .map_err(|e| e.to_string())?;
+        fids.extend(
+            faces
+                .into_iter()
+                .filter(|f| id_set.contains(&f.photo_id))
+                .map(|f| f.id),
+        );
+    } else if let Some(p) = grid.current_person() {
+        for &pid in &ids {
+            let faces = state.lib.faces_for_photo(pid).map_err(|e| e.to_string())?;
+            fids.extend(faces.into_iter().filter(|f| f.person_id == p).map(|f| f.id));
+        }
+    }
+    Ok(fids)
+}
+
+/// Add up to 3 "Assign to <name>" items for the recent characters
+/// (`style` true) or persons. Leave out `current` and deleted ids.
+fn append_recent_items(state: &Rc<AppState>, menu: &gio::Menu, style: bool, current: Option<i64>) {
+    let (key, action) = if style {
+        (
+            crate::db::RECENT_CHARACTERS_KEY,
+            "grid.assign-recent-character",
+        )
+    } else {
+        (crate::db::RECENT_PERSONS_KEY, "grid.assign-recent-person")
+    };
+    let names: std::collections::HashMap<i64, String> = if style {
+        state
+            .lib
+            .characters()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(c, _)| (c.id, c.name))
+            .collect()
+    } else {
+        state
+            .lib
+            .persons()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(p, _)| (p.id, p.name))
+            .collect()
+    };
+    for id in state.lib.recent_ids(key) {
+        if Some(id) == current {
+            continue;
+        }
+        if let Some(name) = names.get(&id) {
+            let item = gio::MenuItem::new(Some(&format!("Assign to {name}")), None);
+            item.set_action_and_target_value(Some(action), Some(&id.to_string().to_variant()));
+            menu.append_item(&item);
+        }
+    }
+}
+
+/// Quick assignment from a normal album. Use the selected photos of the
+/// grid. After the assignment, select the photos with more than one face.
+/// `style` true means stylised faces and characters. False means real faces
+/// and people.
 fn quick_assign(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar: &Rc<Sidebar>, style: bool) {
     let ids = local_photo_ids(grid);
+    let (grid2, sidebar2) = (grid.clone(), sidebar.clone());
+    quick_assign_photos(state, &ids, style, move |multi| {
+        grid2.reload_from_source();
+        sidebar2.reload_deferred();
+        // Select the photos with more than one face for the next step.
+        if !multi.is_empty() {
+            grid2.select_photo_ids(multi);
+        }
+    });
+}
+
+/// Quick assignment of a photo-id list. Put the face of each photo with
+/// exactly one face into one batch. Open the assign dialog for the batch.
+/// Skip photos with no face or more than one face. `after` gets the ids of
+/// the photos with more than one face. It runs after a successful
+/// assignment, and also when no photo has exactly one face.
+pub fn quick_assign_photos<F: Fn(&std::collections::HashSet<i64>) + 'static>(
+    state: &Rc<AppState>,
+    ids: &[i64],
+    style: bool,
+    after: F,
+) {
     if ids.is_empty() {
         return;
     }
@@ -721,7 +892,7 @@ fn quick_assign(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar: &Rc<Sidebar>, st
     let mut batch = Vec::new();
     let mut multi: std::collections::HashSet<i64> = std::collections::HashSet::new();
     let mut none = 0usize;
-    for &pid in &ids {
+    for &pid in ids {
         match per_photo.get(&pid).map(|v| v.as_slice()) {
             Some([one]) => batch.push(*one),
             Some(v) if v.len() > 1 => {
@@ -739,16 +910,12 @@ fn quick_assign(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar: &Rc<Sidebar>, st
             ),
             8,
         );
-        if !multi.is_empty() {
-            grid.select_photo_ids(&multi);
-        }
+        after(&multi);
         return;
     }
     let n = batch.len();
-    let (state2, grid2, sidebar2) = (state.clone(), grid.clone(), sidebar.clone());
+    let state2 = state.clone();
     let on_done = move || {
-        grid2.reload_from_source();
-        sidebar2.reload_deferred();
         state2.status().set_message_transient(
             &format!(
                 "Assigned {n} faces to the {kind}. Skipped {} photos with more than one face and {none} with no face.",
@@ -756,10 +923,7 @@ fn quick_assign(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar: &Rc<Sidebar>, st
             ),
             10,
         );
-        // Select the photos with more than one face for the next step.
-        if !multi.is_empty() {
-            grid2.select_photo_ids(&multi);
-        }
+        after(&multi);
     };
     if style {
         characters::assign_photos_to_character_dialog(state, batch, n, None, on_done);
@@ -912,6 +1076,19 @@ fn build_menu(state: &Rc<AppState>, grid: &Rc<Grid>) -> gio::Menu {
     }
     if group_tools.n_items() > 0 {
         menu.append_section(None, &group_tools);
+    }
+
+    // Quick-select of the recent characters or persons in a group view.
+    if selected_local >= 1 {
+        let recent = gio::Menu::new();
+        if grid.current_character().is_some() || grid.current_style_cluster().is_some() {
+            append_recent_items(state, &recent, true, grid.current_character());
+        } else if grid.current_person().is_some() || grid.current_cluster().is_some() {
+            append_recent_items(state, &recent, false, grid.current_person());
+        }
+        if recent.n_items() > 0 {
+            menu.append_section(Some("Recent"), &recent);
+        }
     }
 
     // The remaining sections are virtual-album operations, which apply only to

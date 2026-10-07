@@ -1655,6 +1655,56 @@ impl Sidebar {
     }
 
     /// Scan (or rescan) faces for an album, routed by its Face type.
+    /// The albums that an album action covers. This is the album
+    /// selection when the clicked album is part of it. Otherwise it is the
+    /// clicked album only.
+    fn assign_target_album_ids(&self, clicked: &str) -> Vec<i64> {
+        let Some(aid) = album_id_of(clicked) else {
+            return Vec::new();
+        };
+        let sel = self.selected_album_ids();
+        if sel.contains(&aid) {
+            sel
+        } else {
+            vec![aid]
+        }
+    }
+
+    /// Quick assignment of the photos in the target albums and their
+    /// sub-albums. `style` true assigns to a character, false to a person.
+    fn quick_assign_albums(self: &Rc<Self>, clicked: &str, style: bool) {
+        let Some(state) = self.state() else { return };
+        let mut seen = std::collections::HashSet::new();
+        let mut ids = Vec::new();
+        for aid in self.assign_target_album_ids(clicked) {
+            match state.lib.photos_in_album_tree(aid) {
+                Ok(photos) => {
+                    for p in photos {
+                        if !p.missing && seen.insert(p.id) {
+                            ids.push(p.id);
+                        }
+                    }
+                }
+                Err(e) => {
+                    show_error(&state, &e.to_string());
+                    return;
+                }
+            }
+        }
+        if ids.is_empty() {
+            state
+                .status()
+                .set_message_transient("The selected albums have no photos.", 6);
+            return;
+        }
+        let this = self.clone();
+        let state2 = state.clone();
+        super::vmenu::quick_assign_photos(&state, &ids, style, move |_| {
+            state2.grid().reload_from_source();
+            this.reload_deferred();
+        });
+    }
+
     fn scan_album_faces(self: &Rc<Self>, id: i64, rescan: bool) {
         if id == 0 {
             return;
@@ -2559,6 +2609,22 @@ impl Sidebar {
         {
             let this = self.clone();
             add(
+                "album-assign-character",
+                &group,
+                Rc::new(move |t| this.quick_assign_albums(t, true)),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "album-assign-person",
+                &group,
+                Rc::new(move |t| this.quick_assign_albums(t, false)),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
                 "scan-album-faces",
                 &group,
                 Rc::new(move |t| this.scan_album_faces(album_id_of(t).unwrap_or(0), false)),
@@ -3371,6 +3437,26 @@ impl Sidebar {
                 menu.append(
                     Some("Rescan faces in album"),
                     Some(&detailed("rescan-album-faces", id)),
+                );
+                let n = self.assign_target_album_ids(id).len();
+                let (ch, pe) = if n > 1 {
+                    (
+                        format!("Assign {n} albums to Character (one-face photos)…"),
+                        format!("Assign {n} albums to Person (one-face photos)…"),
+                    )
+                } else {
+                    (
+                        "Assign to Character (one-face photos)…".to_string(),
+                        "Assign to Person (one-face photos)…".to_string(),
+                    )
+                };
+                menu.append(
+                    Some(ch.as_str()),
+                    Some(&detailed("album-assign-character", id)),
+                );
+                menu.append(
+                    Some(pe.as_str()),
+                    Some(&detailed("album-assign-person", id)),
                 );
             }
             // Offer upload only when a server exists and the album has photos.

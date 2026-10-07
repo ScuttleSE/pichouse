@@ -326,7 +326,11 @@ pub fn assign_photos_to_character_dialog<F: Fn() + 'static>(
         let sl = StringList::new(&label_refs);
         let drop = DropDown::new(Some(sl), gtk4::Expression::NONE);
         // Pre-select the character from the last assignment, if it still exists.
-        if let Some(last) = *state.last_merged_character.borrow() {
+        if let Some(&last) = state
+            .lib
+            .recent_ids(crate::db::RECENT_CHARACTERS_KEY)
+            .first()
+        {
             if let Some(pos) = characters.iter().position(|c| c.id == last) {
                 drop.set_selected(pos as u32);
             }
@@ -347,7 +351,6 @@ pub fn assign_photos_to_character_dialog<F: Fn() + 'static>(
                     show_error(&state, &e);
                     return;
                 }
-                *state.last_merged_character.borrow_mut() = Some(c.id);
                 on_done2();
             }
             win2.close();
@@ -754,7 +757,11 @@ pub fn name_style_clusters_dialog<F: Fn() + 'static>(
         let sl = StringList::new(&label_refs);
         let drop = DropDown::new(Some(sl), gtk4::Expression::NONE);
         // Pre-select the character from the last merge, if it still exists.
-        if let Some(last) = *state.last_merged_character.borrow() {
+        if let Some(&last) = state
+            .lib
+            .recent_ids(crate::db::RECENT_CHARACTERS_KEY)
+            .first()
+        {
             if let Some(pos) = characters.iter().position(|c| c.id == last) {
                 drop.set_selected(pos as u32);
             }
@@ -774,7 +781,6 @@ pub fn name_style_clusters_dialog<F: Fn() + 'static>(
                     show_error(&state, &e);
                     return;
                 }
-                *state.last_merged_character.borrow_mut() = Some(c.id);
                 on_done2();
             }
             win2.close();

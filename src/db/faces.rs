@@ -191,6 +191,8 @@ impl Library {
                 "UPDATE faces SET person_id = ?2, confirmed = 1 WHERE id = ?1",
                 params![face_id, person_id],
             )?;
+            drop(conn);
+            self.note_recent(super::RECENT_PERSONS_KEY, person_id);
         }
         Ok(())
     }
@@ -446,6 +448,8 @@ impl Library {
             params![from, into],
         )?;
         conn.execute("DELETE FROM persons WHERE id = ?1", params![from])?;
+        drop(conn);
+        self.note_recent(super::RECENT_PERSONS_KEY, into);
         Ok(())
     }
 

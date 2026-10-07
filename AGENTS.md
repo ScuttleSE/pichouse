@@ -459,6 +459,22 @@ Both systems take a `ClusterParams` struct. The config builds it with
   photos. After the assignment, it selects the photos with more than one face.
 - "Assign character faces one by one…" also works in a normal album.
 - `people::assign_photos_to_person_dialog` is the person batch dialog.
+- `vmenu::quick_assign_photos` is the shared core. It takes a photo-id list.
+  The sidebar album menu uses it too ("Assign to Character/Person (one-face
+  photos)…"). The menu covers the album selection and all sub-albums
+  (`Sidebar::quick_assign_albums`).
+
+### Recent characters and persons
+
+- `Library::note_recent` keeps up to 3 ids, newest first, in the settings
+  keys `recent.characters` and `recent.persons` (`db::RECENT_*_KEY`).
+- `set_style_face_character`, `set_face_person`, `merge_characters`, and
+  `merge_persons` call it. So every assignment path records the use.
+- The grid menu shows a "Recent" section in a character, person, or unnamed
+  group view (`append_recent_items` in `vmenu.rs`). The actions
+  `assign-recent-character` and `assign-recent-person` move only the faces
+  of the current group (`group_face_ids`). They open no dialog.
+- The character dialogs pre-select the first recent character.
 
 ### Ignored faces
 

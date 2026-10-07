@@ -1439,6 +1439,29 @@ impl Library {
         Ok(())
     }
 
+    /// The recent-use id list under `key`, newest first.
+    pub fn recent_ids(&self, key: &str) -> Vec<i64> {
+        self.get_setting(key, "")
+            .unwrap_or_default()
+            .split(',')
+            .filter_map(|s| s.trim().parse().ok())
+            .collect()
+    }
+
+    /// Move `id` to the front of the recent-use list under `key`. Keep at
+    /// most 3 ids. Do not write when `id` is already first.
+    pub fn note_recent(&self, key: &str, id: i64) {
+        let mut ids = self.recent_ids(key);
+        if ids.first() == Some(&id) {
+            return;
+        }
+        ids.retain(|&x| x != id);
+        ids.insert(0, id);
+        ids.truncate(3);
+        let v: Vec<String> = ids.iter().map(|i| i.to_string()).collect();
+        let _ = self.set_setting(key, &v.join(","));
+    }
+
     /// Record the scan status for a folder.
     pub fn set_scan_state(&self, folder_id: i64, status: ScanStatus) -> Result<()> {
         let conn = self.lock();

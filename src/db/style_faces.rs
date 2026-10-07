@@ -174,6 +174,8 @@ impl Library {
                 "UPDATE style_faces SET character_id = ?2, confirmed = 1 WHERE id = ?1",
                 params![face_id, character_id],
             )?;
+            drop(conn);
+            self.note_recent(super::RECENT_CHARACTERS_KEY, character_id);
         }
         Ok(())
     }
@@ -358,6 +360,8 @@ impl Library {
             params![from, into],
         )?;
         conn.execute("DELETE FROM characters WHERE id = ?1", params![from])?;
+        drop(conn);
+        self.note_recent(super::RECENT_CHARACTERS_KEY, into);
         Ok(())
     }
 
