@@ -822,6 +822,34 @@ impl Library {
         ignored_photo_count(&conn, "faces")
     }
 
+    /// The ignored face boxes of many photos: (photo_id, x, y, w, h), per
+    /// mille. `style` selects the stylised face table. The grid overlay
+    /// uses it.
+    pub fn ignored_boxes_for_photos(
+        &self,
+        photo_ids: &[i64],
+        style: bool,
+    ) -> Result<Vec<(i64, i32, i32, i32, i32)>> {
+        if photo_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let table = if style { "style_faces" } else { "faces" };
+        let conn = self.read_lock();
+        let marks = vec!["?"; photo_ids.len()].join(",");
+        let mut stmt = conn.prepare(&format!(
+            "SELECT photo_id, bbox_x, bbox_y, bbox_w, bbox_h FROM {table} \
+             WHERE ignored = 1 AND photo_id IN ({marks})"
+        ))?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(photo_ids.iter()), |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+        })?;
+        let mut v = Vec::new();
+        for row in rows {
+            v.push(row?);
+        }
+        Ok(v)
+    }
+
     /// Used by the tests and the benchmarks only.
     #[cfg(test)]
     /// The boxes (x, y, w, h, per mille) of the ignored faces in a photo. A

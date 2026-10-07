@@ -339,6 +339,8 @@ struct FaceBoxRect {
     /// The person or character name to draw above the box. Only the
     /// album view fills it.
     label: Option<String>,
+    /// True for an ignored face. The overlay draws it grey.
+    ignored: bool,
 }
 
 impl Grid {
@@ -1441,6 +1443,7 @@ impl Grid {
                     cluster_id: f.cluster_id,
                     style: true,
                     label: None,
+                    ignored: false,
                 });
             }
         } else {
@@ -1455,10 +1458,32 @@ impl Grid {
                     cluster_id: f.cluster_id,
                     style: false,
                     label: None,
+                    ignored: false,
                 });
             }
         }
+        for chunk in ids.chunks(900) {
+            self.push_ignored_boxes(&mut map, chunk, style);
+        }
         *self.face_boxes.borrow_mut() = map;
+    }
+
+    /// Add the ignored faces of `ids` to `map`, so the overlay can show them.
+    fn push_ignored_boxes(&self, map: &mut HashMap<i64, Vec<FaceBoxRect>>, ids: &[i64], style: bool) {
+        for (pid, x, y, w, h) in self.lib.ignored_boxes_for_photos(ids, style).unwrap_or_default() {
+            map.entry(pid).or_default().push(FaceBoxRect {
+                x,
+                y,
+                w,
+                h,
+                assigned: false,
+                person_id: 0,
+                cluster_id: 0,
+                style,
+                label: None,
+                ignored: true,
+            });
+        }
     }
 
     /// Load the real faces and the stylised faces of all shown photos into
@@ -1499,6 +1524,7 @@ impl Grid {
                     cluster_id: f.cluster_id,
                     style: false,
                     label: people.get(&f.person_id).cloned(),
+                    ignored: false,
                 });
             }
             for f in self.lib.style_faces_for_photos(chunk).unwrap_or_default() {
@@ -1512,8 +1538,11 @@ impl Grid {
                     cluster_id: f.cluster_id,
                     style: true,
                     label: chars.get(&f.character_id).cloned(),
+                    ignored: false,
                 });
             }
+            self.push_ignored_boxes(&mut map, chunk, false);
+            self.push_ignored_boxes(&mut map, chunk, true);
         }
         *self.face_boxes.borrow_mut() = map;
     }
@@ -2475,7 +2504,9 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
                 (grid.current_person().unwrap_or(0), grid.current_cluster().unwrap_or(0))
             };
             for r in rects.iter() {
-                if r.assigned {
+                if r.ignored {
+                    cr.set_source_rgba(0.6, 0.6, 0.6, 0.85);
+                } else if r.assigned {
                     cr.set_source_rgba(0.3, 0.9, 0.4, 0.95);
                 } else {
                     cr.set_source_rgba(1.0, 0.85, 0.2, 0.95);
