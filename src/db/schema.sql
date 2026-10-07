@@ -61,6 +61,15 @@ CREATE INDEX IF NOT EXISTS idx_photos_added_at ON photos(added_at);
 -- Fast bucketing of byte-identical photos for the duplicate finder.
 CREATE INDEX IF NOT EXISTS idx_photos_hash ON photos(hash);
 
+-- Per-folder count of unassigned faces for the sidebar badge. Triggers keep
+-- the rows current (see `migrate_unassigned_faces` in library.rs). `n` is the
+-- number of faces and stylised faces with no owner and ignored = 0, in
+-- photos with missing = 0.
+CREATE TABLE IF NOT EXISTS folder_unassigned_faces (
+    folder_id INTEGER PRIMARY KEY,
+    n         INTEGER NOT NULL DEFAULT 0
+);
+
 -- Per-folder face-scan counts for the sidebar badges. Triggers on `photos`
 -- keep the rows current (see `migrate_face_stats` in library.rs). `total` is
 -- the number of photos with missing = 0. `done` is the number of those photos

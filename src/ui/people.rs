@@ -41,7 +41,15 @@ fn assign_cluster_to_person(
     if let Some(first) = faces.first() {
         let _ = state.lib.set_person_cover_if_unset(person_id, first.id);
     }
+    reload_sidebar(state);
     Ok(())
+}
+
+/// Reload the sidebar so the unassigned-faces badges follow a change.
+fn reload_sidebar(state: &Rc<AppState>) {
+    if let Some(sb) = state.sidebar.borrow().as_ref() {
+        sb.reload_deferred();
+    }
 }
 
 /// Assign a list of faces to one person. Give the person a cover face when
@@ -60,6 +68,7 @@ fn assign_faces_to_person(
     if let Some(&first) = face_ids.first() {
         let _ = state.lib.set_person_cover_if_unset(person_id, first);
     }
+    reload_sidebar(state);
     Ok(())
 }
 

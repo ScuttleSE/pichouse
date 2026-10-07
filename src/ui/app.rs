@@ -302,6 +302,9 @@ fn install_css() {
         .face-scan-badge { \
             color: #33bf4d; \
         } \
+        .face-unassigned-badge { \
+            color: #7cc4f5; \
+        } \
         .dup-x { \
             color: #ffffff; \
             background-color: rgba(200, 30, 30, 0.85); \

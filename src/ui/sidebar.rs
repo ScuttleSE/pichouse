@@ -69,6 +69,9 @@ struct TreeData {
     /// Per folder: (photo count, face-scanned photo count). Empty during a
     /// library scan, so no face-scan badge shows then.
     face_scan: HashMap<i64, (i64, i64)>,
+    /// The folders with at least one unassigned, not-ignored face. Empty
+    /// during a library scan.
+    unassigned_faces: std::collections::HashSet<i64>,
     albums: HashMap<i64, Album>,
     album_children: HashMap<i64, Vec<i64>>,
     album_folders: HashMap<i64, Vec<i64>>,
@@ -228,9 +231,17 @@ impl Sidebar {
                 badge.add_css_class("face-scan-badge");
                 badge.set_tooltip_text(Some("Face scan done for all photos"));
                 badge.set_visible(false);
+                // The unassigned-faces badge: a light-blue face after the
+                // green badge.
+                let ubadge = Image::from_icon_name("face-smile-symbolic");
+                ubadge.set_pixel_size(12);
+                ubadge.add_css_class("face-unassigned-badge");
+                ubadge.set_tooltip_text(Some("Has unassigned faces"));
+                ubadge.set_visible(false);
                 row.append(&icon);
                 row.append(&label);
                 row.append(&badge);
+                row.append(&ubadge);
                 expander.set_child(Some(&row));
                 item.set_child(Some(&expander));
                 if let Some(sidebar) = weak_setup.upgrade() {
@@ -530,7 +541,15 @@ impl Sidebar {
             .first_child()
             .and_then(|c| c.next_sibling())
             .and_downcast::<Label>();
-        let badge = box_.last_child().and_downcast::<Image>();
+        let badge_w = box_
+            .first_child()
+            .and_then(|c| c.next_sibling())
+            .and_then(|c| c.next_sibling());
+        let ubadge = badge_w
+            .as_ref()
+            .and_then(|c| c.next_sibling())
+            .and_downcast::<Image>();
+        let badge = badge_w.and_downcast::<Image>();
         let (name, icon_name) = self.node_label(id);
         if let Some(icon) = icon {
             icon.set_from_icon_name(Some(icon_name));
@@ -542,6 +561,22 @@ impl Sidebar {
         }
         if let Some(badge) = badge {
             badge.set_visible(self.face_scan_done(id));
+        }
+        if let Some(ubadge) = ubadge {
+            ubadge.set_visible(self.has_unassigned_faces(id));
+        }
+    }
+
+    /// Report whether an album or folder row holds at least one unassigned,
+    /// not-ignored face. An album includes all its sub-albums.
+    fn has_unassigned_faces(&self, id: &str) -> bool {
+        let data = self.data.borrow();
+        if let Some(aid) = album_id_of(id) {
+            album_has_unassigned(&data, aid, 0)
+        } else if let Some(fid) = folder_id_of(id) {
+            data.unassigned_faces.contains(&fid)
+        } else {
+            false
         }
     }
 
@@ -1139,6 +1174,12 @@ impl Sidebar {
             state.lib.folder_face_scan_counts().unwrap_or_default()
         };
         lap!("face_scan_counts");
+        let unassigned_faces = if scanning {
+            std::collections::HashSet::new()
+        } else {
+            state.lib.folders_with_unassigned_faces().unwrap_or_default()
+        };
+        lap!("unassigned_faces");
         let show_ignored = state
             .lib
             .get_setting(super::prefs::KEY_SIDEBAR_SHOW_IGNORED, "0")
@@ -1156,6 +1197,7 @@ impl Sidebar {
         let mut data = TreeData {
             counts,
             face_scan,
+            unassigned_faces,
             show_ignored,
             ignored_faces_count,
             ignored_chars_count,
@@ -3853,4 +3895,23 @@ fn album_face_scan_totals(data: &TreeData, aid: i64, depth: u32) -> (i64, i64) {
         done += d;
     }
     (total, done)
+}
+
+/// Report whether an album, its folders, or any sub-album holds an unassigned,
+/// not-ignored face. `depth` stops a cycle in a broken album tree.
+fn album_has_unassigned(data: &TreeData, aid: i64, depth: u32) -> bool {
+    if depth > 64 {
+        return false;
+    }
+    data.album_folders
+        .get(&aid)
+        .into_iter()
+        .flatten()
+        .any(|fid| data.unassigned_faces.contains(fid))
+        || data
+            .album_children
+            .get(&aid)
+            .into_iter()
+            .flatten()
+            .any(|&c| album_has_unassigned(data, c, depth + 1))
 }

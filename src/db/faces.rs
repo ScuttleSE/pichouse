@@ -774,6 +774,23 @@ impl Library {
         Ok(out)
     }
 
+    /// The ids of the folders that hold at least one face with no owner and
+    /// no ignore mark. Real faces with no person and stylised faces with no
+    /// character both count. Missing photos do not count.
+    pub fn folders_with_unassigned_faces(&self) -> Result<HashSet<i64>> {
+        // Triggers keep `folder_unassigned_faces` current. A full query
+        // over all faces takes about 0.3 s on a large library.
+        let conn = self.read_lock();
+        let mut stmt =
+            conn.prepare("SELECT folder_id FROM folder_unassigned_faces WHERE n > 0")?;
+        let rows = stmt.query_map([], |r| r.get::<_, i64>(0))?;
+        let mut out = HashSet::new();
+        for row in rows {
+            out.insert(row?);
+        }
+        Ok(out)
+    }
+
     /// Ignore the faces of a group. `person_id` selects a named person.
     /// Otherwise `cluster_id` selects an unnamed cluster. When `photo_ids` is
     /// set, only faces in those photos change.
@@ -1489,6 +1506,108 @@ mod tests {
         lib.unignore_faces_in_photos(&[p1]).unwrap();
         assert_eq!(lib.faces_for_clustering().unwrap().len(), 2);
         assert_eq!(lib.ignored_face_photo_count().unwrap(), 0);
+    }
+
+    /// The folders with unassigned faces from a full query. The trigger-kept
+    /// `folder_unassigned_faces` must match this.
+    fn unassigned_full(lib: &Library) -> HashSet<i64> {
+        let conn = lib.lock();
+        let mut stmt = conn
+            .prepare(
+                "SELECT p.folder_id FROM faces f JOIN photos p ON p.id = f.photo_id
+                  WHERE f.person_id IS NULL AND f.ignored = 0 AND p.missing = 0
+                 UNION
+                 SELECT p.folder_id FROM style_faces f JOIN photos p ON p.id = f.photo_id
+                  WHERE f.character_id IS NULL AND f.ignored = 0 AND p.missing = 0",
+            )
+            .unwrap();
+        let rows = stmt.query_map([], |r| r.get(0)).unwrap();
+        rows.map(|r| r.unwrap()).collect()
+    }
+
+    #[test]
+    fn folders_with_unassigned_faces_rule() {
+        let lib = temp_lib();
+        let check = |step: &str| {
+            assert_eq!(
+                lib.folders_with_unassigned_faces().unwrap(),
+                unassigned_full(&lib),
+                "after {step}"
+            );
+            // No count may go below zero.
+            let neg: i64 = lib
+                .lock()
+                .query_row(
+                    "SELECT COUNT(*) FROM folder_unassigned_faces WHERE n < 0",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(neg, 0, "negative count after {step}");
+        };
+        let p1 = add_photo(&lib, "u1");
+        let p2 = add_photo(&lib, "u2");
+        let p3 = add_photo(&lib, "u3");
+        let p4 = add_photo(&lib, "u4");
+        let folder_of = |pid: i64| lib.photo_by_id(pid).unwrap().unwrap().folder_id;
+        let face = |photo_id| Face {
+            photo_id,
+            cluster_id: -1,
+            embedding: vec![1.0],
+            ..Default::default()
+        };
+        let f1 = lib.insert_face(&face(p1)).unwrap();
+        let f1b = lib.insert_face(&face(p1)).unwrap();
+        lib.insert_face(&face(p2)).unwrap();
+        let f4 = lib.insert_face(&face(p4)).unwrap();
+        let sf = lib
+            .insert_style_face(&crate::model::StyleFace {
+                photo_id: p3,
+                embedding: vec![1.0],
+                ..Default::default()
+            })
+            .unwrap();
+        check("insert");
+        let got = lib.folders_with_unassigned_faces().unwrap();
+        for p in [p1, p2, p3, p4] {
+            assert!(got.contains(&folder_of(p)));
+        }
+        let a = lib.create_person("A").unwrap();
+        lib.set_face_person(f1, a).unwrap();
+        check("assign one of two");
+        assert!(lib.folders_with_unassigned_faces().unwrap().contains(&folder_of(p1)));
+        lib.set_face_person(f1b, a).unwrap();
+        check("assign both");
+        assert!(!lib.folders_with_unassigned_faces().unwrap().contains(&folder_of(p1)));
+        lib.delete_person(a).unwrap();
+        check("delete person (set null)");
+        lib.ignore_faces(None, Some(-1), Some(&[p2])).unwrap();
+        check("ignore");
+        lib.unignore_faces_in_photos(&[p2]).unwrap();
+        check("unignore");
+        let ch = lib.create_character("C").unwrap();
+        lib.set_style_face_character(sf, ch).unwrap();
+        check("assign character");
+        lib.set_photo_missing(p2, true).unwrap();
+        check("missing");
+        lib.set_photo_missing(p2, false).unwrap();
+        check("not missing");
+        let fd1 = folder_of(p1);
+        lib.lock()
+            .execute("UPDATE photos SET folder_id = ?1 WHERE id = ?2", params![fd1, p4])
+            .unwrap();
+        check("move photo");
+        lib.lock()
+            .execute("DELETE FROM faces WHERE id = ?1", params![f4])
+            .unwrap();
+        check("delete face");
+        lib.clear_faces_for_photo(p1).unwrap();
+        check("clear faces for photo");
+        lib.delete_folder(folder_of(p2)).unwrap();
+        check("delete folder (cascade)");
+        lib.delete_all_face_data().unwrap();
+        lib.delete_all_style_face_data().unwrap();
+        check("delete all face data");
     }
 
     #[test]

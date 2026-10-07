@@ -442,9 +442,20 @@ Both systems take a `ClusterParams` struct. The config builds it with
 - The grid holds `face_scanned`. `set_photos` and `set_photos_preserving` fill
   it. The face-box `DrawingArea` draws the badge with `draw_face_badge`. The
   scan modules call `Grid::refresh_face_scanned` on `Refresh` and `Done`.
-- The sidebar row is `[icon, label, badge]`. `TreeData.face_scan` holds the
+- The sidebar row is `[icon, label, badge, ubadge]`. `TreeData.face_scan` holds the
   folder counts. `album_face_scan_totals` sums them over the sub-albums.
   `face_scan_done` sets the badge visibility in `bind_row`.
+- `ubadge` is a light-blue face (CSS `face-unassigned-badge`). It shows when
+  the folder has a face or stylised face with no owner and `ignored = 0`.
+  Triggers keep the table `folder_unassigned_faces` current
+  (`migrate_unassigned_faces` in `src/db/library.rs`). A full query takes
+  about 0.3 s, so do not replace the table with a live query.
+  `Library::folders_with_unassigned_faces` reads it into
+  `TreeData.unassigned_faces`. `album_has_unassigned` rolls it up.
+- A photo delete runs a `BEFORE DELETE` trigger. It deletes the faces first,
+  so the face triggers can find the folder.
+- A code path that changes face ownership must call
+  `sidebar.reload_deferred()`.
 
 ### Quick assignment in normal albums
 

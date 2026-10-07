@@ -333,6 +333,7 @@ fn migrate(conn: &Connection) -> Result<()> {
          DROP INDEX IF EXISTS idx_style_faces_cluster;",
     )?;
     migrate_face_stats(conn)?;
+    migrate_unassigned_faces(conn)?;
     Ok(())
 }
 
@@ -430,6 +431,141 @@ fn create_face_stats_triggers(conn: &Connection) -> Result<()> {
                  ON CONFLICT(folder_id) DO UPDATE SET
                      total = total + 1,
                      done = done + excluded.done;
+         END;",
+    )?;
+    Ok(())
+}
+
+/// The setting key that marks the one-time fill of `folder_unassigned_faces`.
+const UNASSIGNED_MARKER: &str = "unassigned_faces.v1";
+
+/// Fill `folder_unassigned_faces` one time, then create the triggers that
+/// keep it current.
+///
+/// `folder_unassigned_faces.n` is the number of faces in the folder with no
+/// owner and `ignored = 0`, in photos with `missing = 0`. Real faces and
+/// stylised faces both count. The sidebar reads this table on each reload.
+/// A full count over all faces takes about 0.3 s on a large library.
+fn migrate_unassigned_faces(conn: &Connection) -> Result<()> {
+    let done: bool = conn
+        .query_row(
+            "SELECT 1 FROM settings WHERE key = ?1",
+            params![UNASSIGNED_MARKER],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if !done {
+        let t = std::time::Instant::now();
+        log::info!("migrate: building folder_unassigned_faces (one time)");
+        conn.execute_batch(
+            "BEGIN;
+             DROP TRIGGER IF EXISTS trg_faces_unassigned_ins;
+             DROP TRIGGER IF EXISTS trg_faces_unassigned_del;
+             DROP TRIGGER IF EXISTS trg_faces_unassigned_upd;
+             DROP TRIGGER IF EXISTS trg_style_faces_unassigned_ins;
+             DROP TRIGGER IF EXISTS trg_style_faces_unassigned_del;
+             DROP TRIGGER IF EXISTS trg_style_faces_unassigned_upd;
+             DROP TRIGGER IF EXISTS trg_photos_unassigned_upd;
+             DROP TRIGGER IF EXISTS trg_photos_unassigned_del;
+             DELETE FROM folder_unassigned_faces;
+             INSERT INTO folder_unassigned_faces(folder_id, n)
+                 SELECT folder_id, COUNT(*) FROM (
+                     SELECT p.folder_id FROM faces f JOIN photos p ON p.id = f.photo_id
+                      WHERE f.person_id IS NULL AND f.ignored = 0 AND p.missing = 0
+                     UNION ALL
+                     SELECT p.folder_id FROM style_faces f JOIN photos p ON p.id = f.photo_id
+                      WHERE f.character_id IS NULL AND f.ignored = 0 AND p.missing = 0)
+                 GROUP BY folder_id;",
+        )?;
+        create_unassigned_triggers(conn)?;
+        conn.execute(
+            "INSERT OR REPLACE INTO settings(key, value) VALUES(?1, '1')",
+            params![UNASSIGNED_MARKER],
+        )?;
+        conn.execute_batch("COMMIT;")?;
+        log::info!("migrate: folder_unassigned_faces built in {:.2?}", t.elapsed());
+    } else {
+        create_unassigned_triggers(conn)?;
+    }
+    Ok(())
+}
+
+/// The trigger SQL for one face table. `tbl` is the table. `owner` is the
+/// owner column. `pfx` is the trigger name prefix.
+fn unassigned_face_triggers(tbl: &str, owner: &str, pfx: &str) -> String {
+    format!(
+        "CREATE TRIGGER IF NOT EXISTS {pfx}_ins AFTER INSERT ON {tbl}
+         WHEN NEW.{owner} IS NULL AND NEW.ignored = 0
+         BEGIN
+             INSERT INTO folder_unassigned_faces(folder_id, n)
+                 SELECT folder_id, 1 FROM photos WHERE id = NEW.photo_id AND missing = 0
+                 ON CONFLICT(folder_id) DO UPDATE SET n = n + 1;
+         END;
+         CREATE TRIGGER IF NOT EXISTS {pfx}_del AFTER DELETE ON {tbl}
+         WHEN OLD.{owner} IS NULL AND OLD.ignored = 0
+         BEGIN
+             UPDATE folder_unassigned_faces SET n = n - 1 WHERE folder_id =
+                 (SELECT folder_id FROM photos WHERE id = OLD.photo_id AND missing = 0);
+         END;
+         CREATE TRIGGER IF NOT EXISTS {pfx}_upd
+         AFTER UPDATE OF {owner}, ignored, photo_id ON {tbl}
+         WHEN (OLD.{owner} IS NULL AND OLD.ignored = 0)
+                IS NOT (NEW.{owner} IS NULL AND NEW.ignored = 0)
+           OR OLD.photo_id IS NOT NEW.photo_id
+         BEGIN
+             UPDATE folder_unassigned_faces SET n = n - 1
+                 WHERE OLD.{owner} IS NULL AND OLD.ignored = 0 AND folder_id =
+                 (SELECT folder_id FROM photos WHERE id = OLD.photo_id AND missing = 0);
+             INSERT INTO folder_unassigned_faces(folder_id, n)
+                 SELECT folder_id, 1 FROM photos
+                 WHERE id = NEW.photo_id AND missing = 0
+                   AND NEW.{owner} IS NULL AND NEW.ignored = 0
+                 ON CONFLICT(folder_id) DO UPDATE SET n = n + 1;
+         END;"
+    )
+}
+
+/// Create the triggers that keep `folder_unassigned_faces` current.
+/// Idempotent.
+fn create_unassigned_triggers(conn: &Connection) -> Result<()> {
+    conn.execute_batch(&unassigned_face_triggers(
+        "faces",
+        "person_id",
+        "trg_faces_unassigned",
+    ))?;
+    conn.execute_batch(&unassigned_face_triggers(
+        "style_faces",
+        "character_id",
+        "trg_style_faces_unassigned",
+    ))?;
+    // A photo delete removes its faces first, while the photo row still
+    // exists. So the face delete triggers find the folder. The foreign key
+    // cascade then finds no faces.
+    conn.execute_batch(
+        "CREATE TRIGGER IF NOT EXISTS trg_photos_unassigned_del BEFORE DELETE ON photos
+         BEGIN
+             DELETE FROM faces WHERE photo_id = OLD.id;
+             DELETE FROM style_faces WHERE photo_id = OLD.id;
+         END;
+         CREATE TRIGGER IF NOT EXISTS trg_photos_unassigned_upd
+         AFTER UPDATE OF folder_id, missing ON photos
+         WHEN OLD.folder_id IS NOT NEW.folder_id OR OLD.missing IS NOT NEW.missing
+         BEGIN
+             UPDATE folder_unassigned_faces SET n = n -
+                 ((SELECT COUNT(*) FROM faces WHERE photo_id = NEW.id
+                     AND person_id IS NULL AND ignored = 0)
+                  + (SELECT COUNT(*) FROM style_faces WHERE photo_id = NEW.id
+                     AND character_id IS NULL AND ignored = 0))
+                 WHERE folder_id = OLD.folder_id AND OLD.missing = 0;
+             INSERT INTO folder_unassigned_faces(folder_id, n)
+                 SELECT NEW.folder_id,
+                        (SELECT COUNT(*) FROM faces WHERE photo_id = NEW.id
+                            AND person_id IS NULL AND ignored = 0)
+                        + (SELECT COUNT(*) FROM style_faces WHERE photo_id = NEW.id
+                            AND character_id IS NULL AND ignored = 0)
+                 WHERE NEW.missing = 0
+                 ON CONFLICT(folder_id) DO UPDATE SET n = n + excluded.n;
          END;",
     )?;
     Ok(())
