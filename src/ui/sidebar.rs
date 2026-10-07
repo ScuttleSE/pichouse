@@ -1778,6 +1778,61 @@ impl Sidebar {
         vec![clicked_fid]
     }
 
+    /// The present photo ids in the target folders of a folder action.
+    fn folder_target_photo_ids(&self, clicked: &str) -> Vec<i64> {
+        let Some(state) = self.state() else { return Vec::new() };
+        let fids = self.scan_target_folder_ids(clicked);
+        state
+            .lib
+            .photos_in_folders(&fids)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|p| !p.missing)
+            .map(|p| p.id)
+            .collect()
+    }
+
+    /// Quick assignment of the photos in the target folders. `style` true
+    /// assigns to a character, false to a person.
+    fn quick_assign_folders(self: &Rc<Self>, clicked: &str, style: bool) {
+        let Some(state) = self.state() else { return };
+        let ids = self.folder_target_photo_ids(clicked);
+        if ids.is_empty() {
+            state
+                .status()
+                .set_message_transient("The selected folders have no photos.", 6);
+            return;
+        }
+        let this = self.clone();
+        let state2 = state.clone();
+        super::vmenu::quick_assign_photos(&state, &ids, style, move |_| {
+            state2.grid().reload_from_source();
+            this.reload_deferred();
+        });
+    }
+
+    /// Ignore every unassigned face and stylised face in the target folders.
+    fn ignore_unassigned_in_folders(self: &Rc<Self>, clicked: &str) {
+        let Some(state) = self.state() else { return };
+        let ids = self.folder_target_photo_ids(clicked);
+        if ids.is_empty() {
+            return;
+        }
+        let res = state
+            .lib
+            .ignore_faces(None, None, Some(&ids))
+            .and_then(|_| state.lib.ignore_style_faces(None, None, Some(&ids)));
+        if let Err(e) = res {
+            show_error(&state, &e.to_string());
+            return;
+        }
+        state
+            .status()
+            .set_message_transient("Unassigned faces ignored.", 6);
+        state.grid().reload_from_source();
+        self.reload_deferred();
+    }
+
     fn move_folders_to_album(self: &Rc<Self>, fids: &[i64], target: i64) {
         if fids.is_empty() {
             return;
@@ -2694,6 +2749,30 @@ impl Sidebar {
         {
             let this = self.clone();
             add(
+                "folder-assign-character",
+                &group,
+                Rc::new(move |t| this.quick_assign_folders(t, true)),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "folder-assign-person",
+                &group,
+                Rc::new(move |t| this.quick_assign_folders(t, false)),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
+                "folder-ignore-unassigned",
+                &group,
+                Rc::new(move |t| this.ignore_unassigned_in_folders(t)),
+            );
+        }
+        {
+            let this = self.clone();
+            add(
                 "rescan-folder-faces",
                 &group,
                 Rc::new(move |t| {
@@ -3549,6 +3628,23 @@ impl Sidebar {
                 Some(rescan_text.as_str()),
                 Some(&detailed("rescan-folder-faces", id)),
             );
+            let n = scan_targets.len();
+            let (ch, pe, ig) = if n > 1 {
+                (
+                    format!("Assign {n} folders to Character (one-face photos)…"),
+                    format!("Assign {n} folders to Person (one-face photos)…"),
+                    format!("Ignore unassigned faces in {n} folders"),
+                )
+            } else {
+                (
+                    "Assign to Character (one-face photos)…".to_string(),
+                    "Assign to Person (one-face photos)…".to_string(),
+                    "Ignore unassigned faces".to_string(),
+                )
+            };
+            menu.append(Some(ch.as_str()), Some(&detailed("folder-assign-character", id)));
+            menu.append(Some(pe.as_str()), Some(&detailed("folder-assign-person", id)));
+            menu.append(Some(ig.as_str()), Some(&detailed("folder-ignore-unassigned", id)));
             // Offer upload only when a server exists and the folder has photos.
             if let Some(fid) = folder_id_of(id) {
                 if !data.immich_servers.is_empty() && data.folder_photo_count(fid) > 0 {

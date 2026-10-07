@@ -833,9 +833,9 @@ impl Library {
         for chunk in photo_ids.chunks(900) {
             let marks = vec!["?"; chunk.len()].join(",");
             let sql = format!(
-                "SELECT photo_id FROM faces WHERE person_id = 0 AND ignored = 0 \
+                "SELECT photo_id FROM faces WHERE person_id IS NULL AND ignored = 0 \
                  AND photo_id IN ({marks}) \
-                 UNION SELECT photo_id FROM style_faces WHERE character_id = 0 \
+                 UNION SELECT photo_id FROM style_faces WHERE character_id IS NULL \
                  AND ignored = 0 AND photo_id IN ({marks})"
             );
             let mut stmt = conn.prepare(&sql)?;
