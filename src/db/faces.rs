@@ -822,6 +822,32 @@ impl Library {
         ignored_photo_count(&conn, "faces")
     }
 
+    /// The ids among `photo_ids` that have one or more unassigned faces
+    /// (real or stylised, not ignored). The grid sort uses it.
+    pub fn photos_with_unassigned_faces(
+        &self,
+        photo_ids: &[i64],
+    ) -> Result<std::collections::HashSet<i64>> {
+        let conn = self.read_lock();
+        let mut out = std::collections::HashSet::new();
+        for chunk in photo_ids.chunks(900) {
+            let marks = vec!["?"; chunk.len()].join(",");
+            let sql = format!(
+                "SELECT photo_id FROM faces WHERE person_id = 0 AND ignored = 0 \
+                 AND photo_id IN ({marks}) \
+                 UNION SELECT photo_id FROM style_faces WHERE character_id = 0 \
+                 AND ignored = 0 AND photo_id IN ({marks})"
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let args = chunk.iter().chain(chunk.iter());
+            let rows = stmt.query_map(rusqlite::params_from_iter(args), |r| r.get(0))?;
+            for row in rows {
+                out.insert(row?);
+            }
+        }
+        Ok(out)
+    }
+
     /// The ignored face boxes of many photos: (photo_id, x, y, w, h), per
     /// mille. `style` selects the stylised face table. The grid overlay
     /// uses it.

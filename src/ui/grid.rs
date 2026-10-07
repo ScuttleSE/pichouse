@@ -229,6 +229,10 @@ pub enum SortOrder {
     FolderAsc,
     /// Folder path, Z to A, case-insensitive (then date, then filename).
     FolderDesc,
+    /// Photos with unassigned faces first (then date, newest first).
+    UnassignedFirst,
+    /// Photos with unassigned faces last (then date, newest first).
+    UnassignedLast,
 }
 
 impl SortOrder {
@@ -242,6 +246,8 @@ impl SortOrder {
             "size_asc" => SortOrder::SizeAsc,
             "folder_asc" => SortOrder::FolderAsc,
             "folder_desc" => SortOrder::FolderDesc,
+            "unassigned_first" => SortOrder::UnassignedFirst,
+            "unassigned_last" => SortOrder::UnassignedLast,
             _ => SortOrder::DateDesc,
         }
     }
@@ -257,6 +263,8 @@ impl SortOrder {
             SortOrder::SizeAsc => "size_asc",
             SortOrder::FolderAsc => "folder_asc",
             SortOrder::FolderDesc => "folder_desc",
+            SortOrder::UnassignedFirst => "unassigned_first",
+            SortOrder::UnassignedLast => "unassigned_last",
         }
     }
 
@@ -271,6 +279,8 @@ impl SortOrder {
             SortOrder::SizeAsc => 5,
             SortOrder::FolderAsc => 6,
             SortOrder::FolderDesc => 7,
+            SortOrder::UnassignedFirst => 8,
+            SortOrder::UnassignedLast => 9,
         }
     }
 
@@ -284,6 +294,8 @@ impl SortOrder {
             5 => SortOrder::SizeAsc,
             6 => SortOrder::FolderAsc,
             7 => SortOrder::FolderDesc,
+            8 => SortOrder::UnassignedFirst,
+            9 => SortOrder::UnassignedLast,
             _ => SortOrder::DateDesc,
         }
     }
@@ -396,6 +408,8 @@ impl Grid {
                 "Size \u{2191}",
                 "Folder \u{2193}",
                 "Folder \u{2191}",
+                "Unassigned faces \u{2191}",
+                "Unassigned faces \u{2193}",
             ]);
         sort_dropdown.set_selected(sort_order.dropdown_index());
         sort_dropdown.set_margin_end(6);
@@ -1886,6 +1900,19 @@ impl Grid {
                     // Reverse the folder runs only. Keep date order inside each run.
                     photos.sort_by(|a, b| dir(b).cmp(&dir(a)));
                 }
+            }
+            SortOrder::UnassignedFirst | SortOrder::UnassignedLast => {
+                let first = self.sort_order.get() == SortOrder::UnassignedFirst;
+                let ids: Vec<i64> = photos.iter().map(|p| p.id).filter(|&id| id != 0).collect();
+                let set = self.lib.photos_with_unassigned_faces(&ids).unwrap_or_default();
+                // Rank 0 sorts first. Inside each rank, sort by date, newest first.
+                let rank = |p: &Photo| (set.contains(&p.id) != first) as u8;
+                photos.sort_by(|a, b| {
+                    rank(a)
+                        .cmp(&rank(b))
+                        .then_with(|| b.taken_at.cmp(&a.taken_at))
+                        .then_with(|| a.filename.cmp(&b.filename))
+                });
             }
         }
     }
