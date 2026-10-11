@@ -2454,6 +2454,9 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
 
         let label = Label::new(None);
         label.set_wrap(true);
+        // Break at any character. A filename with no spaces otherwise asks
+        // for its full width, and that widens every grid column.
+        label.set_wrap_mode(gtk4::pango::WrapMode::WordChar);
         label.set_ellipsize(gtk4::pango::EllipsizeMode::Middle);
         label.set_max_width_chars(12);
         label.set_lines(3);
