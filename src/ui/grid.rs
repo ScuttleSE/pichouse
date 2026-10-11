@@ -2694,6 +2694,7 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
 
         // Show the current texture (if already decoded) and update the label.
         apply_texture(&image, &label, photo.texture());
+        debug_wide_cell(&cell, &photo.path(), "bind");
 
         // Demand-driven thumbnail: enqueue a job only now that this cell is
         // realised (visible range + GridView overscan). When the cell scrolls
@@ -2711,10 +2712,14 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
         // Observe future texture changes for this bound object.
         let image_weak = image.downgrade();
         let label_weak = label.downgrade();
+        let cell_weak = cell.downgrade();
         let handler =
             photo.connect_notify_local(Some("texture"), move |obj: &PhotoObject, _pspec| {
                 if let (Some(image), Some(label)) = (image_weak.upgrade(), label_weak.upgrade()) {
                     apply_texture(&image, &label, obj.texture());
+                }
+                if let Some(cell) = cell_weak.upgrade() {
+                    debug_wide_cell(&cell, &obj.path(), "texture");
                 }
             });
         // Store the handler id so unbind can disconnect it.
@@ -2916,6 +2921,38 @@ fn human_size(bytes: i64) -> String {
 }
 
 /// Set the image from a texture (or clear it and show the label if `None`).
+/// TEMPORARY debug aid. Log each widget in a grid cell whose minimum width is
+/// more than the cell height request. This finds the cell that widens all
+/// grid columns. Remove this function after the fix.
+fn debug_wide_cell(cell: &gtk4::Box, path: &str, when: &str) {
+    let Some(overlay) = cell.first_child() else {
+        return;
+    };
+    let limit = overlay.size_request().1.max(1);
+    let mut stack: Vec<gtk4::Widget> = vec![cell.clone().upcast()];
+    while let Some(w) = stack.pop() {
+        let (min, nat, _, _) = w.measure(gtk4::Orientation::Horizontal, -1);
+        if min > limit {
+            let text = w
+                .downcast_ref::<Label>()
+                .map(|l| l.text().to_string())
+                .or_else(|| w.downcast_ref::<Button>().and_then(|b| b.label()).map(|s| s.to_string()))
+                .unwrap_or_default();
+            log::warn!(
+                "WIDE-CELL [{when}] {path}: {} min={min} nat={nat} limit={limit} visible={} classes={:?} text={text:?}",
+                w.type_().name(),
+                w.is_visible(),
+                w.css_classes(),
+            );
+        }
+        let mut c = w.first_child();
+        while let Some(ch) = c {
+            c = ch.next_sibling();
+            stack.push(ch);
+        }
+    }
+}
+
 fn apply_texture(image: &super::thumbpic::ThumbPic, label: &Label, texture: Option<gdk::Texture>) {
     match texture {
         Some(t) => {
