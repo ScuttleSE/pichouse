@@ -2396,7 +2396,6 @@ impl Grid {
             }
         }
 
-        self.store.remove_all();
         self.pending.borrow_mut().clear();
 
         let size = self.thumb_size.get();
@@ -2408,9 +2407,13 @@ impl Grid {
             if let Some(tex) = prev_tex.get(&p.path) {
                 obj.set_texture(Some(tex.clone()));
             }
-            self.store.append(&obj);
             objs.push(obj);
         }
+        // Replace the store contents with one splice. A per-item append sends
+        // one items-changed signal per photo. With 100,000+ photos, that blocks
+        // the main thread for minutes.
+        let old_n = self.store.n_items();
+        self.store.splice(0, old_n, &objs);
         self.header
             .set_text(&format!("{}  ({})", self.title.borrow(), photos.len()));
 
