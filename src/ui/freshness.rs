@@ -17,9 +17,18 @@ use crate::reconcile::{self, Report};
 
 use super::state::AppState;
 
-/// The periodic reconciliation interval. A background timer reconciles the whole
-/// library this often so remote changes on network drives are picked up.
-const PERIODIC: Duration = Duration::from_secs(180);
+/// The periodic reconciliation interval. The time counts from the end of the
+/// last reconcile, so two reconciles never run back to back.
+const PERIODIC: Duration = Duration::from_secs(15 * 60);
+
+/// How often the timer checks whether the interval has passed.
+const TICK: Duration = Duration::from_secs(60);
+
+thread_local! {
+    /// When the last reconcile ended (on the UI thread).
+    static LAST_END: std::cell::Cell<Option<std::time::Instant>> =
+        const { std::cell::Cell::new(None) };
+}
 
 /// A message posted from the reconcile worker to the UI thread.
 enum Msg {
@@ -31,26 +40,33 @@ enum Msg {
 /// running (avoids overlapping walks; the next timer tick will catch up).
 /// `trigger` names the caller in the log.
 pub fn reconcile_now(state: &Rc<AppState>, trigger: &str) {
-    run_reconcile(state, trigger, false, false);
+    run_reconcile(state, trigger, false, false, false);
 }
 
 /// Refresh Library: a user request. It cancels a running reconciliation (for
 /// example the startup run) and starts a new one.
 pub fn refresh_library(state: &Rc<AppState>) {
-    run_reconcile(state, "refresh", false, true);
+    run_reconcile(state, "refresh", false, true, false);
+}
+
+/// Tools > Full Library Check: read every folder and ignore the stored
+/// folder mtimes. Slow, but it finds every change.
+pub fn full_check(state: &Rc<AppState>) {
+    run_reconcile(state, "full", true, true, true);
 }
 
 /// Tools > Scan for New Folders: run the same reconciliation on demand. It
 /// shows a status message at the start and reports an empty result. It cancels
 /// a running reconciliation (for example the startup run) and starts a new one.
 pub fn scan_new_folders(state: &Rc<AppState>) {
-    run_reconcile(state, "manual", true, true);
+    run_reconcile(state, "manual", true, true, false);
 }
 
 /// Shared reconcile run. `announce` adds start and empty-result messages. The
 /// periodic timer and "Refresh Library" stay silent when nothing changed.
 /// `preempt` cancels a running reconciliation. Without it, the call is skipped.
-fn run_reconcile(state: &Rc<AppState>, trigger: &str, announce: bool, preempt: bool) {
+/// `full` reads every folder (see `reconcile::reconcile_all_with`).
+fn run_reconcile(state: &Rc<AppState>, trigger: &str, announce: bool, preempt: bool, full: bool) {
     if state.reconcile_job.running() {
         if !preempt {
             log::debug!("reconcile ({trigger}): skipped, a reconcile is already running");
@@ -82,6 +98,7 @@ fn run_reconcile(state: &Rc<AppState>, trigger: &str, announce: bool, preempt: b
                 return glib::ControlFlow::Break;
             }
             state.reconcile_job.finish();
+            LAST_END.with(|c| c.set(Some(std::time::Instant::now())));
             let announce = state.reconcile_announce.replace(false);
             if session.load(std::sync::atomic::Ordering::Relaxed) {
                 state.status().set_message_transient("Library scan cancelled.", 5);
@@ -141,11 +158,12 @@ fn run_reconcile(state: &Rc<AppState>, trigger: &str, announce: bool, preempt: b
     }
 
     let lib = state.lib.clone();
-    std::thread::spawn(move || {
+    let spawned = std::thread::Builder::new().name("reconcile".into()).spawn(move || {
+        lower_priority();
         // Always send a result. If the walk panics, the UI must still clear
         // the job state. Otherwise every later scan reports "already running".
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            reconcile::reconcile_all(&lib, &cancel)
+            reconcile::reconcile_all_with(&lib, &cancel, full)
         }));
         let report = result.unwrap_or_else(|_| {
             log::error!("reconcile: worker thread panicked. The job state is cleared.");
@@ -153,14 +171,37 @@ fn run_reconcile(state: &Rc<AppState>, trigger: &str, announce: bool, preempt: b
         });
         let _ = tx.send(Msg::Done(report));
     });
+    if let Err(e) = spawned {
+        log::error!("reconcile: cannot start the worker thread: {e}");
+        state.reconcile_job.finish();
+    }
+}
+
+/// Give the calling thread a low CPU priority (nice 10) and the idle I/O
+/// class. Then the walk does not slow down the UI.
+fn lower_priority() {
+    // SAFETY: both calls change only the calling thread. They take no pointers.
+    unsafe {
+        let tid = libc::syscall(libc::SYS_gettid) as libc::id_t;
+        if libc::setpriority(libc::PRIO_PROCESS, tid, 10) != 0 {
+            log::debug!("reconcile: setpriority failed");
+        }
+        // IOPRIO_WHO_PROCESS = 1, IOPRIO_CLASS_IDLE = 3, class shift = 13.
+        if libc::syscall(libc::SYS_ioprio_set, 1, tid, 3 << 13) != 0 {
+            log::debug!("reconcile: ioprio_set failed");
+        }
+    }
 }
 
 /// Start the periodic reconciliation timer. Runs on the GLib main loop, so it
 /// simply kicks `reconcile_now` on each tick.
 pub fn start_periodic(state: &Rc<AppState>) {
     let state = state.clone();
-    glib::timeout_add_local(PERIODIC, move || {
-        reconcile_now(&state, "timer");
+    glib::timeout_add_local(TICK, move || {
+        let due = LAST_END.with(|c| c.get().map_or(true, |t| t.elapsed() >= PERIODIC));
+        if due && !state.reconcile_job.running() {
+            reconcile_now(&state, "timer");
+        }
         glib::ControlFlow::Continue
     });
 }

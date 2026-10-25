@@ -30,6 +30,7 @@ kamadak-exif = "0.5"
 
 # Content hashing (thumbnail cache key).
 sha2 = "0.10"
+libc = "0.2"
 
 # Ollama HTTP client (blocking, to mirror the Go goroutine worker model).
 # Use rustls to avoid a system OpenSSL dependency on the CI runner.

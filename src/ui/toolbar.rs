@@ -28,6 +28,7 @@ pub fn build_toolbar(state: &Rc<AppState>) -> GtkBox {
     library_section.append(Some("Rescan All Folders"), Some("tools.rescan"));
     library_section.append(Some("Scan for New Folders"), Some("tools.scan_new_folders"));
     library_section.append(Some("Refresh Library"), Some("tools.refresh"));
+    library_section.append(Some("Full Library Check"), Some("tools.full_check"));
     library_section.append(Some("Generate Thumbnails"), Some("tools.gen_thumbs"));
     tools_menu.append_section(None, &library_section);
 
@@ -92,6 +93,10 @@ pub fn build_toolbar(state: &Rc<AppState>) -> GtkBox {
     add_action("refresh", {
         let state = state.clone();
         Box::new(move || super::freshness::refresh_library(&state))
+    });
+    add_action("full_check", {
+        let state = state.clone();
+        Box::new(move || super::freshness::full_check(&state))
     });
     add_action("slideshow", {
         let state = state.clone();

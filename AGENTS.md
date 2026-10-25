@@ -531,6 +531,19 @@ Both systems take a `ClusterParams` struct. The config builds it with
   `photos.skip_face_scan` flag and the scan state of those photos. The column
   stays for old databases. No query reads it.
 
+### Library reconcile
+
+- `reconcile::reconcile_all` walks every root on a low-priority thread
+  (`freshness.rs`, nice 10, idle I/O class).
+- The table `scan_dirs(path, mtime_ns)` holds each walked folder. The walk
+  does not read a folder with the same mtime. It gets the subfolders of that
+  folder from `scan_dirs`. An mtime less than 2 s old is stored as -1.
+- The snapshot reads the photo index only for the read folders and the
+  vanished folders (`Library::photo_index_for_folders`).
+- `add_library_folder` and `remove_library_folder` clear `scan_dirs`.
+- Tools > "Full Library Check" (`freshness::full_check`) ignores the mtimes.
+- The timer starts a reconcile 15 min after the last one ended.
+
 ### Background HTTP pattern
 
 The AI backend is the template for background HTTP work. `src/ai/client.rs`

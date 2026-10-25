@@ -1807,6 +1807,7 @@ dependencies = [
  "hdbscan",
  "image",
  "kamadak-exif",
+ "libc",
  "log",
  "ndarray",
  "notify",

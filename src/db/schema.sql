@@ -18,6 +18,14 @@ CREATE TABLE IF NOT EXISTS folders (
     year  INTEGER NOT NULL
 );
 
+-- Every directory that the reconcile walk read, with its mtime in
+-- nanoseconds. The next walk does not read a directory with the same mtime.
+-- mtime_ns -1 forces a read on the next walk.
+CREATE TABLE IF NOT EXISTS scan_dirs (
+    path     TEXT PRIMARY KEY,
+    mtime_ns INTEGER NOT NULL
+) WITHOUT ROWID;
+
 CREATE TABLE IF NOT EXISTS photos (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     folder_id   INTEGER NOT NULL REFERENCES folders(id) ON DELETE CASCADE,

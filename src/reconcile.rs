@@ -127,6 +127,9 @@ pub struct ReconcilePlan {
     pub mark_missing: Vec<i64>,
     /// Folder row ids to delete (empty on disk, no image subfolders).
     pub folder_deletes: Vec<i64>,
+    /// The new content of the `scan_dirs` table: (path, mtime in ns). `None`
+    /// keeps the table as it is (the one-directory reconcile).
+    pub scan_dirs: Option<Vec<(String, i64)>>,
 }
 
 /// A new image file to insert. `dir` is its parent directory path, used to
@@ -147,23 +150,31 @@ pub struct PhotoMove {
     pub new_name: String,
 }
 
-/// A read-only snapshot of the folder rows and their photo indexes, taken once
-/// under a brief lock before the walk. The walk diffs against this in memory.
+/// A read-only snapshot of the folder rows and the photo indexes of the
+/// folders that the walk must check. The walk diffs against it in memory.
 struct DbSnapshot {
     /// folder path -> folder id.
     folder_id_by_path: HashMap<String, i64>,
-    /// folder id -> (photo path -> (id, size, missing)).
+    /// folder id -> (photo path -> (id, size, missing)). Only the folders
+    /// that the plan reads have an entry.
     index_by_folder: HashMap<i64, HashMap<String, (i64, i64, bool)>>,
 }
 
 impl DbSnapshot {
-    /// Read the whole snapshot under one brief lock.
-    fn read(lib: &Library) -> DbSnapshot {
+    /// Read the folder rows. Read the photo index only for the folder paths
+    /// that `need` accepts. Each read takes the lock briefly.
+    fn read(lib: &Library, need: impl Fn(&str) -> bool) -> DbSnapshot {
         let mut folder_id_by_path = HashMap::new();
-        let mut index_by_folder = lib.photo_index_all().unwrap_or_default();
+        let mut ids = Vec::new();
         for f in lib.folders().unwrap_or_default() {
-            folder_id_by_path.insert(f.path.clone(), f.id);
-            index_by_folder.entry(f.id).or_default();
+            if need(&f.path) {
+                ids.push(f.id);
+            }
+            folder_id_by_path.insert(f.path, f.id);
+        }
+        let mut index_by_folder = lib.photo_index_for_folders(&ids).unwrap_or_default();
+        for id in ids {
+            index_by_folder.entry(id).or_default();
         }
         DbSnapshot {
             folder_id_by_path,
@@ -178,92 +189,218 @@ impl DbSnapshot {
     }
 }
 
+/// A directory with an mtime this close to the scan start can change again in
+/// the same timestamp tick. The walk does not trust such an mtime.
+const MTIME_SLACK_NS: i64 = 2_000_000_000;
+
+/// The state of one recursive walk over all roots.
+struct Walk<'a> {
+    /// The `scan_dirs` rows from the last walk: path -> mtime in ns.
+    known: &'a HashMap<String, i64>,
+    /// Parent path -> child paths, built from `known`.
+    children: HashMap<String, Vec<String>>,
+    /// Read every directory. Ignore the stored mtimes.
+    full: bool,
+    /// An mtime at or after this value is too recent to trust.
+    trust_before_ns: i64,
+    cancel: &'a Arc<AtomicBool>,
+    /// The directories that the walk read: dir -> image files in it.
+    by_dir: HashMap<PathBuf, Vec<PathBuf>>,
+    /// The directories that the walk did not read (mtime not changed).
+    clean: std::collections::HashSet<String>,
+    /// The new `scan_dirs` rows.
+    seen: Vec<(String, i64)>,
+}
+
+impl<'a> Walk<'a> {
+    fn new(known: &'a HashMap<String, i64>, full: bool, cancel: &'a Arc<AtomicBool>) -> Self {
+        let mut children: HashMap<String, Vec<String>> = HashMap::new();
+        for path in known.keys() {
+            if let Some(parent) = Path::new(path).parent() {
+                children
+                    .entry(parent.to_string_lossy().into_owned())
+                    .or_default()
+                    .push(path.clone());
+            }
+        }
+        let now_ns = std::time::SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos() as i64)
+            .unwrap_or(0);
+        Walk {
+            known,
+            children,
+            full,
+            trust_before_ns: now_ns - MTIME_SLACK_NS,
+            cancel,
+            by_dir: HashMap::new(),
+            clean: Default::default(),
+            seen: Vec::new(),
+        }
+    }
+
+    /// Walk `dir` and its subdirectories. Read a directory only when its mtime
+    /// changed since the last walk. Get the subdirectories of an unchanged
+    /// directory from `known`. An add or a remove of a subdirectory changes
+    /// the parent mtime, so that list is correct.
+    fn walk(&mut self, dir: &Path) {
+        if self.cancel.load(Ordering::Relaxed) {
+            return;
+        }
+        progress::stat();
+        let meta = match std::fs::metadata(dir) {
+            Ok(m) if m.is_dir() => m,
+            _ => return,
+        };
+        let mtime = mtime_ns(&meta);
+        let trusted = mtime > 0 && mtime < self.trust_before_ns;
+        let dir_str = dir.to_string_lossy().into_owned();
+        progress::DIRS.fetch_add(1, Ordering::Relaxed);
+
+        let unchanged = !self.full && trusted && self.known.get(&dir_str) == Some(&mtime);
+        if unchanged {
+            let kids = self.children.get(&dir_str).cloned().unwrap_or_default();
+            self.clean.insert(dir_str.clone());
+            self.seen.push((dir_str, mtime));
+            for kid in kids {
+                self.walk(Path::new(&kid));
+            }
+            return;
+        }
+
+        let entries = match std::fs::read_dir(dir) {
+            Ok(e) => e,
+            Err(_) => return, // unreadable: not live, not recorded
+        };
+        self.seen.push((dir_str, if trusted { mtime } else { -1 }));
+        // Ensure the directory itself has an entry even if it holds no images,
+        // so a now-empty folder is reconciled (its photos marked missing).
+        self.by_dir.entry(dir.to_path_buf()).or_default();
+        for entry in entries.flatten() {
+            if self.cancel.load(Ordering::Relaxed) {
+                return;
+            }
+            let path = entry.path();
+            let ft = match entry.file_type() {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            if ft.is_dir() {
+                self.walk(&path);
+            } else if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if is_image(name) {
+                    progress::FILES.fetch_add(1, Ordering::Relaxed);
+                    self.by_dir.entry(dir.to_path_buf()).or_default().push(path);
+                }
+            }
+        }
+    }
+
+    /// Whether the walk found `path` (read or unchanged).
+    fn is_live(&self, path: &str) -> bool {
+        self.clean.contains(path) || self.by_dir.contains_key(Path::new(path))
+    }
+}
+
+/// Whether `path` is `root` or lies under it.
+fn under_root(path: &str, root: &str) -> bool {
+    path == root
+        || (path.starts_with(root)
+            && path[root.len()..].starts_with(std::path::MAIN_SEPARATOR))
+}
+
+/// Reconcile every library root against disk. Skips the directories whose
+/// mtime did not change since the last walk.
+pub fn reconcile_all(lib: &Library, cancel: &Arc<AtomicBool>) -> Report {
+    reconcile_all_with(lib, cancel, false)
+}
+
 /// Reconcile every library root against disk. Walks each root recursively with
 /// no DB lock held, builds a `ReconcilePlan` in memory, then applies the plan
 /// in one short transaction. Stops promptly when `cancel` becomes true.
-pub fn reconcile_all(lib: &Library, cancel: &Arc<AtomicBool>) -> Report {
+/// `full` reads every directory and ignores the stored mtimes.
+pub fn reconcile_all_with(lib: &Library, cancel: &Arc<AtomicBool>, full: bool) -> Report {
     use std::time::Instant;
     let started = Instant::now();
     progress::reset();
     let roots = lib.library_folders().unwrap_or_default();
-    let snapshot = DbSnapshot::read(lib);
+    let known = if full { HashMap::new() } else { lib.scan_dirs().unwrap_or_default() };
     log::info!(
-        "reconcile: snapshot read in {:.2?} ({} roots, {} folders)",
-        started.elapsed(),
+        "reconcile: {} roots, {} known dirs, full = {full}",
         roots.len(),
-        snapshot.folder_id_by_path.len()
+        known.len()
     );
-    let mut plan = ReconcilePlan::default();
-    let mut report = Report::default();
 
-    for root in roots {
+    // 1. Walk every root. No DB lock.
+    progress::PHASE.store(progress::WALK, Ordering::Relaxed);
+    let mut walk = Walk::new(&known, full, cancel);
+    for root in &roots {
         if cancel.load(Ordering::Relaxed) {
-            log::debug!("reconcile: cancelled before root {}", root.path);
             break;
         }
-        log::info!("reconcile: walking root {}", root.path);
-        progress::PHASE.store(progress::WALK, Ordering::Relaxed);
         let walk_start = Instant::now();
-        // Collect image files grouped by directory under this root (no lock).
-        let mut by_dir: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
-        collect(Path::new(&root.path), cancel, &mut by_dir);
+        let (d0, r0) = (progress::DIRS.load(Ordering::Relaxed), walk.by_dir.len());
+        walk.walk(Path::new(&root.path));
         log::info!(
-            "reconcile: root {} walked in {:.2?} ({} dirs, {} images)",
+            "reconcile: root {} walked in {:.2?} ({} dirs, {} read)",
             root.path,
             walk_start.elapsed(),
-            by_dir.len(),
-            by_dir.values().map(Vec::len).sum::<usize>()
-        );
-
-        progress::PHASE.store(progress::CHECK, Ordering::Relaxed);
-        progress::CHECKED_DIRS.store(0, Ordering::Relaxed);
-        progress::TOTAL_DIRS.store(by_dir.len() as u64, Ordering::Relaxed);
-        let check_start = Instant::now();
-        let stats_before = progress::STATS.load(Ordering::Relaxed);
-        for (dir, files) in &by_dir {
-            if cancel.load(Ordering::Relaxed) {
-                break;
-            }
-            plan_dir(&snapshot, dir, files, &mut plan, &mut report);
-            progress::CHECKED_DIRS.fetch_add(1, Ordering::Relaxed);
-        }
-        log::info!(
-            "reconcile: root {} checked in {:.2?} ({} stats)",
-            root.path,
-            check_start.elapsed(),
-            progress::STATS.load(Ordering::Relaxed) - stats_before
-        );
-        // A cancelled walk is partial. Every folder it did not reach looks
-        // vanished, and the check below stats each of their photos. Stop now.
-        if cancel.load(Ordering::Relaxed) {
-            break;
-        }
-        // Directories that once held photos but no longer exist on disk: mark
-        // all their photos missing.
-        progress::PHASE.store(progress::VANISHED, Ordering::Relaxed);
-        let van_start = Instant::now();
-        let stats_before = progress::STATS.load(Ordering::Relaxed);
-        plan_vanished_dirs(&snapshot, &root.path, &by_dir, cancel, &mut plan, &mut report);
-        log::info!(
-            "reconcile: root {} vanished-folder check in {:.2?} ({} stats)",
-            root.path,
-            van_start.elapsed(),
-            progress::STATS.load(Ordering::Relaxed) - stats_before
+            progress::DIRS.load(Ordering::Relaxed) - d0,
+            walk.by_dir.len() - r0
         );
     }
-
     // A cancelled walk saw only part of the disk. Its plan can mark present
-    // photos as missing. Discard the plan. A newer reconcile does the work.
+    // photos as missing. Stop now. A newer reconcile does the work.
     if cancel.load(Ordering::Relaxed) {
         progress::PHASE.store(progress::IDLE, Ordering::Relaxed);
-        log::info!(
-            "reconcile: cancelled after {:.2?}. The partial plan is discarded.",
-            started.elapsed()
-        );
+        log::info!("reconcile: cancelled after {:.2?}.", started.elapsed());
         return Report::default();
     }
 
-    // Apply the whole batch in one transaction. This is the only DB write.
+    // 2. Read the snapshot for the read directories and the vanished ones.
+    progress::PHASE.store(progress::SNAPSHOT, Ordering::Relaxed);
+    let snap_start = Instant::now();
+    let root_paths: Vec<&str> = roots.iter().map(|r| r.path.as_str()).collect();
+    let snapshot = DbSnapshot::read(lib, |p| {
+        walk.by_dir.contains_key(Path::new(p))
+            || (!walk.is_live(p) && root_paths.iter().any(|r| under_root(p, r)))
+    });
+    log::info!(
+        "reconcile: snapshot read in {:.2?} ({} folders, {} indexed)",
+        snap_start.elapsed(),
+        snapshot.folder_id_by_path.len(),
+        snapshot.index_by_folder.len()
+    );
+
+    // 3. Diff the read directories against the snapshot.
+    let mut plan = ReconcilePlan::default();
+    let mut report = Report::default();
+    progress::PHASE.store(progress::CHECK, Ordering::Relaxed);
+    progress::TOTAL_DIRS.store(walk.by_dir.len() as u64, Ordering::Relaxed);
+    let check_start = Instant::now();
+    for (dir, files) in &walk.by_dir {
+        if cancel.load(Ordering::Relaxed) {
+            break;
+        }
+        plan_dir(&snapshot, dir, files, &mut plan, &mut report);
+        progress::CHECKED_DIRS.fetch_add(1, Ordering::Relaxed);
+    }
+    log::info!(
+        "reconcile: checked {} dirs in {:.2?}",
+        walk.by_dir.len(),
+        check_start.elapsed()
+    );
+
+    // 4. Directories that once held photos but are gone: mark photos missing.
+    progress::PHASE.store(progress::VANISHED, Ordering::Relaxed);
+    plan_vanished_dirs(&snapshot, &root_paths, &walk, cancel, &mut plan, &mut report);
+    if cancel.load(Ordering::Relaxed) {
+        progress::PHASE.store(progress::IDLE, Ordering::Relaxed);
+        return Report::default();
+    }
+
+    // 5. Apply the whole batch in one transaction. This is the only DB write.
+    plan.scan_dirs = Some(std::mem::take(&mut walk.seen));
     progress::PHASE.store(progress::APPLY, Ordering::Relaxed);
     let apply_start = Instant::now();
     match lib.apply_reconcile_plan(&plan) {
@@ -458,39 +595,30 @@ fn take_move_candidate(missing_by_size: &mut HashMap<i64, Vec<i64>>, size: i64) 
     ids.pop()
 }
 
-/// Plan missing-marks for recorded folders under `root_path` whose directory no
-/// longer appears on disk. Does no DB I/O; reads only the snapshot.
+/// Plan missing-marks for recorded folders under a root whose directory the
+/// walk did not find. Does no DB I/O. It reads only the snapshot.
 fn plan_vanished_dirs(
     snap: &DbSnapshot,
-    root_path: &str,
-    by_dir: &HashMap<PathBuf, Vec<PathBuf>>,
+    roots: &[&str],
+    walk: &Walk,
     cancel: &Arc<AtomicBool>,
     plan: &mut ReconcilePlan,
     report: &mut Report,
 ) {
-    let live: std::collections::HashSet<String> = by_dir
-        .keys()
-        .map(|p| p.to_string_lossy().into_owned())
-        .collect();
-    let prefix = format!("{}{}", root_path, std::path::MAIN_SEPARATOR);
     for (path, fid) in &snap.folder_id_by_path {
         if cancel.load(Ordering::Relaxed) {
             return;
         }
-        if path != root_path && !path.starts_with(&prefix) {
-            continue; // not under this root
+        if walk.is_live(path) || !roots.iter().any(|r| under_root(path, r)) {
+            continue;
         }
-        if live.contains(path) {
-            continue; // still has photos on disk
-        }
-        // Directory gone (or now empty). Mark its non-missing photos missing.
+        // Directory gone (or unreadable). Mark its non-missing photos missing.
         if let Some(index) = snap.index_by_folder.get(fid) {
             if !index.values().any(|(_, _, m)| !*m) {
                 continue; // all rows already missing
             }
-            // The walk reads every readable directory. A directory that is
-            // gone needs no per-file stat. Stat each file only when the
-            // directory still exists (for example, it is unreadable).
+            // A directory that is gone needs no per-file stat. Stat each file
+            // only when the directory still exists (for example, unreadable).
             progress::stat();
             let dir_exists = Path::new(path).exists();
             for (p, (id, _size, missing)) in index {
@@ -512,38 +640,13 @@ fn plan_vanished_dirs(
     }
 }
 
-/// Recursively collect image files under `dir`, grouped by parent directory.
-fn collect(dir: &Path, cancel: &Arc<AtomicBool>, by_dir: &mut HashMap<PathBuf, Vec<PathBuf>>) {
-    if cancel.load(Ordering::Relaxed) {
-        return;
-    }
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-    // Ensure the directory itself has an entry even if it holds no images, so a
-    // now-empty folder is reconciled (its photos marked missing).
-    by_dir.entry(dir.to_path_buf()).or_default();
-    progress::DIRS.fetch_add(1, Ordering::Relaxed);
-    for entry in entries.flatten() {
-        if cancel.load(Ordering::Relaxed) {
-            return;
-        }
-        let path = entry.path();
-        let ft = match entry.file_type() {
-            Ok(t) => t,
-            Err(_) => continue,
-        };
-        if ft.is_dir() {
-            collect(&path, cancel, by_dir);
-        } else if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            if is_image(name) {
-                progress::FILES.fetch_add(1, Ordering::Relaxed);
-                let parent = path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
-                by_dir.entry(parent).or_default().push(path);
-            }
-        }
-    }
+/// Modification time of a file/dir in nanoseconds since the Unix epoch.
+fn mtime_ns(meta: &std::fs::Metadata) -> i64 {
+    meta.modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos() as i64)
+        .unwrap_or(0)
 }
 
 /// Modification time of a file/dir as a Unix timestamp (seconds).
@@ -574,7 +677,8 @@ pub fn reconcile_one_dir(lib: &Library, dir: &Path) -> Report {
         }
     }
     // Build a one-directory plan against a fresh snapshot, then apply it.
-    let snapshot = DbSnapshot::read(lib);
+    let dir_key = dir.to_string_lossy().into_owned();
+    let snapshot = DbSnapshot::read(lib, |p| p == dir_key);
     let mut plan = ReconcilePlan::default();
     let mut report = Report::default();
     plan_dir(&snapshot, dir, &files, &mut plan, &mut report);
@@ -666,6 +770,62 @@ mod tests {
         // Neither the container nor the root has a folder row.
         assert!(lib.folder_id_by_path(&container.to_string_lossy()).unwrap().is_none());
         assert!(lib.folder_id_by_path(&base.to_string_lossy()).unwrap().is_none());
+
+        let _ = std::fs::remove_dir_all(&base);
+        let _ = std::fs::remove_file(&db_path);
+        let _ = std::fs::remove_file(db_path.with_extension("db-wal"));
+        let _ = std::fs::remove_file(db_path.with_extension("db-shm"));
+    }
+
+    /// Set the mtime of `p` to one hour ago, so the walk trusts it.
+    fn age(p: &Path) {
+        let t = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        std::fs::File::open(p).unwrap().set_modified(t).unwrap();
+    }
+
+    #[test]
+    fn reconcile_skips_unchanged_dirs() {
+        let base = std::env::temp_dir().join(format!("pichouse-recon3-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (a, b) = (base.join("a"), base.join("b"));
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        std::fs::write(a.join("x.png"), tiny_png()).unwrap();
+        std::fs::write(b.join("y.png"), tiny_png()).unwrap();
+        for d in [&base, &a, &b] {
+            age(d);
+        }
+        let db_path = std::env::temp_dir().join(format!("pichouse-recon3-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&db_path);
+        let lib = Library::open_at(&db_path).unwrap();
+        lib.add_library_folder(&base.to_string_lossy()).unwrap();
+        let cancel = Arc::new(AtomicBool::new(false));
+
+        assert_eq!(reconcile_all(&lib, &cancel).added.len(), 2);
+        assert_eq!(lib.scan_dirs().unwrap().len(), 3);
+
+        // A file in `b` with the old mtime put back: the walk does not read `b`.
+        std::fs::write(b.join("z.png"), tiny_png()).unwrap();
+        let old = lib.scan_dirs().unwrap()[&b.to_string_lossy().into_owned()];
+        let t = UNIX_EPOCH + std::time::Duration::from_nanos(old as u64);
+        std::fs::File::open(&b).unwrap().set_modified(t).unwrap();
+        assert!(!reconcile_all(&lib, &cancel).changed(), "unchanged dir is skipped");
+        // A full check reads it.
+        assert_eq!(reconcile_all_with(&lib, &cancel, true).added.len(), 1);
+
+        // A new subfolder in `a` changes the mtime of `a`. The walk finds it.
+        for d in [&base, &a, &b] {
+            age(d);
+        }
+        reconcile_all(&lib, &cancel);
+        let c = a.join("c");
+        std::fs::create_dir_all(&c).unwrap();
+        std::fs::write(c.join("w.png"), tiny_png()).unwrap();
+        assert_eq!(reconcile_all(&lib, &cancel).added.len(), 1, "new subfolder found");
+
+        // A removed folder changes the mtime of `base`. Its photos go missing.
+        std::fs::remove_dir_all(&b).unwrap();
+        assert_eq!(reconcile_all(&lib, &cancel).missing, 2, "vanished folder found");
 
         let _ = std::fs::remove_dir_all(&base);
         let _ = std::fs::remove_file(&db_path);

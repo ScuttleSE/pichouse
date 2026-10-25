@@ -670,6 +670,9 @@ impl Library {
              ON CONFLICT(path) DO NOTHING",
             params![path, now()],
         )?;
+        // A new or re-added root must get a full read. Old rows under it can
+        // skip directories that have no folder rows yet.
+        conn.execute("DELETE FROM scan_dirs", [])?;
         let lf = conn.query_row(
             "SELECT id, path, added_at, first_scan_done_at FROM library_folders WHERE path = ?1",
             params![path],
@@ -696,6 +699,7 @@ impl Library {
             params![path, prefix],
         )?;
         tx.execute("DELETE FROM library_folders WHERE path = ?1", params![path])?;
+        tx.execute("DELETE FROM scan_dirs", [])?;
         tx.commit()?;
         Ok(())
     }
@@ -1068,6 +1072,16 @@ impl Library {
             //    subfolders (cascades their now-missing photos).
             for id in &plan.folder_deletes {
                 tx.execute("DELETE FROM folders WHERE id = ?1", params![id])?;
+            }
+
+            // 7. Replace the walked-directory table, when the plan has one.
+            if let Some(dirs) = &plan.scan_dirs {
+                tx.execute("DELETE FROM scan_dirs", [])?;
+                let mut ins =
+                    tx.prepare("INSERT OR REPLACE INTO scan_dirs(path, mtime_ns) VALUES(?1, ?2)")?;
+                for (path, mtime_ns) in dirs {
+                    ins.execute(params![path, mtime_ns])?;
+                }
             }
         }
         tx.commit()?;
@@ -1485,6 +1499,7 @@ impl Library {
     /// The photo index of every folder, in one query: folder id -> (file path
     /// -> (photo id, size, missing)). Reconciliation reads it one time.
     #[allow(clippy::type_complexity)]
+    #[cfg(test)]
     pub fn photo_index_all(
         &self,
     ) -> Result<std::collections::HashMap<i64, std::collections::HashMap<String, (i64, i64, bool)>>> {
@@ -1496,6 +1511,43 @@ impl Library {
             out.entry(r.get(0)?)
                 .or_default()
                 .insert(r.get(1)?, (r.get(2)?, r.get(3)?, r.get::<_, i64>(4)? != 0));
+        }
+        Ok(out)
+    }
+
+    /// The photo index of the given folders only: folder id -> (file path ->
+    /// (photo id, size, missing)). Reconciliation reads the changed folders.
+    #[allow(clippy::type_complexity)]
+    pub fn photo_index_for_folders(
+        &self,
+        folder_ids: &[i64],
+    ) -> Result<std::collections::HashMap<i64, std::collections::HashMap<String, (i64, i64, bool)>>> {
+        let mut out: std::collections::HashMap<i64, std::collections::HashMap<String, (i64, i64, bool)>> =
+            std::collections::HashMap::new();
+        if folder_ids.is_empty() {
+            return Ok(out);
+        }
+        let conn = self.read_lock();
+        let mut stmt =
+            conn.prepare_cached("SELECT path, id, size, missing FROM photos WHERE folder_id = ?1")?;
+        for fid in folder_ids {
+            let map = out.entry(*fid).or_default();
+            let mut rows = stmt.query(params![fid])?;
+            while let Some(r) = rows.next()? {
+                map.insert(r.get(0)?, (r.get(1)?, r.get(2)?, r.get::<_, i64>(3)? != 0));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Every directory from the last reconcile walk: path -> mtime in ns.
+    pub fn scan_dirs(&self) -> Result<std::collections::HashMap<String, i64>> {
+        let conn = self.read_lock();
+        let mut stmt = conn.prepare("SELECT path, mtime_ns FROM scan_dirs")?;
+        let mut rows = stmt.query([])?;
+        let mut out = std::collections::HashMap::new();
+        while let Some(r) = rows.next()? {
+            out.insert(r.get(0)?, r.get(1)?);
         }
         Ok(out)
     }
