@@ -456,3 +456,88 @@ pub fn download_models(state: &Rc<AppState>, detector_id: String, embedding_id: 
         let _ = tx.send(Msg::Done);
     });
 }
+
+/// Group every unnamed stylised face again with one full HDBSCAN pass.
+/// Characters keep their faces. Unnamed groups can split, merge, or get new
+/// ids. On a large library this can take hours. HDBSCAN cannot stop in the
+/// middle, so a cancel discards the result when the pass completes.
+pub fn full_regroup(state: &Rc<AppState>) {
+    if state.style_face_job.running() {
+        show_message(
+            state,
+            "Full regroup",
+            "A stylised face scan or regroup is already running.",
+        );
+        return;
+    }
+    let cancel = state.style_face_job.begin();
+    let status = state.status();
+    status.set_scanning(true);
+    status.set_message("Full regroup of stylised faces…");
+
+    let (tx, rx) = glib::MainContext::channel::<Result<bool, String>>(glib::Priority::DEFAULT);
+    {
+        let state = state.clone();
+        let cancel = cancel.clone();
+        rx.attach(None, move |res| {
+            if state.style_face_job.is_current(&cancel) {
+                state.style_face_job.finish();
+            }
+            let status = state.status();
+            status.set_scanning(false);
+            match res {
+                Ok(true) => status.set_message("Full regroup of stylised faces complete"),
+                Ok(false) => status.set_message("Full regroup of stylised faces stopped"),
+                Err(e) => show_error(&state, &e),
+            }
+            if let Some(sb) = state.sidebar.borrow().as_ref() {
+                sb.reload_deferred();
+            }
+            state.refresh_characters_if_active();
+            state.grid().reload_from_source();
+            glib::ControlFlow::Break
+        });
+    }
+
+    let lib = state.lib.clone();
+    let params = state.style_face_config.borrow().cluster_params();
+    std::thread::spawn(move || {
+        let _ = tx.send(full_recluster(&lib, params, &cancel));
+    });
+}
+
+/// Run HDBSCAN over every stylised face. Returns `Ok(false)` when `cancel` is
+/// set, and then writes nothing.
+fn full_recluster(
+    lib: &Library,
+    params: crate::styleface::cluster::ClusterParams,
+    cancel: &std::sync::atomic::AtomicBool,
+) -> Result<bool, String> {
+    use crate::styleface::cluster::{self, ClusterItem};
+    let rows = lib
+        .style_faces_for_clustering()
+        .map_err(|e| format!("read style faces: {e}"))?;
+    if cancel.load(Ordering::Relaxed) {
+        return Ok(false);
+    }
+    let rejections = lib.style_face_rejection_map().unwrap_or_default();
+    let items: Vec<ClusterItem> = rows
+        .into_iter()
+        .map(|(face_id, _cluster_id, character_id, embedding)| ClusterItem {
+            face_id,
+            embedding,
+            character_id,
+            rejected: rejections.get(&face_id).cloned().unwrap_or_default(),
+        })
+        .collect();
+    let pairs: Vec<(i64, i64)> = cluster::cluster(&items, params, 1)
+        .into_iter()
+        .map(|a| (a.face_id, a.cluster_id))
+        .collect();
+    if cancel.load(Ordering::Relaxed) {
+        return Ok(false);
+    }
+    lib.set_style_face_clusters(&pairs)
+        .map_err(|e| format!("write clusters: {e}"))?;
+    Ok(true)
+}

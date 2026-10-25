@@ -306,8 +306,9 @@ fn grouping_section(state: &Rc<AppState>) -> GtkBox {
     let regroup = Button::with_label("Regroup now");
     regroup.set_halign(gtk4::Align::Start);
     regroup.set_tooltip_text(Some(
-        "Group all detected stylised faces again with these values. Named \
-         characters keep their faces.",
+        "Put ungrouped faces into the nearest group. Make new groups from \
+         the newest 5,000 noise faces. Existing groups do not change. Takes \
+         seconds.",
     ));
     {
         let state = state.clone();
@@ -316,6 +317,38 @@ fn grouping_section(state: &Rc<AppState>) -> GtkBox {
         });
     }
     bx.append(&regroup);
+
+    let full = Button::with_label("Full regroup…");
+    full.set_halign(gtk4::Align::Start);
+    full.set_tooltip_text(Some(
+        "Group every unnamed stylised face again with HDBSCAN. Slow on a \
+         large library.",
+    ));
+    {
+        let state = state.clone();
+        full.connect_clicked(move |_| {
+            let st = state.clone();
+            super::dialogs::confirm(
+                &state,
+                None,
+                "Full regroup",
+                "\"Regroup now\" puts ungrouped faces into the nearest existing \
+                 group and makes new groups from the newest 5,000 noise faces. \
+                 Existing groups do not change.\n\n\
+                 \"Full regroup\" groups every unnamed stylised face again with \
+                 HDBSCAN:\n\
+                 • Unnamed groups can split, merge, or get new ids.\n\
+                 • Characters keep their faces.\n\
+                 • On a large library it can take hours. It uses one CPU core.\n\
+                 • You can use the app during the run.\n\
+                 • Cancel discards the result, but the work continues in the \
+                 background until it completes.\n\n\
+                 Start a full regroup?",
+                move || super::stylefacescan::full_regroup(&st),
+            );
+        });
+    }
+    bx.append(&full);
     bx
 }
 

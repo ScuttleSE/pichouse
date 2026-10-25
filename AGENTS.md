@@ -449,6 +449,11 @@ Both systems take a `ClusterParams` struct. The config builds it with
   `grouping.defaults_v2`. `build_ui` calls it before the configs load. It then
   starts a regroup after the window shows. To force a new reset after a later
   default change, add a new marker key and a new function.
+- Stylised scans and "Regroup now" do not run a full HDBSCAN pass. New
+  faces join the nearest centroid (`src/styleface/incremental.rs`). "Regroup
+  now" also runs HDBSCAN on the newest 5,000 noise faces. "Full regroup…"
+  (`stylefacescan::full_regroup`) runs HDBSCAN over every face. It can take
+  hours.
 - The Grouping sections are `grouping_section` in `settings_faces.rs` and
   `settings_characters.rs`. "Regroup now" calls `recluster_now`.
 
