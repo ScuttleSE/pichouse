@@ -642,6 +642,7 @@ impl Grid {
         let cache_for_apply = tex_cache.clone();
         let pause_for_apply = pause_until.clone();
         done_rx.attach(None, move |done: Done| {
+            let _prof = prof::Span::new(&prof::TEX_APPLY);
             if done.generation == gen_for_apply.load(Ordering::Relaxed) {
                 {
                     let bytes = glib::Bytes::from_owned(done.rgba);
@@ -895,6 +896,9 @@ impl Grid {
                 .connect_value_changed(move |_| {
                     rc2.schedule_visible_refresh();
                 });
+            if prof::enabled() {
+                prof::install(&rc.grid_view);
+            }
             // The content height and the page size change after the first
             // layout (app start, new folder). Check the visible cells again
             // then, because the first check used the old size.
@@ -2613,6 +2617,7 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
         let image_weak = image.downgrade();
         let grid_for_draw = grid_setup.clone();
         face_area.set_draw_func(move |area, cr, w, h| {
+            let _prof = prof::Span::new(&prof::FACE_DRAW);
             let Some(grid) = grid_for_draw.upgrade() else {
                 return;
             };
@@ -2741,6 +2746,7 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
     });
     let grid_bind = grid.clone();
     factory.connect_bind(move |_, item| {
+        let _prof = prof::Span::new(&prof::BIND);
         let item = item.downcast_ref::<ListItem>().unwrap();
         let Some(photo) = item.item().and_downcast::<PhotoObject>() else {
             return;
@@ -2836,6 +2842,7 @@ fn build_factory(thumb_size: i32, grid: std::rc::Weak<Grid>) -> SignalListItemFa
         }
     });
     factory.connect_unbind(move |_, item| {
+        let _prof = prof::Span::new(&prof::UNBIND);
         let item = item.downcast_ref::<ListItem>().unwrap();
         if let Some(photo) = item.item().and_downcast::<PhotoObject>() {
             // Cell scrolled out of view: drop any in-flight job for it so the
@@ -3087,3 +3094,71 @@ fn draw_face_badge(cr: &gtk4::cairo::Context, right: f64, bottom: f64) {
     let _ = cr.stroke();
 }
 
+
+/// Scroll profiler. Set `PICHOUSE_PROF=1` to turn it on. Each slow frame
+/// (more than 20 ms) prints one log line with the time spent in the grid
+/// callbacks during that frame.
+mod prof {
+    use gtk4::prelude::*;
+    use std::cell::Cell;
+    use std::time::{Duration, Instant};
+
+    pub struct Counter {
+        pub ns: Cell<u64>,
+        pub n: Cell<u32>,
+    }
+    thread_local! {
+        pub static BIND: Counter = const { Counter { ns: Cell::new(0), n: Cell::new(0) } };
+        pub static UNBIND: Counter = const { Counter { ns: Cell::new(0), n: Cell::new(0) } };
+        pub static FACE_DRAW: Counter = const { Counter { ns: Cell::new(0), n: Cell::new(0) } };
+        pub static TEX_APPLY: Counter = const { Counter { ns: Cell::new(0), n: Cell::new(0) } };
+    }
+
+    pub fn enabled() -> bool {
+        static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *ON.get_or_init(|| std::env::var("PICHOUSE_PROF").map(|v| v == "1").unwrap_or(false))
+    }
+
+    pub struct Span(Option<(&'static std::thread::LocalKey<Counter>, Instant)>);
+    impl Span {
+        pub fn new(c: &'static std::thread::LocalKey<Counter>) -> Span {
+            Span(enabled().then(|| (c, Instant::now())))
+        }
+    }
+    impl Drop for Span {
+        fn drop(&mut self) {
+            if let Some((c, t)) = self.0.take() {
+                let ns = t.elapsed().as_nanos() as u64;
+                c.with(|c| {
+                    c.ns.set(c.ns.get() + ns);
+                    c.n.set(c.n.get() + 1);
+                });
+            }
+        }
+    }
+
+    fn take(c: &'static std::thread::LocalKey<Counter>) -> (f64, u32) {
+        c.with(|c| (c.ns.replace(0) as f64 / 1e6, c.n.replace(0)))
+    }
+
+    /// Print one line for each frame that took more than 20 ms.
+    pub fn install(w: &gtk4::GridView) {
+        let last = Cell::new(None::<Instant>);
+        w.add_tick_callback(move |_, _| {
+            let now = Instant::now();
+            let gap = last.get().map(|t| now - t).unwrap_or_default();
+            last.set(Some(now));
+            let b = take(&BIND);
+            let u = take(&UNBIND);
+            let f = take(&FACE_DRAW);
+            let t = take(&TEX_APPLY);
+            if gap > Duration::from_millis(20) && gap < Duration::from_secs(1) {
+                eprintln!(
+                    "PROF frame {:>6.1} ms | bind {:>5.1} ms x{} | unbind {:>5.1} ms x{} | facedraw {:>5.1} ms x{} | tex {:>5.1} ms x{}",
+                    gap.as_secs_f64() * 1e3, b.0, b.1, u.0, u.1, f.0, f.1, t.0, t.1
+                );
+            }
+            gtk4::glib::ControlFlow::Continue
+        });
+    }
+}
