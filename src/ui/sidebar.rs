@@ -2417,6 +2417,27 @@ impl Sidebar {
         );
     }
 
+    /// Mark all photos in "New Files" as not new. The files stay in the library.
+    fn clear_new_files(self: &Rc<Self>) {
+        let Some(state) = self.state() else { return };
+        let this = self.clone();
+        let state2 = state.clone();
+        confirm(
+            &state,
+            None,
+            "Clear New Files",
+            "Mark all new files as seen? The files stay in the library. Files that the app finds later show as new again.",
+            move || match state2.lib.clear_new_files() {
+                Ok(()) => {
+                    this.reload_deferred();
+                    state2.show_grid();
+                    state2.grid().show_photos("Select an album", &[]);
+                }
+                Err(e) => show_error(&state2, &e.to_string()),
+            },
+        );
+    }
+
     fn clear_missing_files(self: &Rc<Self>) {
         let Some(state) = self.state() else { return };
         let n = state.lib.missing_photo_count().unwrap_or(0);
@@ -3134,6 +3155,10 @@ impl Sidebar {
         }
         {
             let this = self.clone();
+            add("clear-new", &group, Rc::new(move |_| this.clear_new_files()));
+        }
+        {
+            let this = self.clone();
             add(
                 "clear-banned",
                 &group,
@@ -3452,6 +3477,11 @@ impl Sidebar {
             menu.append(
                 Some("New Virtual Album…"),
                 Some(&detailed("new-valbum", id)),
+            );
+        } else if id == NEW_FILES_ID {
+            menu.append(
+                Some("Clear New Files…"),
+                Some(&detailed("clear-new", id)),
             );
         } else if id == MISSING_FILES_ID {
             menu.append(

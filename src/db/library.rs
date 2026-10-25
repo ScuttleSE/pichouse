@@ -32,6 +32,9 @@ pub struct Library {
 }
 
 /// Cached sidebar aggregates with a coarse validity flag. `folder_counts` and
+/// The settings key for the time of the last "Clear New Files".
+pub const NEW_FILES_CLEARED_KEY: &str = "newfiles.cleared_at";
+
 /// `new_files` are computed lazily and cleared by `invalidate_count_cache`.
 #[derive(Default)]
 pub(super) struct CountCache {
@@ -1291,8 +1294,7 @@ impl Library {
         // Per-root boundary: a photo is new only if added after the root that
         // owns it finished its first scan. Roots are matched by path prefix.
         let roots = self.library_folders()?;
-        let now_ts = now();
-        let age_threshold = now_ts - max_age_secs;
+        let age_threshold = self.new_files_threshold(max_age_secs);
 
         let conn = self.read_lock();
         // Candidate photos: recent, not missing. Join the folder for its path.
@@ -1364,6 +1366,24 @@ impl Library {
         Ok(out)
     }
 
+    /// The oldest `added_at` that still counts as new. It is the later of the
+    /// age limit and the time of the last "Clear New Files".
+    fn new_files_threshold(&self, max_age_secs: i64) -> i64 {
+        let cleared: i64 = self
+            .get_setting(NEW_FILES_CLEARED_KEY, "0")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        (now() - max_age_secs).max(cleared + 1)
+    }
+
+    /// Mark all current new files as not new. Later additions are new again.
+    pub fn clear_new_files(&self) -> Result<()> {
+        self.set_setting(NEW_FILES_CLEARED_KEY, &now().to_string())?;
+        self.invalidate_count_cache();
+        Ok(())
+    }
+
     /// The number of "new files" across the whole library (see
     /// `new_photos_grouped`). Used for the sidebar count.
     ///
@@ -1379,8 +1399,7 @@ impl Library {
                 return Ok(n);
             }
         }
-        let now_ts = now();
-        let age_threshold = now_ts - max_age_secs;
+        let age_threshold = self.new_files_threshold(max_age_secs);
         let sep = std::path::MAIN_SEPARATOR.to_string();
         let conn = self.read_lock();
         // Short-circuit: if no root has finished its first scan yet, nothing can
@@ -1719,6 +1738,10 @@ mod tests {
 
         // A very small age window drops it (age-based expiry).
         assert_eq!(lib.new_photos_count(-1).unwrap(), 0);
+        // Clear New Files: the photo is no longer new.
+        lib.clear_new_files().unwrap();
+        assert_eq!(lib.new_photos_count(3600).unwrap(), 0);
+        assert!(lib.new_photos_grouped(3600).unwrap().is_empty());
 
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(path.with_extension("db-wal"));

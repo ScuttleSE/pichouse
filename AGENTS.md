@@ -314,6 +314,11 @@ The same dialog removes folder rows with no present photos whose path is
 gone from disk (`Library::empty_gone_folders`). A moved folder leaves such a
 row under its old album. `delete_empty_albums_and_folders` does both.
 
+A right-click on "New Files" offers "Clear New Files…". It writes the
+current time to the setting `newfiles.cleared_at`
+(`Library::clear_new_files`). A photo is new only when its `added_at` is
+later than that time.
+
 The "New folders" section lists folders with no album membership. A root's
 FIRST scan auto-files every discovered folder into the disk-mirror album tree
 (`src/ui/albumtree.rs`, gated on `library_folders.first_scan_done_at` in
