@@ -26,8 +26,7 @@ use gtk4::gio;
 
 use super::groupsort::{sort_groups, tile_flow, GroupSort, SectionHeader, UnnamedHeader};
 use super::prefs::{KEY_CHARS_IDENTIFIED_COLLAPSED, KEY_CHARS_UNNAMED_COLLAPSED, KEY_CHARS_UNNAMED_SORT};
-use super::state::{AppState, CropJob, queue_crop_job};
-use super::util::texture_from_bytes;
+use super::state::AppState;
 
 /// The noise cluster id from HDBSCAN. Shown to the user, not hidden.
 const NOISE_CLUSTER_ID: i64 = -1;
@@ -309,7 +308,15 @@ impl CharactersView {
             // refresh keeps existing tiles in place, so it needs no order.
             let raw = state.lib.unnamed_style_clusters().unwrap_or_default();
             let clusters = if self.tiles.borrow().is_empty() {
-                let info = state.lib.unnamed_group_info(true).unwrap_or_default();
+                let info = match sort {
+                    GroupSort::MostImages | GroupSort::FewestImages => Vec::new(),
+                    GroupSort::Newest | GroupSort::Oldest => {
+                        state.lib.unnamed_group_info(true, false).unwrap_or_default()
+                    }
+                    GroupSort::Similar => {
+                        state.lib.unnamed_group_info(true, true).unwrap_or_default()
+                    }
+                };
                 sort_groups(raw, &info, sort)
             } else {
                 raw
@@ -951,40 +958,9 @@ impl CharactersView {
     }
 }
 
-/// Load the crop of one stylised face into an image. A cached crop shows at
-/// once. An uncached crop renders off the main thread and shows when ready.
+/// Load the crop of one stylised face into an image, off the main thread.
 fn fill_style_crop(state: &Rc<AppState>, image: &Image, face_id: i64) {
-    if face_id == 0 {
-        return;
-    }
-    if let Some(jpeg) = state.style_face_crop_cached(face_id) {
-        if let Some(tex) = texture_from_bytes(&jpeg) {
-            image.set_paintable(Some(&tex));
-        }
-        return;
-    }
-    let Some((path, orientation, bbox)) = state.style_face_crop_inputs(face_id) else {
-        return;
-    };
-    let thumbs = state.style_face_thumbs();
-    let (tx, rx) = glib::MainContext::channel::<Option<Vec<u8>>>(glib::Priority::DEFAULT);
-    queue_crop_job(CropJob {
-        face_id,
-        path,
-        orientation,
-        bbox,
-        thumbs,
-        reply: tx,
-    });
-    let image_weak = image.downgrade();
-    rx.attach(None, move |jpeg| {
-        if let (Some(image), Some(jpeg)) = (image_weak.upgrade(), jpeg) {
-            if let Some(tex) = texture_from_bytes(&jpeg) {
-                image.set_paintable(Some(&tex));
-            }
-        }
-        glib::ControlFlow::Break
-    });
+    super::state::load_face_crop_async(state, image, face_id, true);
 }
 
 /// The mosaic face ids for one character folder.

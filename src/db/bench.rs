@@ -367,3 +367,29 @@ fn bench_all() {
     }
     println!("{:<40} {:>10.2?}", "H5new scan writes, 1000 photos", t.elapsed());
 }
+
+/// The queries that the Characters and People views run when they open.
+#[test]
+#[ignore]
+fn bench_charview() {
+    let Some(lib) = open() else { return };
+    for style in [true, false] {
+        let s = if style { "char" } else { "face" };
+        time(&format!("CV {s} unnamed_group_info"), || {
+            lib.unnamed_group_info(style, true).unwrap().len()
+        });
+        time(&format!("CV {s} representative_faces"), || {
+            lib.representative_faces(style).unwrap().len()
+        });
+        time(&format!("CV {s} cluster_representative"), || {
+            lib.cluster_representative_faces(style).unwrap().len()
+        });
+    }
+    time("CV characters", || lib.characters().unwrap().len());
+    time("CV unnamed_style_clusters", || lib.unnamed_style_clusters().unwrap().len());
+    time("CV character_groups", || lib.character_groups().unwrap().len());
+    time("CV character_group_members", || lib.character_group_members().unwrap().len());
+    let n = lib.characters().unwrap().len();
+    let c = lib.unnamed_style_clusters().unwrap().len();
+    println!("characters={n} unnamed clusters={c}");
+}

@@ -23,7 +23,17 @@ CREATE TABLE IF NOT EXISTS thumbnails (
 /// connection avoids "database is locked" errors.
 pub struct Thumbs {
     conn: Mutex<Connection>,
+    /// Read-only connections for `get`. WAL mode lets them read in parallel
+    /// with each other and with the write connection.
+    readers: Vec<Mutex<Connection>>,
 }
+
+/// The number of read connections for each thumbnail database.
+const THUMB_READERS: usize = 4;
+
+/// The connection settings for a thumbnail database.
+const THUMB_PRAGMAS: &str = "PRAGMA busy_timeout=5000; PRAGMA synchronous=NORMAL; \
+     PRAGMA cache_size=-32768; PRAGMA mmap_size=268435456; PRAGMA temp_store=MEMORY;";
 
 /// The thumbnail database file path for a given thumbnail size (longest side in
 /// pixels). Each size gets its own file so switching thumbnail quality never
@@ -42,20 +52,39 @@ impl Thumbs {
 
     /// Open (and initialize) a thumbnail database at the given path.
     pub fn open_at<P: AsRef<Path>>(path: P) -> Result<Thumbs> {
+        let path = path.as_ref();
         let conn = Connection::open(path)?;
-        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;")?;
+        conn.execute_batch("PRAGMA journal_mode=WAL;")?;
+        conn.execute_batch(THUMB_PRAGMAS)?;
         conn.execute_batch(SCHEMA)?;
+        let mut readers = Vec::with_capacity(THUMB_READERS);
+        for _ in 0..THUMB_READERS {
+            let r = Connection::open_with_flags(
+                path,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
+                    | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+            )?;
+            r.execute_batch(THUMB_PRAGMAS)?;
+            readers.push(Mutex::new(r));
+        }
         Ok(Thumbs {
             conn: Mutex::new(conn),
+            readers,
         })
     }
 
     /// The cached JPEG thumbnail for a photo hash, or `None` if none is cached.
     pub fn get(&self, hash: &str) -> Result<Option<Vec<u8>>> {
-        let conn = self.conn.lock().unwrap();
+        // Take the first free read connection. Wait on the first one when all
+        // are busy.
+        let conn = self
+            .readers
+            .iter()
+            .find_map(|m| m.try_lock().ok())
+            .unwrap_or_else(|| self.readers[0].lock().unwrap());
         let blob: Option<Vec<u8>> = conn
+            .prepare_cached("SELECT jpeg FROM thumbnails WHERE photo_hash = ?1")?
             .query_row(
-                "SELECT jpeg FROM thumbnails WHERE photo_hash = ?1",
                 params![hash],
                 |r| r.get(0),
             )

@@ -26,7 +26,6 @@ use gtk4::gio;
 use super::groupsort::{sort_groups, tile_flow, GroupSort, SectionHeader, UnnamedHeader};
 use super::prefs::{KEY_FACES_IDENTIFIED_COLLAPSED, KEY_FACES_UNNAMED_COLLAPSED, KEY_FACES_UNNAMED_SORT};
 use super::state::AppState;
-use super::util::texture_from_bytes;
 
 /// The noise cluster id from HDBSCAN. Shown to the user, not hidden.
 const NOISE_CLUSTER_ID: i64 = -1;
@@ -307,7 +306,15 @@ impl FacesView {
             // refresh keeps existing tiles in place, so it needs no order.
             let raw = state.lib.unnamed_clusters().unwrap_or_default();
             let clusters = if self.tiles.borrow().is_empty() {
-                let info = state.lib.unnamed_group_info(false).unwrap_or_default();
+                let info = match sort {
+                    GroupSort::MostImages | GroupSort::FewestImages => Vec::new(),
+                    GroupSort::Newest | GroupSort::Oldest => {
+                        state.lib.unnamed_group_info(false, false).unwrap_or_default()
+                    }
+                    GroupSort::Similar => {
+                        state.lib.unnamed_group_info(false, true).unwrap_or_default()
+                    }
+                };
                 sort_groups(raw, &info, sort)
             } else {
                 raw
@@ -951,12 +958,7 @@ impl FacesView {
 
 /// Load the crop of one face into an image.
 fn fill_crop(state: &Rc<AppState>, image: &Image, face_id: i64) {
-    if face_id == 0 {
-        return;
-    }
-    if let Some(tex) = state.face_crop_jpeg(face_id).and_then(|j| texture_from_bytes(&j)) {
-        image.set_paintable(Some(&tex));
-    }
+    super::state::load_face_crop_async(state, image, face_id, false);
 }
 
 /// The mosaic face ids for one person folder.

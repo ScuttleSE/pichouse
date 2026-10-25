@@ -471,11 +471,7 @@ fn populate_deferred(state: &Rc<AppState>) {
 pub fn load_folder_into_grid(state: &Rc<AppState>, folder: &crate::model::Folder) {
     *state.current_folder.borrow_mut() = folder.id;
     state.grid().show_folder(folder.id, &folder.name);
-    let count = state
-        .lib
-        .photos_in_folder(folder.id)
-        .map(|p| p.len())
-        .unwrap_or(0);
+    let count = state.grid().loaded_count();
     state
         .status()
         .set_message(&format!("{} — {} photos", folder.path, count));

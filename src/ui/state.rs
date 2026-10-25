@@ -132,7 +132,7 @@ pub struct CropJob {
 /// to Character" dialog) can request several at once. A fixed pool of workers
 /// reads a shared queue, so callers never spawn one thread per crop.
 struct CropPool {
-    queue: Mutex<std::collections::VecDeque<CropJob>>,
+    queue: Mutex<std::collections::VecDeque<Box<dyn FnOnce() + Send>>>,
     cv: std::sync::Condvar,
 }
 
@@ -154,12 +154,7 @@ fn crop_pool() -> &'static Arc<CropPool> {
                     }
                     q.pop_front().unwrap()
                 };
-                let jpeg =
-                    crate::thumb::render_face_crop(&job.path, job.orientation, job.bbox, 320).ok();
-                if let (Some(ft), Some(j)) = (job.thumbs.as_ref(), jpeg.as_ref()) {
-                    let _ = ft.put(job.face_id, j);
-                }
-                let _ = job.reply.send(jpeg);
+                job();
             });
         }
         pool
@@ -168,9 +163,102 @@ fn crop_pool() -> &'static Arc<CropPool> {
 
 /// Queue a crop-render job on the shared pool.
 pub fn queue_crop_job(job: CropJob) {
+    run_on_crop_pool(Box::new(move || {
+        let jpeg = crate::thumb::render_face_crop(&job.path, job.orientation, job.bbox, 320).ok();
+        if let (Some(ft), Some(j)) = (job.thumbs.as_ref(), jpeg.as_ref()) {
+            let _ = ft.put(job.face_id, j);
+        }
+        let _ = job.reply.send(jpeg);
+    }));
+}
+
+/// Run a task on the shared crop pool.
+fn run_on_crop_pool(f: Box<dyn FnOnce() + Send>) {
     let pool = crop_pool();
-    pool.queue.lock().unwrap().push_back(job);
+    pool.queue.lock().unwrap().push_back(f);
     pool.cv.notify_one();
+}
+
+// Decoded face crops by face id. A second open of the People or Characters
+// view then needs no DB read and no decode. The key has an "s" prefix for a
+// stylised face and an "f" prefix for a real face.
+thread_local! {
+    static CROP_TEXTURES: std::cell::RefCell<super::thumbcache::TextureCache> =
+        std::cell::RefCell::new(super::thumbcache::TextureCache::new(4096));
+}
+
+/// Show the crop of a face in `image`. All work runs off the main thread:
+/// the cache read, the render on a cache miss, and the JPEG decode. The main
+/// thread only makes the texture from the decoded pixels. `style` selects the
+/// stylised-face tables.
+pub fn load_face_crop_async(state: &Rc<AppState>, image: &gtk4::Image, face_id: i64, style: bool) {
+    use gtk4::glib;
+    use gtk4::prelude::*;
+    if face_id == 0 {
+        return;
+    }
+    let key = format!("{}{face_id}", if style { "s" } else { "f" });
+    if let Some(tex) = CROP_TEXTURES.with(|c| c.borrow_mut().get(&key)) {
+        image.set_paintable(Some(&tex));
+        return;
+    }
+    let thumbs = if style { state.style_face_thumbs() } else { state.face_thumbs() };
+    let lib = state.lib.clone();
+    #[allow(deprecated)]
+    let (tx, rx) = glib::MainContext::channel::<(Vec<u8>, i32, i32)>(glib::Priority::DEFAULT);
+    run_on_crop_pool(Box::new(move || {
+        let cached = thumbs.as_ref().and_then(|ft| ft.get(face_id).ok().flatten());
+        let jpeg = match cached {
+            Some(j) => Some(j),
+            None => {
+                let inputs = if style {
+                    lib.style_face_by_id(face_id).ok().flatten().map(|f| {
+                        (f.photo_id, (f.bbox_x, f.bbox_y, f.bbox_w, f.bbox_h))
+                    })
+                } else {
+                    lib.face_by_id(face_id).ok().flatten().map(|f| {
+                        (f.photo_id, (f.bbox_x, f.bbox_y, f.bbox_w, f.bbox_h))
+                    })
+                };
+                inputs.and_then(|(photo_id, bbox)| {
+                    let photo = lib.photo_by_id(photo_id).ok().flatten()?;
+                    let j = crate::thumb::render_face_crop(
+                        std::path::Path::new(&photo.path),
+                        photo.orientation,
+                        bbox,
+                        320,
+                    )
+                    .ok()?;
+                    if let Some(ft) = thumbs.as_ref() {
+                        let _ = ft.put(face_id, &j);
+                    }
+                    Some(j)
+                })
+            }
+        };
+        let Some(jpeg) = jpeg else { return };
+        let Ok(img) = image::load_from_memory(&jpeg) else { return };
+        let rgba = img.to_rgba8();
+        let (w, h) = (rgba.width() as i32, rgba.height() as i32);
+        let _ = tx.send((rgba.into_raw(), w, h));
+    }));
+    let image_weak = image.downgrade();
+    rx.attach(None, move |(px, w, h)| {
+        let bytes = glib::Bytes::from_owned(px);
+        let tex: gtk4::gdk::Texture = gtk4::gdk::MemoryTexture::new(
+            w,
+            h,
+            gtk4::gdk::MemoryFormat::R8g8b8a8,
+            &bytes,
+            (w * 4) as usize,
+        )
+        .upcast();
+        CROP_TEXTURES.with(|c| c.borrow_mut().put(key.clone(), tex.clone()));
+        if let Some(image) = image_weak.upgrade() {
+            image.set_paintable(Some(&tex));
+        }
+        glib::ControlFlow::Break
+    });
 }
 
 impl AppState {

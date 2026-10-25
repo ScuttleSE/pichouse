@@ -284,7 +284,9 @@ impl Library {
     /// tiles. `style` selects the stylised-face tables. The result has the
     /// time of the newest face and the mean embedding.
     /// The result order is not specified.
-    pub fn unnamed_group_info(&self, style: bool) -> Result<Vec<UnnamedGroupInfo>> {
+    /// Set `centroids` to false to skip the embedding read. Only the
+    /// "Similar" sort needs the centroids, and the read is slow.
+    pub fn unnamed_group_info(&self, style: bool, centroids: bool) -> Result<Vec<UnnamedGroupInfo>> {
         let (table, owner) = if style {
             ("style_faces", "character_id")
         } else {
@@ -307,6 +309,9 @@ impl Library {
         for row in rows {
             let g = row?;
             out.insert(g.cluster_id, g);
+        }
+        if !centroids {
+            return Ok(out.into_values().collect());
         }
         let mut stmt = conn.prepare(&format!(
             "SELECT cluster_id, embedding FROM {table} \

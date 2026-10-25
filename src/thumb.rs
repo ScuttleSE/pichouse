@@ -23,7 +23,7 @@ pub struct Generator {
 struct Inner {
     size: i32,
     all_sizes: Vec<i32>,
-    stores: HashMap<i32, Thumbs>,
+    stores: HashMap<i32, std::sync::Arc<Thumbs>>,
 }
 
 /// A thumbnail error.
@@ -211,13 +211,17 @@ impl Generator {
         size: i32,
         f: impl FnOnce(&Thumbs) -> db::Result<T>,
     ) -> Result<T> {
-        let mut inner = self.inner.lock().unwrap();
-        if !inner.stores.contains_key(&size) {
-            let store = Thumbs::open_for_size(size)?;
-            inner.stores.insert(size, store);
-        }
-        let store = inner.stores.get(&size).unwrap();
-        Ok(f(store)?)
+        // Hold the global lock only to find the store. Release it before the
+        // query, so the thumbnail workers can read the cache in parallel.
+        let store = {
+            let mut inner = self.inner.lock().unwrap();
+            if !inner.stores.contains_key(&size) {
+                let store = Thumbs::open_for_size(size)?;
+                inner.stores.insert(size, std::sync::Arc::new(store));
+            }
+            inner.stores.get(&size).unwrap().clone()
+        };
+        Ok(f(&store)?)
     }
 }
 

@@ -8,7 +8,6 @@ use std::sync::mpsc;
 use std::sync::Arc;
 
 use gtk4::gdk;
-use gtk4::gdk_pixbuf::PixbufLoader;
 use gtk4::gio;
 use gtk4::glib;
 use gtk4::prelude::*;
@@ -53,8 +52,65 @@ struct Job {
 /// A finished thumbnail sent from a worker back to the UI thread.
 struct Done {
     key: String,
-    blob: Vec<u8>,
+    /// RGBA pixels, decoded in the worker thread.
+    rgba: Vec<u8>,
+    width: i32,
+    height: i32,
     generation: u64,
+}
+
+/// A thumbnail job queue that the UI thread fills and the workers empty.
+///
+/// The workers take the NEWEST job first (LIFO). After a fast scroll, the
+/// cells the user stopped on get their thumbnails first. The UI thread
+/// removes the job of a cell that scrolled out of view (`cancel`), so the
+/// workers do not spend time on photos that nobody sees.
+struct JobQueue<J> {
+    q: std::sync::Mutex<std::collections::VecDeque<J>>,
+    cv: std::sync::Condvar,
+}
+
+impl<J> JobQueue<J> {
+    fn new() -> Self {
+        JobQueue {
+            q: std::sync::Mutex::new(std::collections::VecDeque::new()),
+            cv: std::sync::Condvar::new(),
+        }
+    }
+    fn push(&self, job: J) {
+        self.q.lock().unwrap().push_back(job);
+        self.cv.notify_one();
+    }
+    /// Block until a job is available, then return the newest job.
+    fn pop(&self) -> J {
+        let mut q = self.q.lock().unwrap();
+        loop {
+            if let Some(j) = q.pop_back() {
+                return j;
+            }
+            q = self.cv.wait(q).unwrap();
+        }
+    }
+    fn retain(&self, f: impl FnMut(&J) -> bool) {
+        self.q.lock().unwrap().retain(f);
+    }
+    fn clear(&self) {
+        self.q.lock().unwrap().clear();
+    }
+}
+
+/// Decode a thumbnail blob into RGBA pixels. Runs in a worker thread.
+fn decode_rgba(key: String, blob: &[u8], generation: u64) -> Option<Done> {
+    let img = image::load_from_memory(blob).ok()?;
+    let rgba = img.to_rgba8();
+    let (width, height) = (rgba.width() as i32, rgba.height() as i32);
+    Some(Done {
+        key,
+        rgba: rgba.into_raw(),
+        width,
+        height,
+        generation,
+    })
 }
 
 /// An Immich thumbnail job sent from the UI thread to an Immich worker.
@@ -98,12 +154,15 @@ pub struct Grid {
     /// The CSS provider for the cell margin.
     margin_css: gtk4::CssProvider,
     generation: Arc<AtomicU64>,
-    jobs: mpsc::Sender<Job>,
-    /// Job channel to the Immich thumbnail worker pool.
-    immich_jobs: mpsc::Sender<ImmichJob>,
+    jobs: Arc<JobQueue<Job>>,
+    /// Job queue of the Immich thumbnail worker pool.
+    immich_jobs: Arc<JobQueue<ImmichJob>>,
     /// Maps a cell key to its `PhotoObject` for the current generation, so a
     /// worker result can find the object to update on the UI thread.
     pending: Rc<RefCell<HashMap<String, PhotoObject>>>,
+    /// The edit of each photo in the store. `rebuild` fills it with one query,
+    /// so `bind` and `unbind` do not query the DB for each cell.
+    edits: RefCell<HashMap<i64, crate::model::PhotoEdit>>,
     /// All photos currently loaded (unfiltered), plus the display title and the
     /// active filter, so filtering/rescale can rebuild the view.
     all_photos: RefCell<Vec<Photo>>,
@@ -457,22 +516,15 @@ impl Grid {
         // Result channel: workers -> UI thread.
         let (done_tx, done_rx) = glib::MainContext::channel::<Done>(glib::Priority::DEFAULT);
         // Job channel: UI thread -> workers.
-        let (job_tx, job_rx) = mpsc::channel::<Job>();
-        let job_rx = Arc::new(std::sync::Mutex::new(job_rx));
+        let job_tx: Arc<JobQueue<Job>> = Arc::new(JobQueue::new());
 
         for _ in 0..THUMB_WORKERS {
-            let job_rx = job_rx.clone();
+            let job_rx = job_tx.clone();
             let done_tx = done_tx.clone();
             let gen = gen.clone();
             let cur_gen = generation.clone();
             std::thread::spawn(move || loop {
-                let job = {
-                    let rx = job_rx.lock().unwrap();
-                    match rx.recv() {
-                        Ok(j) => j,
-                        Err(_) => return, // senders dropped; exit
-                    }
-                };
+                let job = job_rx.pop();
                 // Drop a stale job without decoding it. Fast folder switches
                 // leave old jobs in the FIFO channel. Skip them so the current
                 // folder's thumbnails render without a decode backlog first.
@@ -486,11 +538,9 @@ impl Grid {
                     &job.edit,
                 ) {
                     Ok(blob) if !blob.is_empty() => {
-                        let _ = done_tx.send(Done {
-                            key: job.key,
-                            blob,
-                            generation: job.generation,
-                        });
+                        if let Some(done) = decode_rgba(job.key, &blob, job.generation) {
+                            let _ = done_tx.send(done);
+                        }
                     }
                     _ => {}
                 }
@@ -500,23 +550,20 @@ impl Grid {
         // Immich thumbnail worker pool: download asset thumbnails over HTTP and
         // feed the decoded bytes back through the same `done_tx` channel. Each
         // worker caches one `immich::Client` per server id it has seen.
-        let (immich_tx, immich_rx) = mpsc::channel::<ImmichJob>();
-        let immich_rx = Arc::new(std::sync::Mutex::new(immich_rx));
+        let immich_tx: Arc<JobQueue<ImmichJob>> = Arc::new(JobQueue::new());
         for _ in 0..THUMB_WORKERS {
-            let immich_rx = immich_rx.clone();
+            let immich_rx = immich_tx.clone();
             let done_tx = done_tx.clone();
             let lib = lib.clone();
+            let cur_gen = generation.clone();
             std::thread::spawn(move || {
                 let mut clients: HashMap<i64, crate::immich::Client> = HashMap::new();
                 let mut thumbs: HashMap<i64, Option<crate::db::ImmichThumbs>> = HashMap::new();
                 loop {
-                    let job = {
-                        let rx = immich_rx.lock().unwrap();
-                        match rx.recv() {
-                            Ok(j) => j,
-                            Err(_) => return,
-                        }
-                    };
+                    let job = immich_rx.pop();
+                    if job.generation != cur_gen.load(Ordering::Relaxed) {
+                        continue;
+                    }
                     // Disk cache first: a stored thumbnail skips the HTTP call.
                     let cache = thumbs.entry(job.server_id).or_insert_with(|| {
                         crate::db::ImmichThumbs::open_for_server(job.server_id).ok()
@@ -524,11 +571,10 @@ impl Grid {
                     if let Some(cache) = cache.as_ref() {
                         if let Ok(Some(blob)) = cache.get(&job.asset_id) {
                             if !blob.is_empty() {
-                                let _ = done_tx.send(Done {
-                                    key: job.key,
-                                    blob,
-                                    generation: job.generation,
-                                });
+                                if let Some(done) = decode_rgba(job.key, &blob, job.generation)
+                                {
+                                    let _ = done_tx.send(done);
+                                }
                                 continue;
                             }
                         }
@@ -553,11 +599,9 @@ impl Grid {
                             {
                                 let _ = cache.put(&job.asset_id, &blob);
                             }
-                            let _ = done_tx.send(Done {
-                                key: job.key,
-                                blob,
-                                generation: job.generation,
-                            });
+                            if let Some(done) = decode_rgba(job.key, &blob, job.generation) {
+                                let _ = done_tx.send(done);
+                            }
                         }
                         _ => {}
                     }
@@ -599,7 +643,16 @@ impl Grid {
         let pause_for_apply = pause_until.clone();
         done_rx.attach(None, move |done: Done| {
             if done.generation == gen_for_apply.load(Ordering::Relaxed) {
-                if let Some(texture) = decode_texture(&done.blob) {
+                {
+                    let bytes = glib::Bytes::from_owned(done.rgba);
+                    let texture: gdk::Texture = gdk::MemoryTexture::new(
+                        done.width,
+                        done.height,
+                        gdk::MemoryFormat::R8g8b8a8,
+                        &bytes,
+                        (done.width * 4) as usize,
+                    )
+                    .upcast();
                     // Cache unconditionally, even if the cell that requested
                     // this decode has since scrolled out of view and unbound
                     // (see `drop_pending_for`): a fully-decoded texture must
@@ -640,6 +693,7 @@ impl Grid {
             jobs: job_tx,
             immich_jobs: immich_tx,
             pending,
+            edits: RefCell::new(HashMap::new()),
             all_photos: RefCell::new(Vec::new()),
             title: RefCell::new(String::new()),
             filter: RefCell::new(String::new()),
@@ -2167,7 +2221,7 @@ impl Grid {
         let orientation = obj.orientation();
         let id = obj.id();
         let size = self.thumb_size.get();
-        let edit = self.lib.photo_edit(id).unwrap_or_default();
+        let edit = self.edit_for(id);
         let base = if hash.is_empty() { &path } else { &hash };
         let key = format!("{base}|{size}|{orientation}|{}", edit.edit_rev);
 
@@ -2187,7 +2241,7 @@ impl Grid {
         let gen = self.generation.load(Ordering::Relaxed);
         self.pending.borrow_mut().insert(key.clone(), obj.clone());
         if let Some((server_id, asset_id)) = parse_immich_path(&path) {
-            let _ = self.immich_jobs.send(ImmichJob {
+            self.immich_jobs.push(ImmichJob {
                 key,
                 server_id,
                 asset_id,
@@ -2195,7 +2249,7 @@ impl Grid {
             });
             return;
         }
-        let _ = self.jobs.send(Job {
+        self.jobs.push(Job {
             key,
             hash,
             path,
@@ -2213,10 +2267,31 @@ impl Grid {
         let orientation = obj.orientation();
         let id = obj.id();
         let size = self.thumb_size.get();
-        let edit = self.lib.photo_edit(id).unwrap_or_default();
+        let edit = self.edit_for(id);
         let base = if hash.is_empty() { &path } else { &hash };
         let key = format!("{base}|{size}|{orientation}|{}", edit.edit_rev);
-        self.pending.borrow_mut().remove(&key);
+        if self.pending.borrow_mut().remove(&key).is_some() {
+            // Remove the queued job too, so a worker does not make a
+            // thumbnail for a cell that is not on screen.
+            self.jobs.retain(|j| j.key != key);
+            self.immich_jobs.retain(|j| j.key != key);
+        }
+    }
+
+    /// The number of photos that the current source loaded (before the filter).
+    pub fn loaded_count(&self) -> usize {
+        self.all_photos.borrow().len()
+    }
+
+    /// The edit of a photo. Reads the map that `rebuild` fills. Queries the
+    /// DB only for a photo that is not in the map.
+    fn edit_for(&self, id: i64) -> crate::model::PhotoEdit {
+        if let Some(e) = self.edits.borrow().get(&id) {
+            return e.clone();
+        }
+        let e = self.lib.photo_edit(id).unwrap_or_default();
+        self.edits.borrow_mut().insert(id, e.clone());
+        e
     }
 
     fn enqueue_thumb(
@@ -2229,7 +2304,7 @@ impl Grid {
     ) {
         self.pending.borrow_mut().insert(key.to_string(), obj.clone());
         if let Some((server_id, asset_id)) = parse_immich_path(&p.path) {
-            let _ = self.immich_jobs.send(ImmichJob {
+            self.immich_jobs.push(ImmichJob {
                 key: key.to_string(),
                 server_id,
                 asset_id,
@@ -2237,7 +2312,7 @@ impl Grid {
             });
             return;
         }
-        let _ = self.jobs.send(Job {
+        self.jobs.push(Job {
             key: key.to_string(),
             hash: p.hash.clone(),
             path: p.path.clone(),
@@ -2397,6 +2472,9 @@ impl Grid {
         }
 
         self.pending.borrow_mut().clear();
+        // The old view's queued jobs are stale. Remove them now.
+        self.jobs.clear();
+        self.immich_jobs.clear();
 
         let size = self.thumb_size.get();
         let mut objs = Vec::with_capacity(photos.len());
@@ -2419,6 +2497,13 @@ impl Grid {
 
         let ids: Vec<i64> = photos.iter().map(|p| p.id).collect();
         let edits = self.lib.photo_edits_for_photos(&ids).unwrap_or_default();
+        {
+            let mut map = self.edits.borrow_mut();
+            map.clear();
+            for &id in &ids {
+                map.insert(id, edits.get(&id).cloned().unwrap_or_default());
+            }
+        }
         for (p, obj) in photos.iter().zip(objs) {
             let edit = edits.get(&p.id).cloned().unwrap_or_default();
             let key = cell_key(p, size, &edit);
@@ -2980,31 +3065,3 @@ fn draw_face_badge(cr: &gtk4::cairo::Context, right: f64, bottom: f64) {
     let _ = cr.stroke();
 }
 
-/// Decode an image blob into a `gdk::Texture`.
-///
-/// Tries GTK's `PixbufLoader` first (fast for JPEG/PNG). Immich thumbnails are
-/// often WebP, which many GTK builds cannot load, so on failure the `image`
-/// crate decodes the bytes and the result is uploaded as an RGBA memory
-/// texture.
-fn decode_texture(blob: &[u8]) -> Option<gdk::Texture> {
-    let loader = PixbufLoader::new();
-    if loader.write(blob).is_ok() && loader.close().is_ok() {
-        if let Some(pixbuf) = loader.pixbuf() {
-            return Some(gdk::Texture::for_pixbuf(&pixbuf));
-        }
-    }
-    // Fallback: decode with the `image` crate (supports WebP) and build a
-    // memory texture from raw RGBA bytes.
-    let img = image::load_from_memory(blob).ok()?;
-    let rgba = img.to_rgba8();
-    let (w, h) = (rgba.width() as i32, rgba.height() as i32);
-    let bytes = glib::Bytes::from_owned(rgba.into_raw());
-    let texture = gdk::MemoryTexture::new(
-        w,
-        h,
-        gdk::MemoryFormat::R8g8b8a8,
-        &bytes,
-        (w * 4) as usize,
-    );
-    Some(texture.upcast())
-}
