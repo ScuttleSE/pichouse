@@ -417,6 +417,39 @@ impl Library {
         Ok(())
     }
 
+    /// Clear the name from a person. Every face keeps its cluster id and loses
+    /// the person link. The person row is deleted. The old cluster shows again
+    /// as an unnamed group. No re-scan is necessary.
+    pub fn unname_person(&self, id: i64) -> Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "UPDATE faces SET person_id = NULL, confirmed = 0 WHERE person_id = ?1",
+            params![id],
+        )?;
+        conn.execute("DELETE FROM persons WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Ban one photo from a person. Every face of that photo loses the person
+    /// link, loses its cluster id, and records a rejection. A re-cluster never
+    /// groups these faces under this person again.
+    pub fn ban_photo_from_person(&self, photo_id: i64, person_id: i64) -> Result<()> {
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        tx.execute(
+            "INSERT OR IGNORE INTO face_rejections(face_id, person_id) \
+             SELECT id, ?2 FROM faces WHERE photo_id = ?1 AND person_id = ?2",
+            params![photo_id, person_id],
+        )?;
+        tx.execute(
+            "UPDATE faces SET person_id = NULL, confirmed = 0, cluster_id = NULL \
+             WHERE photo_id = ?1 AND person_id = ?2",
+            params![photo_id, person_id],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
     /// Delete a person and ban every one of its faces. Each face records a
     /// rejection against this person, so a later re-scan and re-cluster never
     /// re-groups these faces under a person again. Photos on disk are not
@@ -886,7 +919,6 @@ impl Library {
     }
 
     /// Used by the tests and the benchmarks only.
-    #[cfg(test)]
     /// Mark one face as ignored.
     pub fn set_face_ignored(&self, face_id: i64) -> Result<()> {
         let conn = self.lock();

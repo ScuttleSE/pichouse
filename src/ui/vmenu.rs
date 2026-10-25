@@ -193,6 +193,162 @@ pub fn install_grid_context_menu(state: &Rc<AppState>, grid: &Rc<Grid>, sidebar:
         group.add_action(&act);
     }
 
+    // Ban selected photos from the person. A ban records a rejection, so a
+    // re-cluster never groups these photos under this person again.
+    {
+        let act = gio::SimpleAction::new("ban-from-person", None);
+        let state = state.clone();
+        let grid = grid.clone();
+        let sidebar = sidebar.clone();
+        let pop = pop.clone();
+        act.connect_activate(move |_, _| {
+            dismiss(&pop);
+            let Some(person_id) = grid.current_person() else {
+                return;
+            };
+            for id in local_photo_ids(&grid) {
+                if let Err(e) = state.lib.ban_photo_from_person(id, person_id) {
+                    show_error(&state, &e.to_string());
+                    return;
+                }
+            }
+            grid.reload_from_source();
+            sidebar.reload_deferred();
+        });
+        group.add_action(&act);
+    }
+
+    // Assign selected photos to a new or existing person. In an unnamed
+    // cluster this moves the faces of that cluster. In a person view this
+    // moves the faces of the current person to a different person.
+    {
+        let act = gio::SimpleAction::new("assign-to-person", None);
+        let state = state.clone();
+        let grid = grid.clone();
+        let sidebar = sidebar.clone();
+        let pop = pop.clone();
+        act.connect_activate(move |_, _| {
+            dismiss(&pop);
+            let ids = local_photo_ids(&grid);
+            if ids.is_empty() {
+                return;
+            }
+            let id_set: std::collections::HashSet<i64> = ids.iter().copied().collect();
+            let (face_ids, exclude): (Vec<i64>, Option<i64>) =
+                if let Some(cluster_id) = grid.current_cluster() {
+                    match state.lib.unassigned_faces_in_cluster(cluster_id) {
+                        Ok(f) => (
+                            f.into_iter()
+                                .filter(|f| id_set.contains(&f.photo_id))
+                                .map(|f| f.id)
+                                .collect(),
+                            None,
+                        ),
+                        Err(e) => {
+                            show_error(&state, &e.to_string());
+                            return;
+                        }
+                    }
+                } else if let Some(person_id) = grid.current_person() {
+                    let mut fids = Vec::new();
+                    for &pid in &ids {
+                        match state.lib.faces_for_photo(pid) {
+                            Ok(faces) => fids.extend(
+                                faces
+                                    .into_iter()
+                                    .filter(|f| f.person_id == person_id)
+                                    .map(|f| f.id),
+                            ),
+                            Err(e) => {
+                                show_error(&state, &e.to_string());
+                                return;
+                            }
+                        }
+                    }
+                    (fids, Some(person_id))
+                } else {
+                    return;
+                };
+            if face_ids.is_empty() {
+                return;
+            }
+            let (grid2, sidebar2) = (grid.clone(), sidebar.clone());
+            super::people::assign_photos_to_person_dialog(
+                &state,
+                face_ids,
+                ids.len(),
+                exclude,
+                move || {
+                    grid2.reload_from_source();
+                    sidebar2.reload_deferred();
+                },
+            );
+        });
+        group.add_action(&act);
+    }
+
+    // Open the per-photo face picker for persons, one photo at a time. In an
+    // unnamed cluster, use the photos of that cluster. In a normal album, use
+    // every selected photo.
+    {
+        let act = gio::SimpleAction::new("assign-person-faces-individually", None);
+        let state = state.clone();
+        let grid = grid.clone();
+        let sidebar = sidebar.clone();
+        let pop = pop.clone();
+        act.connect_activate(move |_, _| {
+            dismiss(&pop);
+            let ids = local_photo_ids(&grid);
+            if ids.is_empty() {
+                return;
+            }
+            let id_set: std::collections::HashSet<i64> = ids.iter().copied().collect();
+            let photo_ids: std::collections::BTreeSet<i64> =
+                if let Some(cluster_id) = grid.current_cluster() {
+                    match state.lib.unassigned_faces_in_cluster(cluster_id) {
+                        Ok(f) => f
+                            .iter()
+                            .filter(|f| id_set.contains(&f.photo_id))
+                            .map(|f| f.photo_id)
+                            .collect(),
+                        Err(e) => {
+                            show_error(&state, &e.to_string());
+                            return;
+                        }
+                    }
+                } else {
+                    ids.iter().copied().collect()
+                };
+            let mut groups: Vec<Vec<i64>> = Vec::new();
+            for pid in photo_ids {
+                match state.lib.faces_for_photo(pid) {
+                    Ok(all) => {
+                        let g: Vec<i64> =
+                            all.into_iter().filter(|f| f.person_id == 0).map(|f| f.id).collect();
+                        if !g.is_empty() {
+                            groups.push(g);
+                        }
+                    }
+                    Err(e) => {
+                        show_error(&state, &e.to_string());
+                        return;
+                    }
+                }
+            }
+            if groups.is_empty() {
+                return;
+            }
+            open_person_dialogs_sequentially(
+                state.clone(),
+                grid.clone(),
+                sidebar.clone(),
+                std::collections::VecDeque::from(groups),
+                Vec::new(),
+            );
+        });
+        group.add_action(&act);
+    }
+
     // Remove selected photos from the unnamed face cluster being viewed.
     {
         let act = gio::SimpleAction::new("remove-from-cluster", None);
@@ -928,7 +1084,7 @@ pub fn quick_assign_photos<F: Fn(&std::collections::HashSet<i64>) + 'static>(
     if style {
         characters::assign_photos_to_character_dialog(state, batch, n, None, on_done);
     } else {
-        super::people::assign_photos_to_person_dialog(state, batch, n, on_done);
+        super::people::assign_photos_to_person_dialog(state, batch, n, None, on_done);
     }
 }
 
@@ -963,6 +1119,39 @@ fn open_per_face_dialogs_sequentially(
         },
         move |resolved| {
             open_per_face_dialogs_sequentially(
+                state_n.clone(),
+                grid_n.clone(),
+                sidebar_n.clone(),
+                groups.clone(),
+                resolved,
+            );
+        },
+    );
+}
+
+/// The person form of `open_per_face_dialogs_sequentially`.
+fn open_person_dialogs_sequentially(
+    state: Rc<AppState>,
+    grid: Rc<Grid>,
+    sidebar: Rc<Sidebar>,
+    mut groups: std::collections::VecDeque<Vec<i64>>,
+    preselect: Vec<Option<i64>>,
+) {
+    let Some(face_ids) = groups.pop_front() else {
+        return;
+    };
+    let (grid_a, sidebar_a) = (grid.clone(), sidebar.clone());
+    let (state_n, grid_n, sidebar_n) = (state.clone(), grid.clone(), sidebar.clone());
+    super::people::assign_faces_per_face_dialog(
+        &state,
+        face_ids,
+        preselect,
+        move || {
+            grid_a.reload_from_source();
+            sidebar_a.reload_deferred();
+        },
+        move |resolved| {
+            open_person_dialogs_sequentially(
                 state_n.clone(),
                 grid_n.clone(),
                 sidebar_n.clone(),
@@ -1010,14 +1199,30 @@ fn build_menu(state: &Rc<AppState>, grid: &Rc<Grid>) -> gio::Menu {
     if selected_local >= 1 {
         if grid.current_person().is_some() {
             group_tools.append(
+                Some("Move to another person…"),
+                Some("grid.assign-to-person"),
+            );
+            group_tools.append(
                 Some("Remove from this person"),
                 Some("grid.remove-from-person"),
+            );
+            group_tools.append(
+                Some("Not this person (ban)"),
+                Some("grid.ban-from-person"),
             );
         }
         if grid.current_cluster().is_some() {
             group_tools.append(
                 Some("Remove from this group"),
                 Some("grid.remove-from-cluster"),
+            );
+            group_tools.append(
+                Some("Assign to person…"),
+                Some("grid.assign-to-person"),
+            );
+            group_tools.append(
+                Some("Assign faces one by one…"),
+                Some("grid.assign-person-faces-individually"),
             );
         }
         if grid.current_character().is_some() {
@@ -1064,6 +1269,10 @@ fn build_menu(state: &Rc<AppState>, grid: &Rc<Grid>) -> gio::Menu {
             group_tools.append(
                 Some("Assign character faces one by one…"),
                 Some("grid.assign-faces-individually"),
+            );
+            group_tools.append(
+                Some("Assign person faces one by one…"),
+                Some("grid.assign-person-faces-individually"),
             );
             group_tools.append(
                 Some("Ignore unassigned faces"),

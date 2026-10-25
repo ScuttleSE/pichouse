@@ -483,6 +483,18 @@ Both systems take a `ClusterParams` struct. The config builds it with
   photos)…"). The menu covers the album selection and all sub-albums
   (`Sidebar::quick_assign_albums`).
 
+### People and Characters parity
+
+- `FacesView` (`src/ui/facesview.rs`) is a port of `CharactersView`. Keep the
+  two files in step. A change to one view needs the same change in the other.
+- One click selects a tile. Two clicks open the group. A right-click opens
+  the tile menu: rename, clear name, delete, name, and ignore.
+- `people::name_cluster_dialog` takes a list of cluster ids.
+- `people::assign_faces_per_face_dialog` is the person form of
+  `characters::assign_style_faces_per_face_dialog`.
+- The grid actions `assign-to-person`, `ban-from-person`, and
+  `assign-person-faces-individually` mirror the character actions.
+
 ### Recent characters and persons
 
 - `Library::note_recent` keeps up to 3 ids, newest first, in the settings

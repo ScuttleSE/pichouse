@@ -4,19 +4,26 @@
 use std::rc::Rc;
 
 use gtk4::prelude::*;
+use std::cell::RefCell;
+
 use gtk4::{
-    Box as GtkBox, Button, DropDown, Label, Orientation, Separator, StringList, Window,
+    Box as GtkBox, Button, DropDown, Frame, Image, Label, Orientation, PolicyType,
+    ScrolledWindow, Separator, StringList, Window,
 };
 
 use super::dialogs::prompt_text;
 use super::state::{show_error, AppState};
-/// Create a person and assign every face in the cluster to it.
-fn name_cluster(state: &Rc<AppState>, cluster_id: i64, name: &str) -> Result<(), String> {
+use super::util::texture_from_bytes;
+/// Create a person and assign every face in every given cluster to it.
+fn name_clusters(state: &Rc<AppState>, cluster_ids: &[i64], name: &str) -> Result<(), String> {
     let person_id = state
         .lib
         .create_person(name)
         .map_err(|e| e.to_string())?;
-    assign_cluster_to_person(state, cluster_id, person_id)
+    for &c in cluster_ids {
+        assign_cluster_to_person(state, c, person_id)?;
+    }
+    Ok(())
 }
 
 /// Assign every unassigned face in a cluster to a person.
@@ -79,6 +86,7 @@ pub fn assign_photos_to_person_dialog<F: Fn() + 'static>(
     state: &Rc<AppState>,
     face_ids: Vec<i64>,
     photo_count: usize,
+    exclude_person_id: Option<i64>,
     on_done: F,
 ) {
     if face_ids.is_empty() {
@@ -104,6 +112,7 @@ pub fn assign_photos_to_person_dialog<F: Fn() + 'static>(
         .unwrap_or_default()
         .into_iter()
         .map(|(p, _)| p)
+        .filter(|p| Some(p.id) != exclude_person_id)
         .collect();
     let on_done = Rc::new(on_done);
     let face_ids = Rc::new(face_ids);
@@ -152,6 +161,12 @@ pub fn assign_photos_to_person_dialog<F: Fn() + 'static>(
         let labels: Vec<String> = people.iter().map(|p| p.name.clone()).collect();
         let label_refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
         let drop = DropDown::new(Some(StringList::new(&label_refs)), gtk4::Expression::NONE);
+        // Pre-select the person from the last assignment, if it still exists.
+        if let Some(&last) = state.lib.recent_ids(crate::db::RECENT_PERSONS_KEY).first() {
+            if let Some(pos) = people.iter().position(|p| p.id == last) {
+                drop.set_selected(pos as u32);
+            }
+        }
         let assign = Button::with_label("Assign");
         assign.add_css_class("suggested-action");
         root.append(&drop);
@@ -323,13 +338,18 @@ pub fn assign_face_dialog<F: Fn() + 'static>(state: &Rc<AppState>, face_id: i64,
     win.present();
 }
 
-/// A dialog to name an unnamed cluster or merge it into an existing person.
+/// A dialog to name one or more unnamed clusters as one new person, or to
+/// merge them into an existing person.
 /// Runs `on_done` on success.
 pub fn name_cluster_dialog<F: Fn() + 'static>(
     state: &Rc<AppState>,
-    cluster_id: i64,
+    cluster_ids: Vec<i64>,
     on_done: F,
 ) {
+    if cluster_ids.is_empty() {
+        return;
+    }
+    let cluster_ids = Rc::new(cluster_ids);
     let win = Window::builder()
         .title("Name Person")
         .modal(true)
@@ -355,7 +375,12 @@ pub fn name_cluster_dialog<F: Fn() + 'static>(
     let on_done = Rc::new(on_done);
 
     // New person.
-    root.append(&Label::new(Some("Name this group as a new person:")));
+    let new_label = if cluster_ids.len() > 1 {
+        format!("Name these {} groups as one new person:", cluster_ids.len())
+    } else {
+        "Name this group as a new person:".to_string()
+    };
+    root.append(&Label::new(Some(&new_label)));
     let name_btn = Button::with_label("New person…");
     name_btn.add_css_class("suggested-action");
     root.append(&name_btn);
@@ -363,10 +388,12 @@ pub fn name_cluster_dialog<F: Fn() + 'static>(
         let state = state.clone();
         let win = win.clone();
         let on_done = on_done.clone();
+        let cluster_ids = cluster_ids.clone();
         name_btn.connect_clicked(move |_| {
             let state2 = state.clone();
             let win2 = win.clone();
             let on_done2 = on_done.clone();
+            let cluster_ids2 = cluster_ids.clone();
             prompt_text(
                 &state,
                 Some(&win),
@@ -377,7 +404,7 @@ pub fn name_cluster_dialog<F: Fn() + 'static>(
                     if name.trim().is_empty() {
                         return;
                     }
-                    if let Err(e) = name_cluster(&state2, cluster_id, &name) {
+                    if let Err(e) = name_clusters(&state2, &cluster_ids2, &name) {
                         show_error(&state2, &e);
                         return;
                     }
@@ -403,10 +430,14 @@ pub fn name_cluster_dialog<F: Fn() + 'static>(
         let people2 = people.clone();
         let win2 = win.clone();
         let on_done2 = on_done.clone();
+        let cluster_ids = cluster_ids.clone();
         merge.connect_clicked(move |_| {
             let idx = drop.selected() as usize;
             if let Some(p) = people2.get(idx) {
-                if let Err(e) = assign_cluster_to_person(&state, cluster_id, p.id) {
+                let res = cluster_ids
+                    .iter()
+                    .try_for_each(|&c| assign_cluster_to_person(&state, c, p.id));
+                if let Err(e) = res {
                     show_error(&state, &e);
                     return;
                 }
@@ -422,6 +453,315 @@ pub fn name_cluster_dialog<F: Fn() + 'static>(
         cancel.connect_clicked(move |_| win.close());
     }
     root.append(&cancel);
+
+    win.set_child(Some(&root));
+    win.present();
+}
+
+/// A dialog to resolve every unidentified face in one photo at once:
+/// one card per face (its crop as the title image, its own
+/// assign-to-existing/new-person controls below), laid out side by side.
+/// Each card resolves independently — assigning one face does not close the
+/// dialog or affect the others, so a photo with several different unnamed
+/// faces can be fully resolved in one sitting. `on_assigned` runs after each
+/// successful per-face assignment (not once for the whole dialog), so the
+/// caller's view/sidebar stays live as faces are resolved one at a time.
+/// `on_closed` runs exactly once, when the dialog window closes (via "Done"
+/// or the window's own close control) regardless of how many faces were
+/// actually resolved, so a caller showing one of these per photo can chain to
+/// the next photo's dialog. It receives the person each face ended up
+/// assigned to (`None` for a face left unresolved), in the same order as
+/// `face_ids`, so the caller can carry it forward as the next call's
+/// `preselect`.
+///
+/// `preselect` pre-selects each face's existing-person dropdown, by
+/// position (same order as `face_ids`) — typically the people the
+/// previous photo in a batch was resolved to, so assigning the same people
+/// across a run of photos needs no re-picking each time. A position past the
+/// end of `face_ids`, or naming a person no longer in the list, is
+/// ignored. Pass an empty `Vec` for none.
+pub fn assign_faces_per_face_dialog<F: Fn() + 'static, G: Fn(Vec<Option<i64>>) + 'static>(
+    state: &Rc<AppState>,
+    face_ids: Vec<i64>,
+    preselect: Vec<Option<i64>>,
+    on_assigned: F,
+    on_closed: G,
+) {
+    if face_ids.is_empty() {
+        return;
+    }
+    let win = Window::builder()
+        .title("Assign to Person")
+        .modal(true)
+        .default_width(420)
+        .build();
+    if let Some(w) = state.window() {
+        win.set_transient_for(Some(&w));
+    }
+    let root = GtkBox::new(Orientation::Vertical, 8);
+    root.set_margin_top(12);
+    root.set_margin_bottom(12);
+    root.set_margin_start(12);
+    root.set_margin_end(12);
+
+    let n = face_ids.len();
+    let label_text = if n > 1 {
+        format!("{n} unidentified faces in this photo — assign each:")
+    } else {
+        "1 unidentified face in this photo:".to_string()
+    };
+    root.append(&Label::new(Some(&label_text)));
+
+    let people: Rc<Vec<crate::model::Person>> = Rc::new(
+        state
+            .lib
+            .persons()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(c, _)| c)
+            .collect(),
+    );
+
+    let on_assigned = Rc::new(on_assigned);
+
+    let cards = GtkBox::new(Orientation::Horizontal, 10);
+    let scroller = ScrolledWindow::builder()
+        .hscrollbar_policy(PolicyType::Automatic)
+        .vscrollbar_policy(PolicyType::Never)
+        .child(&cards)
+        .build();
+    root.append(&scroller);
+
+    // Per-card state the "Done" and "Swap" buttons need after the loop: each
+    // face's dropdown (`None` when there are no people to pick from) and
+    // its resolved person, so both can drive an assignment the same way
+    // the per-card "Assign" button does.
+    let mut drops: Vec<Option<DropDown>> = Vec::with_capacity(n);
+    let mut resolved: Vec<Rc<RefCell<Option<i64>>>> = Vec::with_capacity(n);
+    let mut ignored: Vec<Rc<std::cell::Cell<bool>>> = Vec::with_capacity(n);
+
+    for (i, &face_id) in face_ids.iter().enumerate() {
+        let frame = Frame::new(None);
+        frame.add_css_class("dup-group-frame");
+        let card = GtkBox::new(Orientation::Vertical, 6);
+        card.set_margin_top(8);
+        card.set_margin_bottom(8);
+        card.set_margin_start(8);
+        card.set_margin_end(8);
+        card.set_width_request(150);
+        frame.set_child(Some(&card));
+        cards.append(&frame);
+
+        // The face crop.
+        let image = Image::new();
+        image.set_pixel_size(110);
+        image.set_size_request(110, 110);
+        image.set_icon_name(Some("avatar-default-symbolic"));
+        card.append(&image);
+        if let Some(tex) = state.face_crop_jpeg(face_id).and_then(|j| texture_from_bytes(&j)) {
+            image.set_paintable(Some(&tex));
+        }
+
+        // The controls: existing-person picker + "New person…". Both
+        // are replaced by the confirmation label below once this face is
+        // resolved.
+        let controls = GtkBox::new(Orientation::Vertical, 6);
+        card.append(&controls);
+        let confirm = Label::new(None);
+        confirm.set_wrap(true);
+        confirm.set_visible(false);
+        card.append(&confirm);
+
+        let card_resolved: Rc<RefCell<Option<i64>>> = Rc::new(RefCell::new(None));
+        let card_ignored: Rc<std::cell::Cell<bool>> = Rc::new(std::cell::Cell::new(false));
+
+        if !people.is_empty() {
+            let labels: Vec<String> = people.iter().map(|c| c.name.clone()).collect();
+            let label_refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
+            let sl = StringList::new(&label_refs);
+            let drop = DropDown::new(Some(sl), gtk4::Expression::NONE);
+            if let Some(Some(cid)) = preselect.get(i) {
+                if let Some(pos) = people.iter().position(|c| c.id == *cid) {
+                    drop.set_selected(pos as u32);
+                }
+            }
+            controls.append(&drop);
+            let assign = Button::with_label("Assign");
+            assign.add_css_class("suggested-action");
+            controls.append(&assign);
+
+            let state2 = state.clone();
+            let people2 = people.clone();
+            let controls2 = controls.clone();
+            let confirm2 = confirm.clone();
+            let on_assigned2 = on_assigned.clone();
+            let drop2 = drop.clone();
+            let resolved2 = card_resolved.clone();
+            assign.connect_clicked(move |_| {
+                let idx = drop2.selected() as usize;
+                let Some(c) = people2.get(idx) else {
+                    return;
+                };
+                if let Err(e) = state2.lib.set_face_person(face_id, c.id) {
+                    show_error(&state2, &e.to_string());
+                    return;
+                }
+                if let Some(sb) = state2.sidebar.borrow().as_ref() {
+                    sb.reload_deferred();
+                }
+                controls2.set_visible(false);
+                confirm2.set_text(&format!("Assigned to {}", c.name));
+                confirm2.set_visible(true);
+                *resolved2.borrow_mut() = Some(c.id);
+                on_assigned2();
+            });
+
+            drops.push(Some(drop));
+        } else {
+            drops.push(None);
+        }
+
+        let new_btn = Button::with_label("New person…");
+        controls.append(&new_btn);
+        let state2 = state.clone();
+        let win2 = win.clone();
+        let controls2 = controls.clone();
+        let confirm2 = confirm.clone();
+        let on_assigned2 = on_assigned.clone();
+        let resolved2 = card_resolved.clone();
+        new_btn.connect_clicked(move |_| {
+            let state3 = state2.clone();
+            let controls3 = controls2.clone();
+            let confirm3 = confirm2.clone();
+            let on_assigned3 = on_assigned2.clone();
+            let resolved3 = resolved2.clone();
+            prompt_text(
+                &state2,
+                Some(&win2),
+                "New Person",
+                "Person name:",
+                "",
+                move |name| {
+                    if name.trim().is_empty() {
+                        return;
+                    }
+                    let cid = match state3.lib.create_person(&name) {
+                        Ok(cid) => cid,
+                        Err(e) => {
+                            show_error(&state3, &e.to_string());
+                            return;
+                        }
+                    };
+                    if let Err(e) = state3.lib.set_face_person(face_id, cid) {
+                        show_error(&state3, &e.to_string());
+                        return;
+                    }
+                    let _ = state3.lib.set_person_cover(cid, face_id);
+                    if let Some(sb) = state3.sidebar.borrow().as_ref() {
+                        sb.reload_deferred();
+                    }
+                    controls3.set_visible(false);
+                    confirm3.set_text(&format!("Assigned to {name}"));
+                    confirm3.set_visible(true);
+                    *resolved3.borrow_mut() = Some(cid);
+                    on_assigned3();
+                },
+            );
+        });
+
+        // "Ignore" marks the face as ignored. The face then has no owner and
+        // no group, and "Done" does not assign it.
+        let ignore_btn = Button::with_label("Ignore");
+        controls.append(&ignore_btn);
+        {
+            let state2 = state.clone();
+            let controls2 = controls.clone();
+            let confirm2 = confirm.clone();
+            let on_assigned2 = on_assigned.clone();
+            let ignored2 = card_ignored.clone();
+            ignore_btn.connect_clicked(move |_| {
+                if let Err(e) = state2.lib.set_face_ignored(face_id) {
+                    show_error(&state2, &e.to_string());
+                    return;
+                }
+                if let Some(sb) = state2.sidebar.borrow().as_ref() {
+                    sb.reload_deferred();
+                }
+                controls2.set_visible(false);
+                confirm2.set_text("Ignored");
+                confirm2.set_visible(true);
+                ignored2.set(true);
+                on_assigned2();
+            });
+        }
+
+        resolved.push(card_resolved);
+        ignored.push(card_ignored);
+    }
+
+    // "Swap" trades the two faces' currently-selected people — handy for
+    // a batch of photos with the same two people, sometimes on the left and
+    // sometimes on the right, so a mis-ordered preselect can be fixed in one
+    // click instead of re-picking both dropdowns.
+    if n == 2 {
+        if let (Some(d0), Some(d1)) = (drops[0].clone(), drops[1].clone()) {
+            let swap = Button::with_label("Swap");
+            root.append(&swap);
+            swap.connect_clicked(move |_| {
+                let a = d0.selected();
+                let b = d1.selected();
+                d0.set_selected(b);
+                d1.set_selected(a);
+            });
+        }
+    }
+
+    let done = Button::with_label("Done");
+    root.append(&Separator::new(Orientation::Horizontal));
+    root.append(&done);
+    {
+        let win = win.clone();
+        let state = state.clone();
+        let people = people.clone();
+        let on_assigned = on_assigned.clone();
+        let face_ids = face_ids.clone();
+        let drops = drops.clone();
+        let resolved = resolved.clone();
+        done.connect_clicked(move |_| {
+            // Clicking "Done" with a person still selected in a card's
+            // dropdown assigns it first, so the user doesn't have to click
+            // "Assign" then "Done" for every face.
+            for i in 0..face_ids.len() {
+                if resolved[i].borrow().is_some() || ignored[i].get() {
+                    continue;
+                }
+                let Some(drop) = &drops[i] else { continue };
+                let idx = drop.selected() as usize;
+                let Some(c) = people.get(idx) else { continue };
+                let face_id = face_ids[i];
+                if let Err(e) = state.lib.set_face_person(face_id, c.id) {
+                    show_error(&state, &e.to_string());
+                    continue;
+                }
+                if let Some(sb) = state.sidebar.borrow().as_ref() {
+                    sb.reload_deferred();
+                }
+                *resolved[i].borrow_mut() = Some(c.id);
+                on_assigned();
+            }
+            win.close();
+        });
+    }
+
+    // Fires exactly once, however the window closes (the "Done" button just
+    // calls `win.close()` above, which triggers this on its own), so a caller
+    // driving one of these dialogs per photo can chain to the next, carrying
+    // forward the person each face ended up assigned to.
+    win.connect_close_request(move |_| {
+        let final_selection: Vec<Option<i64>> = resolved.iter().map(|r| *r.borrow()).collect();
+        on_closed(final_selection);
+        gtk4::glib::Propagation::Proceed
+    });
 
     win.set_child(Some(&root));
     win.present();
