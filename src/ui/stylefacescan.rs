@@ -7,6 +7,7 @@
 
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 use std::sync::{Arc, Mutex};
 
 use gtk4::glib;
@@ -174,6 +175,12 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::styleface::Styl
         // Guard against two workers running a full recluster at the same time.
         // A recluster reads every face and re-groups it. Two at once waste CPU.
         let reclustering = Arc::new(AtomicBool::new(false));
+        // HDBSCAN cannot stop in the middle, and it can run for minutes. So
+        // each regroup runs in its own thread, and no scan thread waits for a
+        // progressive one. `generation` tells a regroup if its result is still
+        // current. The write happens under this lock, so an old regroup never
+        // writes over a newer result.
+        let generation = Arc::new(Mutex::new(0u64));
         let mut handles = Vec::new();
         for _ in 0..workers {
             let jobs = jobs.clone();
@@ -183,6 +190,7 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::styleface::Styl
             let done = done.clone();
             let tx = tx.clone();
             let reclustering = reclustering.clone();
+            let generation = generation.clone();
             handles.push(std::thread::spawn(move || loop {
                 if cancel.load(Ordering::Relaxed) {
                     return;
@@ -211,11 +219,21 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::styleface::Styl
                         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
                         .is_ok()
                 {
-                    if let Err(e) = recluster(&lib, cfg_params) {
-                        log::warn!("progressive style clustering: {e}");
-                    }
-                    reclustering.store(false, Ordering::Release);
-                    let _ = tx.send(Msg::Refresh);
+                    let my_gen = *generation.lock().unwrap();
+                    let lib = lib.clone();
+                    let tx = tx.clone();
+                    let reclustering = reclustering.clone();
+                    let generation = generation.clone();
+                    std::thread::spawn(move || {
+                        match recluster(&lib, cfg_params, &generation, my_gen) {
+                            Ok(true) => {
+                                let _ = tx.send(Msg::Refresh);
+                            }
+                            Ok(false) => {}
+                            Err(e) => log::warn!("progressive style clustering: {e}"),
+                        }
+                        reclustering.store(false, Ordering::Release);
+                    });
                 }
             }));
         }
@@ -223,9 +241,34 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::styleface::Styl
             let _ = h.join();
         }
 
-        let _ = tx.send(Msg::Message("Grouping stylised faces…".into()));
-        if let Err(e) = recluster(&lib, cfg.cluster_params()) {
-            log::warn!("style clustering: {e}");
+        // A new generation makes any progressive regroup that still runs
+        // discard its result.
+        let final_gen = {
+            let mut g = generation.lock().unwrap();
+            *g += 1;
+            *g
+        };
+        if !cancel.load(Ordering::Relaxed) {
+            let _ = tx.send(Msg::Message("Grouping stylised faces…".into()));
+            let job = {
+                let lib = lib.clone();
+                let generation = generation.clone();
+                let params = cfg.cluster_params();
+                std::thread::spawn(move || {
+                    if let Err(e) = recluster(&lib, params, &generation, final_gen) {
+                        log::warn!("style clustering: {e}");
+                    }
+                })
+            };
+            // Wait for the regroup, but stop the wait when the user cancels.
+            // On cancel, a new generation makes the regroup discard its result.
+            while !job.is_finished() {
+                if cancel.load(Ordering::Relaxed) {
+                    *generation.lock().unwrap() += 1;
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
         }
 
         let (d, e) = *done.lock().unwrap();
@@ -315,19 +358,27 @@ pub fn recluster_now(state: &Rc<AppState>) {
         });
     }
     std::thread::spawn(move || {
-        let _ = recluster(&lib, params);
+        let generation = Mutex::new(0u64);
+        let _ = recluster(&lib, params, &generation, 0);
         let _ = tx.send(());
     });
 }
 
 /// Re-cluster every embedded stylised face in the library. Character-assigned
-/// faces anchor stable clusters. HDBSCAN groups the rest.
-fn recluster(lib: &Library, params: cluster::ClusterParams) -> Result<(), String> {
+/// faces anchor stable clusters. HDBSCAN groups the rest. The function writes
+/// the result only when `generation` still holds `my_gen`. It returns whether
+/// it wrote.
+fn recluster(
+    lib: &Library,
+    params: cluster::ClusterParams,
+    generation: &Mutex<u64>,
+    my_gen: u64,
+) -> Result<bool, String> {
     let rows = lib
         .style_faces_for_clustering()
         .map_err(|e| format!("read style faces: {e}"))?;
     if rows.is_empty() {
-        return Ok(());
+        return Ok(false);
     }
     let rejections = lib.style_face_rejection_map().unwrap_or_default();
     let items: Vec<ClusterItem> = rows
@@ -345,9 +396,14 @@ fn recluster(lib: &Library, params: cluster::ClusterParams) -> Result<(), String
         .into_iter()
         .map(|a| (a.face_id, a.cluster_id))
         .collect();
+    let g = generation.lock().unwrap();
+    if *g != my_gen {
+        return Ok(false);
+    }
     lib.set_style_face_clusters(&pairs)
         .map_err(|e| format!("write clusters: {e}"))?;
-    Ok(())
+    drop(g);
+    Ok(true)
 }
 
 /// Download the two selected stylised models (and the ONNX Runtime) in the
