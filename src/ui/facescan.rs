@@ -188,6 +188,10 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::face::FaceConfi
         let cfg_params = cfg.cluster_params();
         // Guard against two workers running a full recluster at the same time.
         let reclustering = Arc::new(AtomicBool::new(false));
+        // Set when the queue is empty. A progressive regroup then stops, because
+        // the final regroup does the same work. Without this, the last worker can
+        // hold the scan at "N/N" for minutes.
+        let queue_empty = Arc::new(AtomicBool::new(false));
         let mut handles = Vec::new();
         for _ in 0..workers {
             let jobs = jobs.clone();
@@ -197,6 +201,7 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::face::FaceConfi
             let done = done.clone();
             let tx = tx.clone();
             let reclustering = reclustering.clone();
+            let queue_empty = queue_empty.clone();
             handles.push(std::thread::spawn(move || loop {
                 if cancel.load(Ordering::Relaxed) {
                     return;
@@ -205,7 +210,10 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::face::FaceConfi
                     let mut q = jobs.lock().unwrap();
                     q.pop_front()
                 };
-                let Some(id) = id else { return };
+                let Some(id) = id else {
+                    queue_empty.store(true, Ordering::Relaxed);
+                    return;
+                };
 
                 let ok = scan_one_photo(&lib, &pipeline, id);
 
@@ -228,7 +236,10 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::face::FaceConfi
                         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
                         .is_ok()
                 {
-                    if let Err(e) = recluster(&lib, cfg_params) {
+                    let stop = || {
+                        cancel.load(Ordering::Relaxed) || queue_empty.load(Ordering::Relaxed)
+                    };
+                    if let Err(e) = recluster(&lib, cfg_params, &stop) {
                         log::warn!("progressive clustering: {e}");
                     }
                     reclustering.store(false, Ordering::Release);
@@ -243,7 +254,7 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::face::FaceConfi
         // Cluster the whole library's embeddings so new faces join the right
         // group and named people pull matching faces in.
         let _ = tx.send(Msg::Message("Grouping faces…".into()));
-        if let Err(e) = recluster(&lib, cfg.cluster_params()) {
+        if let Err(e) = recluster(&lib, cfg.cluster_params(), &|| cancel.load(Ordering::Relaxed)) {
             log::warn!("clustering: {e}");
         }
 
@@ -365,14 +376,20 @@ pub fn recluster_now(state: &Rc<AppState>) {
         });
     }
     std::thread::spawn(move || {
-        let _ = recluster(&lib, params);
+        let _ = recluster(&lib, params, &|| false);
         let _ = tx.send(());
     });
 }
 
 /// Re-cluster every embedded face in the library. Person-assigned faces anchor
 /// stable clusters, so named people keep their identity across runs.
-fn recluster(lib: &Library, params: cluster::ClusterParams) -> Result<(), String> {
+/// `stop` is checked during the grouping. When it returns true, the function
+/// returns without a write, so the old groups stay.
+fn recluster(
+    lib: &Library,
+    params: cluster::ClusterParams,
+    stop: &dyn Fn() -> bool,
+) -> Result<(), String> {
     let rows = lib
         .faces_for_clustering()
         .map_err(|e| format!("read faces: {e}"))?;
@@ -392,7 +409,9 @@ fn recluster(lib: &Library, params: cluster::ClusterParams) -> Result<(), String
         .collect();
     // Unnamed cluster ids start above any existing unnamed id to avoid reuse.
     let next = 1i64;
-    let assignments = cluster::cluster(&items, params, next);
+    let Some(assignments) = cluster::cluster_with_stop(&items, params, next, stop) else {
+        return Ok(());
+    };
     let pairs: Vec<(i64, i64)> = assignments
         .into_iter()
         .map(|a| (a.face_id, a.cluster_id))

@@ -38,6 +38,7 @@ impl Default for ClusterParams {
 
 /// Cosine similarity of two equal-length vectors. Returns 0.0 for a length
 /// mismatch or an empty vector.
+#[allow(dead_code)]
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     if a.len() != b.len() || a.is_empty() {
         return 0.0;
@@ -94,24 +95,65 @@ pub struct ClusterAssignment {
 /// collides with an unnamed cluster id.
 pub const PERSON_CLUSTER_BASE: i64 = 1_000_000_000;
 
+#[allow(dead_code)]
 pub fn cluster(
     items: &[ClusterItem],
     params: ClusterParams,
-    mut next_cluster_id: i64,
+    next_cluster_id: i64,
 ) -> Vec<ClusterAssignment> {
+    cluster_with_stop(items, params, next_cluster_id, &|| false)
+        .expect("a stop check that never stops")
+}
+
+/// The same as `cluster`, but `stop` is checked often. When `stop` returns
+/// true, the function returns `None` at once. The full pass compares each face
+/// with each group, so it can run for minutes on a large library.
+pub fn cluster_with_stop(
+    items: &[ClusterItem],
+    params: ClusterParams,
+    mut next_cluster_id: i64,
+    stop: &dyn Fn() -> bool,
+) -> Option<Vec<ClusterAssignment>> {
     let threshold = params.threshold;
     let agreement = params.agreement.clamp(0.0, 1.0);
-    // A centroid holds the sum of its members' embeddings. Cosine similarity
-    // ignores scale, so the sum gives the same result as the mean.
+    // Normalize each embedding one time. Then a cosine similarity is a dot
+    // product. A zero vector stays zero and matches nothing.
+    let unit: Vec<Vec<f32>> = items.iter().map(|it| normalized(&it.embedding)).collect();
+    // A centroid holds the sum of its members' unit embeddings and the length
+    // of that sum. Cosine similarity ignores scale, so the sum gives the same
+    // result as the mean.
     struct Centroid {
         cluster_id: i64,
         sum: Vec<f32>,
+        norm: f32,
         /// Up to SAMPLE_MAX member indexes into `items`, for the member check.
         samples: Vec<usize>,
         /// All member indexes into `items`.
         members: Vec<usize>,
     }
+    impl Centroid {
+        fn new(cluster_id: i64, v: &[f32]) -> Self {
+            Centroid {
+                cluster_id,
+                sum: v.to_vec(),
+                norm: length(v),
+                samples: Vec::new(),
+                members: Vec::new(),
+            }
+        }
+        fn add(&mut self, v: &[f32]) {
+            accumulate(&mut self.sum, v);
+            self.norm = length(&self.sum);
+        }
+        fn sim(&self, v: &[f32]) -> f32 {
+            if self.norm == 0.0 || self.sum.len() != v.len() {
+                return 0.0;
+            }
+            dot(&self.sum, v) / self.norm
+        }
+    }
     let mut centroids: Vec<Centroid> = Vec::new();
+    let mut person_idx: std::collections::HashMap<i64, usize> = std::collections::HashMap::new();
     // Per item: the index of its centroid.
     let mut owner: Vec<usize> = vec![usize::MAX; items.len()];
 
@@ -120,18 +162,14 @@ pub fn cluster(
     for (i, it) in items.iter().enumerate() {
         if it.person_id != 0 {
             let cid = PERSON_CLUSTER_BASE + it.person_id;
-            let idx = match centroids.iter().position(|c| c.cluster_id == cid) {
-                Some(idx) => {
-                    accumulate(&mut centroids[idx].sum, &it.embedding);
+            let idx = match person_idx.get(&cid) {
+                Some(&idx) => {
+                    centroids[idx].add(&unit[i]);
                     idx
                 }
                 None => {
-                    centroids.push(Centroid {
-                        cluster_id: cid,
-                        sum: it.embedding.clone(),
-                        samples: Vec::new(),
-                        members: Vec::new(),
-                    });
+                    centroids.push(Centroid::new(cid, &unit[i]));
+                    person_idx.insert(cid, centroids.len() - 1);
                     centroids.len() - 1
                 }
             };
@@ -149,9 +187,17 @@ pub fn cluster(
         if it.person_id != 0 {
             continue;
         }
+        if i % 64 == 0 && stop() {
+            return None;
+        }
+        let e = &unit[i];
         let mut best_idx: Option<usize> = None;
         let mut best_sim = threshold;
         for (idx, c) in centroids.iter().enumerate() {
+            let sim = c.sim(e);
+            if sim < best_sim {
+                continue;
+            }
             // Skip a person's cluster this face was rejected from.
             if c.cluster_id >= PERSON_CLUSTER_BASE {
                 let pid = c.cluster_id - PERSON_CLUSTER_BASE;
@@ -159,11 +205,7 @@ pub fn cluster(
                     continue;
                 }
             }
-            let sim = cosine_similarity(&it.embedding, &c.sum);
-            if sim < best_sim {
-                continue;
-            }
-            if !members_agree(it, c.samples.iter().map(|&s| &items[s]), threshold, agreement) {
+            if !members_agree(e, c.samples.iter().map(|&s| unit[s].as_slice()), threshold, agreement) {
                 continue;
             }
             best_sim = sim;
@@ -171,18 +213,13 @@ pub fn cluster(
         }
         let idx = match best_idx {
             Some(idx) => {
-                accumulate(&mut centroids[idx].sum, &it.embedding);
+                centroids[idx].add(e);
                 idx
             }
             None => {
                 let cid = next_cluster_id;
                 next_cluster_id += 1;
-                centroids.push(Centroid {
-                    cluster_id: cid,
-                    sum: it.embedding.clone(),
-                    samples: Vec::new(),
-                    members: Vec::new(),
-                });
+                centroids.push(Centroid::new(cid, e));
                 centroids.len() - 1
             }
         };
@@ -205,28 +242,31 @@ pub fn cluster(
             continue;
         }
         for &m in &c.members {
-            if cosine_similarity(&items[m].embedding, &c.sum) < threshold {
+            if c.sim(&unit[m]) < threshold {
                 cluster_of[m] = next_cluster_id;
                 next_cluster_id += 1;
             }
         }
     }
 
-    items
-        .iter()
-        .zip(cluster_of)
-        .map(|(it, cid)| ClusterAssignment {
-            face_id: it.face_id,
-            cluster_id: cid,
-        })
-        .collect()
+    Some(
+        items
+            .iter()
+            .zip(cluster_of)
+            .map(|(it, cid)| ClusterAssignment {
+                face_id: it.face_id,
+                cluster_id: cid,
+            })
+            .collect(),
+    )
 }
 
-/// Report whether enough sample faces of a cluster match `it`. A cluster with
-/// no samples, or an agreement of zero, always agrees.
+/// Report whether enough sample faces of a cluster match `e`. All vectors are
+/// unit length. A cluster with no samples, or an agreement of zero, always
+/// agrees.
 fn members_agree<'a>(
-    it: &ClusterItem,
-    samples: impl Iterator<Item = &'a ClusterItem>,
+    e: &[f32],
+    samples: impl Iterator<Item = &'a [f32]>,
     threshold: f32,
     agreement: f32,
 ) -> bool {
@@ -237,7 +277,7 @@ fn members_agree<'a>(
     let mut ok = 0usize;
     for s in samples {
         n += 1;
-        if cosine_similarity(&it.embedding, &s.embedding) >= threshold {
+        if s.len() == e.len() && dot(e, s) >= threshold {
             ok += 1;
         }
     }
@@ -245,6 +285,22 @@ fn members_agree<'a>(
         return true;
     }
     (ok as f32) >= agreement * n as f32 - 1e-6
+}
+
+fn dot(a: &[f32], b: &[f32]) -> f32 {
+    a.iter().zip(b).map(|(x, y)| x * y).sum()
+}
+
+fn length(v: &[f32]) -> f32 {
+    dot(v, v).sqrt()
+}
+
+fn normalized(v: &[f32]) -> Vec<f32> {
+    let n = length(v);
+    if n == 0.0 {
+        return vec![0.0; v.len()];
+    }
+    v.iter().map(|x| x / n).collect()
 }
 
 fn accumulate(sum: &mut [f32], v: &[f32]) {
@@ -317,6 +373,13 @@ mod tests {
         let cid = |fid: i64| asg.iter().find(|a| a.face_id == fid).unwrap().cluster_id;
         assert_eq!(cid(1), PERSON_CLUSTER_BASE + 7);
         assert_ne!(cid(2), PERSON_CLUSTER_BASE + 7);
+    }
+
+    #[test]
+    fn stop_returns_none() {
+        let items = vec![unnamed(1, vec![1.0, 0.0]), unnamed(2, vec![0.0, 1.0])];
+        assert!(cluster_with_stop(&items, ClusterParams::default(), 1, &|| true).is_none());
+        assert!(cluster_with_stop(&items, ClusterParams::default(), 1, &|| false).is_some());
     }
 
     fn unnamed(face_id: i64, embedding: Vec<f32>) -> ClusterItem {
