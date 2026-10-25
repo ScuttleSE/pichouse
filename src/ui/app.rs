@@ -115,6 +115,8 @@ fn build_ui(app: &Application) {
     });
     state.apply_thumb_prefs();
 
+    super::smoothscroll::load(&lib);
+
     // Build panels.
     let status = StatusBar::new(&state);
     *state.status.borrow_mut() = Some(status.clone());

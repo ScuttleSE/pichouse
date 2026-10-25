@@ -1,5 +1,6 @@
 //! GTK4 user interface for pichouse.
 
+mod smoothscroll;
 mod actions;
 mod aitag;
 mod settings_tagging;

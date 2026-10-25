@@ -620,6 +620,7 @@ impl Grid {
             .vexpand(true)
             .child(&grid_view)
             .build();
+        super::smoothscroll::attach(&scroller);
 
         // The duplicate-results container. Filled and swapped into the scroller
         // in duplicate mode; empty otherwise.

@@ -137,6 +137,12 @@ pub const KEY_PTR_EXCLUDE_NS: &str = "ptr.exclude_ns";
 /// PTR tag database: "1" to add the parent tags.
 pub const KEY_PTR_PARENTS: &str = "ptr.parents";
 pub const KEY_GRID_CELL_MARGIN: &str = "grid.cell_margin";
+/// "1" to use momentum scrolling for the mouse wheel.
+pub const KEY_SCROLL_SMOOTH: &str = "scroll.smooth";
+/// The wheel step size multiplier (0.5 to 3.0).
+pub const KEY_SCROLL_STEP: &str = "scroll.step";
+/// The glide time in seconds (0.1 to 1.0).
+pub const KEY_SCROLL_GLIDE: &str = "scroll.glide";
 /// Default per-image slideshow duration in seconds.
 pub const DEFAULT_SLIDESHOW_SECS: i32 = 4;
 

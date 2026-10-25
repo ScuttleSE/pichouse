@@ -442,6 +442,59 @@ fn thumb_pane(state: &Rc<AppState>) -> GtkBox {    let root = pane_box();
         row.append(&spin);
         root.append(&row);
     }
+    {
+        use super::smoothscroll;
+        let c = smoothscroll::cfg();
+        let check = CheckButton::with_label("Smooth scrolling (mouse wheel)");
+        check.set_active(c.enabled);
+        let step = gtk4::Scale::with_range(Orientation::Horizontal, 0.5, 3.0, 0.1);
+        step.set_value(c.step);
+        let glide = gtk4::Scale::with_range(Orientation::Horizontal, 0.1, 1.0, 0.05);
+        glide.set_value(c.glide);
+        for s in [&step, &glide] {
+            s.set_hexpand(true);
+            s.set_digits(2);
+            s.set_draw_value(true);
+            s.set_sensitive(c.enabled);
+        }
+        {
+            let state = state.clone();
+            let (step, glide) = (step.clone(), glide.clone());
+            check.connect_toggled(move |b| {
+                let on = b.is_active();
+                let _ = state.lib.set_setting(prefs::KEY_SCROLL_SMOOTH, if on { "1" } else { "0" });
+                smoothscroll::set_cfg(smoothscroll::ScrollCfg { enabled: on, ..smoothscroll::cfg() });
+                step.set_sensitive(on);
+                glide.set_sensitive(on);
+            });
+        }
+        {
+            let state = state.clone();
+            step.connect_value_changed(move |s| {
+                let v = s.value();
+                let _ = state.lib.set_setting(prefs::KEY_SCROLL_STEP, &format!("{v:.2}"));
+                smoothscroll::set_cfg(smoothscroll::ScrollCfg { step: v, ..smoothscroll::cfg() });
+            });
+        }
+        {
+            let state = state.clone();
+            glide.connect_value_changed(move |s| {
+                let v = s.value();
+                let _ = state.lib.set_setting(prefs::KEY_SCROLL_GLIDE, &format!("{v:.2}"));
+                smoothscroll::set_cfg(smoothscroll::ScrollCfg { glide: v, ..smoothscroll::cfg() });
+            });
+        }
+        root.append(&check);
+        for (label, scale) in [("Step size (×)", &step), ("Glide (s)", &glide)] {
+            let row = GtkBox::new(Orientation::Horizontal, 6);
+            let name = Label::new(Some(label));
+            name.set_xalign(0.0);
+            name.set_width_chars(12);
+            row.append(&name);
+            row.append(scale);
+            root.append(&row);
+        }
+    }
     root.append(&Separator::new(Orientation::Horizontal));
 
     let regen = CheckButton::with_label("Regenerate thumbnails when moving the slider");

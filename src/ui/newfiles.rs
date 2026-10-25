@@ -173,6 +173,7 @@ impl NewFilesView {
             .vexpand(true)
             .child(&content)
             .build();
+        super::smoothscroll::attach(&root);
 
         let generation = Arc::new(AtomicU64::new(0));
         let pending: Rc<RefCell<Vec<Image>>> = Rc::new(RefCell::new(Vec::new()));

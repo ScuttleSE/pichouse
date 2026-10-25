@@ -377,6 +377,19 @@ A photo in the grid is a `PhotoObject`. `PhotoObject` is a GObject wrapper of a
 `model::Photo`. `PhotoObject::from_photo` builds one. The grid fills the
 `texture` property from the thumbnail cache.
 
+### Smooth scrolling
+
+- `src/ui/smoothscroll.rs` gives momentum scrolling for the mouse wheel.
+  `attach(scroller)` adds a capture-phase `EventControllerScroll`. Touchpad
+  events go to GTK with no change.
+- Each wheel step adds speed. A tick callback moves `vadjustment`. The speed
+  decreases as `exp(-t / glide)`. One step moves the GTK step distance
+  (`page_size^(2/3)`) times `step`.
+- The grid, Faces, Characters, and New Files scrollers use it.
+- The config is a thread-local `ScrollCfg` (`cfg`, `set_cfg`, `load`). The
+  keys are `scroll.smooth`, `scroll.step`, and `scroll.glide`. The controls
+  are in the Thumbnails settings pane.
+
 ### Tagging
 
 - The tag tables are `tags`, `photo_tags` (`source` 0 = AI, 1 = user,

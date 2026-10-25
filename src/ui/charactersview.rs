@@ -160,6 +160,7 @@ impl CharactersView {
             .vscrollbar_policy(PolicyType::Automatic)
             .vexpand(true)
             .build();
+        super::smoothscroll::attach(&scroll);
         let inner = GtkBox::new(Orientation::Vertical, 0);
         inner.append(&empty);
         inner.append(&iheader.root);
