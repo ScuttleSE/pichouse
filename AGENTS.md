@@ -13,6 +13,19 @@ Do not speculate in a loop. Do not run in circles.
 
 ---
 
+## RULE ZERO-0 — TELL THE USER BEFORE YOU START WORK
+
+Do not start work on your own. Tell the user first.
+
+- Before you change a file, tell the user what you will change and why.
+- Wait for the user to agree. Then start.
+- When the user gives you data, report what the data shows. Then stop.
+- A plan that the user accepted earlier does not let you start the work.
+  Tell the user that you will start now, and wait.
+- This rule is hard. Breaking it is as bad as breaking RULE ZERO.
+
+---
+
 ## RULE ZERO-A — ALL COMMUNICATION USES ASD-STE100 STRICT
 
 Write all text in Simplified Technical English (ASD-STE100), Strict mode.
