@@ -939,3 +939,92 @@ fn insert_style_face_row(conn: &rusqlite::Connection, face: &StyleFace) -> Resul
     ])?;
     Ok(conn.last_insert_rowid())
 }
+
+/// The read size for `for_each_grouped_style_face`. Each read holds the DB
+/// lock for a short time only.
+const GROUPED_CHUNK: i64 = 5000;
+
+impl Library {
+    /// Call `f(character_id, cluster_id, embedding)` for each grouped stylised
+    /// face: a face with a character, or a face in an unnamed group
+    /// (`cluster_id > 0`). The read goes in chunks by id, so the UI thread can
+    /// get the DB lock between chunks. `stop` ends the read early. The function
+    /// returns `false` when `stop` ended it.
+    pub fn for_each_grouped_style_face(
+        &self,
+        stop: &dyn Fn() -> bool,
+        f: &mut dyn FnMut(i64, i64, &[f32]),
+    ) -> Result<bool> {
+        let mut last = 0i64;
+        loop {
+            if stop() {
+                return Ok(false);
+            }
+            let rows: Vec<(i64, i64, i64, Vec<u8>)> = {
+                let conn = self.lock();
+                let mut stmt = conn.prepare_cached(
+                    "SELECT id, COALESCE(character_id, 0), COALESCE(cluster_id, 0), embedding \
+                     FROM style_faces WHERE id > ?1 AND ignored = 0 AND embedding_dim > 0 \
+                     AND embedding IS NOT NULL \
+                     AND (character_id IS NOT NULL OR cluster_id > 0) \
+                     ORDER BY id LIMIT ?2",
+                )?;
+                let rows = stmt.query_map(params![last, GROUPED_CHUNK], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+                })?;
+                rows.collect::<std::result::Result<_, _>>()?
+            };
+            let Some(&(id, ..)) = rows.last() else {
+                return Ok(true);
+            };
+            last = id;
+            for (_, ch, cl, blob) in &rows {
+                f(*ch, *cl, &blob_to_floats(blob));
+            }
+        }
+    }
+
+    /// The stylised faces that a scan added and that have no group yet: no
+    /// character, no cluster id, not ignored. Returns `(id, embedding)`.
+    pub fn ungrouped_style_faces(&self) -> Result<Vec<(i64, Vec<f32>)>> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare(
+            "SELECT id, embedding FROM style_faces WHERE cluster_id IS NULL \
+             AND character_id IS NULL AND ignored = 0 AND embedding_dim > 0 \
+             AND embedding IS NOT NULL",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            let blob: Vec<u8> = r.get(1)?;
+            Ok((r.get::<_, i64>(0)?, blob_to_floats(&blob)))
+        })?;
+        Ok(rows.collect::<std::result::Result<_, _>>()?)
+    }
+
+    /// The newest `limit` noise stylised faces (cluster -1, no character, not
+    /// ignored). Returns `(id, embedding)`.
+    pub fn noise_style_faces(&self, limit: i64) -> Result<Vec<(i64, Vec<f32>)>> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare(
+            "SELECT id, embedding FROM style_faces WHERE cluster_id = -1 \
+             AND character_id IS NULL AND ignored = 0 AND embedding_dim > 0 \
+             AND embedding IS NOT NULL ORDER BY id DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit], |r| {
+            let blob: Vec<u8> = r.get(1)?;
+            Ok((r.get::<_, i64>(0)?, blob_to_floats(&blob)))
+        })?;
+        Ok(rows.collect::<std::result::Result<_, _>>()?)
+    }
+
+    /// The largest unnamed stylised cluster id, or 0. A character cluster id is
+    /// at or above `base` and does not count.
+    pub fn max_unnamed_style_cluster_id(&self, base: i64) -> Result<i64> {
+        let conn = self.lock();
+        Ok(conn.query_row(
+            "SELECT COALESCE(MAX(cluster_id), 0) FROM style_faces \
+             WHERE cluster_id > 0 AND cluster_id < ?1",
+            params![base],
+            |r| r.get(0),
+        )?)
+    }
+}

@@ -20,6 +20,7 @@ pub mod cluster;
 pub mod config;
 pub mod detector;
 pub mod embedder;
+pub mod incremental;
 pub mod models;
 
 pub use config::StyleFaceConfig;

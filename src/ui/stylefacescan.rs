@@ -6,8 +6,7 @@
 //! the new embeddings. Progress posts to the GTK main thread through a channel.
 
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
 use gtk4::glib;
@@ -15,7 +14,7 @@ use gtk4::glib;
 use crate::db::Library;
 use crate::face::runtime;
 use crate::model::StyleFace;
-use crate::styleface::cluster::{self, ClusterItem};
+use crate::styleface::incremental::{assign_new, group_noise, CentroidIndex};
 use crate::styleface::{models, StyleFacePipeline};
 
 use super::state::{show_error, show_message, AppState};
@@ -164,7 +163,6 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::styleface::Styl
             };
 
         let total = ids.len();
-        let _ = tx.send(Msg::Message(format!("Scanning stylised faces 0/{total}…")));
 
         let done = Arc::new(Mutex::new((0usize, 0usize)));
         let jobs: Arc<Mutex<std::collections::VecDeque<i64>>> =
@@ -172,15 +170,22 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::styleface::Styl
 
         let workers = cfg.concurrency.max(1);
         let cfg_params = cfg.cluster_params();
-        // Guard against two workers running a full recluster at the same time.
-        // A recluster reads every face and re-groups it. Two at once waste CPU.
-        let reclustering = Arc::new(AtomicBool::new(false));
-        // HDBSCAN cannot stop in the middle, and it can run for minutes. So
-        // each regroup runs in its own thread, and no scan thread waits for a
-        // progressive one. `generation` tells a regroup if its result is still
-        // current. The write happens under this lock, so an old regroup never
-        // writes over a newer result.
-        let generation = Arc::new(Mutex::new(0u64));
+        // Read the group centroids one time. A full HDBSCAN pass over a large
+        // library takes hours, so the scan only puts each new face into the
+        // nearest existing group. See `styleface::incremental`.
+        let _ = tx.send(Msg::Message("Reading character groups…".into()));
+        let index = {
+            let cancel = cancel.clone();
+            match CentroidIndex::load(&lib, &move || cancel.load(Ordering::Relaxed)) {
+                Ok(Some(i)) => Some(Arc::new(Mutex::new(i))),
+                Ok(None) => None,
+                Err(e) => {
+                    log::warn!("style centroids: {e}");
+                    None
+                }
+            }
+        };
+        let _ = tx.send(Msg::Message(format!("Scanning stylised faces 0/{total}…")));
         let mut handles = Vec::new();
         for _ in 0..workers {
             let jobs = jobs.clone();
@@ -189,8 +194,7 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::styleface::Styl
             let cancel = cancel.clone();
             let done = done.clone();
             let tx = tx.clone();
-            let reclustering = reclustering.clone();
-            let generation = generation.clone();
+            let index = index.clone();
             handles.push(std::thread::spawn(move || loop {
                 if cancel.load(Ordering::Relaxed) {
                     return;
@@ -214,26 +218,21 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::styleface::Styl
                 let _ = tx.send(Msg::Progress(d as f64 / total as f64));
                 let _ = tx.send(Msg::Message(format!("Scanning stylised faces {d}/{total}…")));
 
-                if d % REFRESH_EVERY == 0
-                    && reclustering
-                        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-                        .is_ok()
-                {
-                    let my_gen = *generation.lock().unwrap();
-                    let lib = lib.clone();
-                    let tx = tx.clone();
-                    let reclustering = reclustering.clone();
-                    let generation = generation.clone();
-                    std::thread::spawn(move || {
-                        match recluster(&lib, cfg_params, &generation, my_gen) {
-                            Ok(true) => {
-                                let _ = tx.send(Msg::Refresh);
+                if d % REFRESH_EVERY == 0 {
+                    if let Some(index) = &index {
+                        // try_lock: a worker that finds the lock taken skips
+                        // this round. The next round or the final pass groups
+                        // the faces.
+                        if let Ok(mut idx) = index.try_lock() {
+                            match assign_new(&lib, &mut idx, cfg_params) {
+                                Ok(n) if n > 0 => {
+                                    let _ = tx.send(Msg::Refresh);
+                                }
+                                Ok(_) => {}
+                                Err(e) => log::warn!("progressive style grouping: {e}"),
                             }
-                            Ok(false) => {}
-                            Err(e) => log::warn!("progressive style clustering: {e}"),
                         }
-                        reclustering.store(false, Ordering::Release);
-                    });
+                    }
                 }
             }));
         }
@@ -241,33 +240,10 @@ pub fn run_scan(state: &Rc<AppState>, ids: Vec<i64>, cfg: crate::styleface::Styl
             let _ = h.join();
         }
 
-        // A new generation makes any progressive regroup that still runs
-        // discard its result.
-        let final_gen = {
-            let mut g = generation.lock().unwrap();
-            *g += 1;
-            *g
-        };
-        if !cancel.load(Ordering::Relaxed) {
+        if let Some(index) = &index {
             let _ = tx.send(Msg::Message("Grouping stylised faces…".into()));
-            let job = {
-                let lib = lib.clone();
-                let generation = generation.clone();
-                let params = cfg.cluster_params();
-                std::thread::spawn(move || {
-                    if let Err(e) = recluster(&lib, params, &generation, final_gen) {
-                        log::warn!("style clustering: {e}");
-                    }
-                })
-            };
-            // Wait for the regroup, but stop the wait when the user cancels.
-            // On cancel, a new generation makes the regroup discard its result.
-            while !job.is_finished() {
-                if cancel.load(Ordering::Relaxed) {
-                    *generation.lock().unwrap() += 1;
-                    break;
-                }
-                std::thread::sleep(Duration::from_millis(100));
+            if let Err(e) = assign_new(&lib, &mut index.lock().unwrap(), cfg_params) {
+                log::warn!("style grouping: {e}");
             }
         }
 
@@ -358,52 +334,23 @@ pub fn recluster_now(state: &Rc<AppState>) {
         });
     }
     std::thread::spawn(move || {
-        let generation = Mutex::new(0u64);
-        let _ = recluster(&lib, params, &generation, 0);
+        // Put ungrouped faces into the existing groups, then make new groups
+        // from the noise faces. A full HDBSCAN pass over every face takes
+        // hours on a large library, so this does not do one.
+        match CentroidIndex::load(&lib, &|| false) {
+            Ok(Some(mut idx)) => {
+                if let Err(e) = assign_new(&lib, &mut idx, params) {
+                    log::warn!("style grouping: {e}");
+                }
+            }
+            Ok(None) => {}
+            Err(e) => log::warn!("style centroids: {e}"),
+        }
+        if let Err(e) = group_noise(&lib, params) {
+            log::warn!("style noise grouping: {e}");
+        }
         let _ = tx.send(());
     });
-}
-
-/// Re-cluster every embedded stylised face in the library. Character-assigned
-/// faces anchor stable clusters. HDBSCAN groups the rest. The function writes
-/// the result only when `generation` still holds `my_gen`. It returns whether
-/// it wrote.
-fn recluster(
-    lib: &Library,
-    params: cluster::ClusterParams,
-    generation: &Mutex<u64>,
-    my_gen: u64,
-) -> Result<bool, String> {
-    let rows = lib
-        .style_faces_for_clustering()
-        .map_err(|e| format!("read style faces: {e}"))?;
-    if rows.is_empty() {
-        return Ok(false);
-    }
-    let rejections = lib.style_face_rejection_map().unwrap_or_default();
-    let items: Vec<ClusterItem> = rows
-        .into_iter()
-        .map(|(face_id, _cluster_id, character_id, embedding)| ClusterItem {
-            face_id,
-            embedding,
-            character_id,
-            rejected: rejections.get(&face_id).cloned().unwrap_or_default(),
-        })
-        .collect();
-    let next = 1i64;
-    let assignments = cluster::cluster(&items, params, next);
-    let pairs: Vec<(i64, i64)> = assignments
-        .into_iter()
-        .map(|a| (a.face_id, a.cluster_id))
-        .collect();
-    let g = generation.lock().unwrap();
-    if *g != my_gen {
-        return Ok(false);
-    }
-    lib.set_style_face_clusters(&pairs)
-        .map_err(|e| format!("write clusters: {e}"))?;
-    drop(g);
-    Ok(true)
 }
 
 /// Download the two selected stylised models (and the ONNX Runtime) in the
