@@ -2162,14 +2162,21 @@ impl Grid {
         }
         let cell_w = (size + CELL_SPACING).max(1);
         let cols = ((width / cell_w).max(1) as usize).min(20);
-        let row_h = (size + CELL_SPACING).max(1) as f64;
-        let first_row = (vadj.value() / row_h).floor() as i64;
-        let rows_visible = (page / row_h).ceil() as i64 + 1;
-        let margin = VISIBLE_MARGIN_ROWS as i64;
-        let start_row = (first_row - margin).max(0) as usize;
-        let end_row = (first_row + rows_visible + margin).max(0) as usize;
-        let start = (start_row * cols).min(n);
-        let end = (end_row * cols).min(n);
+        let margin = VISIBLE_MARGIN_ROWS * cols;
+        // Use the scroll position as a fraction of the content height. A
+        // fixed cell height estimate is wrong when the real cell is taller
+        // (cell margin, filename row). Deep in a large list, that error put
+        // the window far from the cells on screen, so no thumbnail loaded.
+        let upper = vadj.upper();
+        if upper <= 0.0 {
+            return (0, VISIBLE_FALLBACK.min(n));
+        }
+        let top = (vadj.value() / upper).clamp(0.0, 1.0);
+        let bottom = ((vadj.value() + page) / upper).clamp(0.0, 1.0);
+        let first = (top * n as f64).floor() as usize;
+        let last = (bottom * n as f64).ceil() as usize;
+        let start = first.saturating_sub(margin + cols).min(n);
+        let end = (last + margin + cols).min(n);
         (start, end)
     }
 
