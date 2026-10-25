@@ -2009,7 +2009,15 @@ impl Grid {
         self.rebuild();
         // A new view starts at the top. The GridView keeps the old scroll
         // position when the store changes, so set it here.
-        self.scroller.vadjustment().set_value(0.0);
+        // GTK can restore the old position after the next layout pass. Reset
+        // again after the layout so the view stays at the top.
+        let adj = self.scroller.vadjustment();
+        adj.set_value(0.0);
+        glib::idle_add_local_once(move || adj.set_value(0.0));
+        let adj = self.scroller.vadjustment();
+        glib::timeout_add_local_once(std::time::Duration::from_millis(50), move || {
+            adj.set_value(0.0)
+        });
     }
 
     /// Update the view from a background reload (scan/enrich) **without**
