@@ -3905,18 +3905,6 @@ impl Sidebar {
         }
         Some(m)
     }
-
-    /// Select the first folder in the tree, if any, and return it.
-    pub fn select_first_folder(self: &Rc<Self>) -> Option<Folder> {
-        let data = self.data.borrow();
-        // Prefer an unassigned folder; else the first album folder.
-        let fid = data
-            .unassigned
-            .first()
-            .copied()
-            .or_else(|| data.album_folders.values().flatten().next().copied())?;
-        data.folders.get(&fid).cloned()
-    }
 }
 
 /// Build a "sidebar.<action>::<target>" detailed action string.

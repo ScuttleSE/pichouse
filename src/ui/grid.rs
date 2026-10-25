@@ -2509,8 +2509,13 @@ impl Grid {
         // the main thread for minutes.
         let old_n = self.store.n_items();
         self.store.splice(0, old_n, &objs);
-        self.header
-            .set_text(&format!("{}  ({})", self.title.borrow(), photos.len()));
+        if photos.is_empty() && matches!(*self.source.borrow(), Source::None) {
+            // No view is open (app start): show only the hint.
+            self.header.set_text(&self.title.borrow());
+        } else {
+            self.header
+                .set_text(&format!("{}  ({})", self.title.borrow(), photos.len()));
+        }
 
         let ids: Vec<i64> = photos.iter().map(|p| p.id).collect();
         let edits = self.lib.photo_edits_for_photos(&ids).unwrap_or_default();

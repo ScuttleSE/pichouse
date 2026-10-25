@@ -423,14 +423,8 @@ fn populate(state: &Rc<AppState>, regroup: bool) {
 
 /// The heavy part of startup. Runs after `window.present()` on an idle tick.
 fn populate_deferred(state: &Rc<AppState>) {
-    let folders = state.lib.folders().unwrap_or_default();
-    if !folders.is_empty() {
-        if let Some(sidebar) = state.sidebar.borrow().clone() {
-            if let Some(folder) = sidebar.select_first_folder() {
-                load_folder_into_grid(state, &folder);
-            }
-        }
-    }
+    // Open no view at start. The grid shows a hint until the user clicks.
+    state.grid().show_photos("Select an album", &[]);
     // Offer to resume any root whose initial scan was interrupted. The scanner
     // resume cursor continues from where it stopped; the "New Files" boundary
     // stays unset until the walk finishes, so nothing lands there mid-resume.
