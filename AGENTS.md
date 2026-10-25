@@ -147,6 +147,12 @@ The debug build cache fills the disk fast on this machine.
 - **DB:** `rusqlite` with the `bundled` feature (bundled SQLite includes FTS5).
   Two files: `library.db` (metadata) and per-size `thumbs-<N>.db` (thumbnail
   blobs), stored in `~/.local/share/pichouse/`.
+- **Profiles:** `--profile NAME` (parsed in `src/main.rs`) calls
+  `db::set_profile`. `db::data_dir` gives the profile folder
+  (`<shared>/profiles/NAME`). `db::shared_dir` gives the base folder. Use
+  `shared_dir` for downloads that all profiles share (runtime, models,
+  `ptr.db`). Use `data_dir` for all other data. The GTK application id gets a
+  per-profile suffix.
 - **Images:** `image` (decode/encode) + `fast_image_resize` (Catmull-Rom resize).
 - **EXIF:** `kamadak-exif`
 - **AI tagging:** `reqwest` (blocking, rustls-tls) + `serde` (Ollama HTTP client).

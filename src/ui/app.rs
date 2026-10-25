@@ -31,7 +31,13 @@ const APP_ID: &str = "se.hemmalab.pichouse";
 
 /// Start the pichouse GUI application. The single entry point called from main.
 pub fn run() -> glib::ExitCode {
-    let app = Application::builder().application_id(APP_ID).build();
+    // Each profile gets its own application id. So two profiles can run at
+    // the same time, and a second start of one profile reuses its window.
+    let app_id = match crate::db::profile() {
+        Some(p) => format!("{APP_ID}.profile_{}", p.replace('-', "_")),
+        None => APP_ID.to_string(),
+    };
+    let app = Application::builder().application_id(app_id.as_str()).build();
     app.connect_activate(build_ui);
     // Our own CLI flags (-v/-vv/-vvv/-q) are parsed in `main` before this call.
     // Pass GTK an empty argument list so its own parser does not see — and
@@ -247,7 +253,10 @@ fn build_ui(app: &Application) {
 
     let window = ApplicationWindow::builder()
         .application(app)
-        .title(format!("pichouse {}", version::VERSION))
+        .title(match crate::db::profile() {
+            Some(p) => format!("pichouse {} [{p}]", version::VERSION),
+            None => format!("pichouse {}", version::VERSION),
+        })
         .default_width(1280)
         .default_height(820)
         .child(&root)

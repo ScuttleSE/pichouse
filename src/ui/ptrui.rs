@@ -41,7 +41,7 @@ pub struct PtrSettings {
 }
 
 pub fn default_path() -> PathBuf {
-    crate::db::data_dir().unwrap_or_else(|_| PathBuf::from(".")).join("ptr.db")
+    crate::db::shared_dir().unwrap_or_else(|_| PathBuf::from(".")).join("ptr.db")
 }
 
 pub fn load(lib: &Library) -> PtrSettings {

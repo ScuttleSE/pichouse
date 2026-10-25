@@ -91,7 +91,7 @@ pub fn entry(id: &str) -> Option<ModelEntry> {
 
 /// The folder where models live. Shared with the human face models folder.
 pub fn models_dir() -> std::io::Result<PathBuf> {
-    let d = crate::db::data_dir()?.join("models");
+    let d = crate::db::shared_dir()?.join("models");
     std::fs::create_dir_all(&d)?;
     Ok(d)
 }

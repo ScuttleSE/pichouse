@@ -26,7 +26,7 @@ fn main() -> gtk4::glib::ExitCode {
     ui::run()
 }
 
-/// Parse the console verbosity from the command line.
+/// Parse the console verbosity and the profile from the command line.
 ///
 /// Flags (later ones win):
 ///   (none)        warn   — default: errors and warnings only
@@ -34,13 +34,29 @@ fn main() -> gtk4::glib::ExitCode {
 ///   -vv           debug  — plus per-directory DB and sidebar-reload timings
 ///   -vvv          trace  — plus per-photo detail
 ///   -q/--quiet    error  — errors only
+///   --profile N   use profile N (separate settings and databases)
 ///   -h/--help     print usage and exit
 ///
 /// Returns the chosen level, or an `ExitCode` when the program should exit
 /// immediately (help, or a bad argument).
 fn parse_log_level() -> Result<LevelFilter, gtk4::glib::ExitCode> {
     let mut level = LevelFilter::Warn;
-    for arg in std::env::args().skip(1) {
+    let mut profile: Option<String> = None;
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        let value = if arg == "--profile" {
+            Some(args.next().unwrap_or_default())
+        } else {
+            arg.strip_prefix("--profile=").map(str::to_string)
+        };
+        if let Some(name) = value {
+            if !db::valid_profile_name(&name) {
+                eprintln!("pichouse: bad profile name '{name}' (use letters, digits, '-', '_')");
+                return Err(gtk4::glib::ExitCode::FAILURE);
+            }
+            profile = Some(name);
+            continue;
+        }
         match arg.as_str() {
             "-h" | "--help" => {
                 print_usage();
@@ -57,6 +73,7 @@ fn parse_log_level() -> Result<LevelFilter, gtk4::glib::ExitCode> {
             }
         }
     }
+    db::set_profile(profile);
     Ok(level)
 }
 
@@ -95,9 +112,13 @@ fn print_usage() {
          \x20 -vv           more verbose: per-directory and sidebar-reload timings (debug)\n\
          \x20 -vvv          most verbose: per-photo detail (trace)\n\
          \x20 -q, --quiet   errors only\n\
+         \x20 --profile NAME  use a separate profile: own settings and databases\n\
          \x20 -h, --help    show this help\n\
          \n\
          With no option, only warnings and errors are printed. All log output\n\
-         goes to the console (stderr)."
+         goes to the console (stderr).\n\
+         \n\
+         A named profile keeps its data in ~/.local/share/pichouse/profiles/NAME.\n\
+         All profiles share the ONNX runtime, the models, and ptr.db."
     );
 }

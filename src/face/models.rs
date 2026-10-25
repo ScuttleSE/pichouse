@@ -85,7 +85,7 @@ const _ZOO_COMMIT_REF: &str = ZOO_COMMIT;
 
 /// The folder where models live.
 pub fn models_dir() -> std::io::Result<PathBuf> {
-    let d = crate::db::data_dir()?.join("models");
+    let d = crate::db::shared_dir()?.join("models");
     std::fs::create_dir_all(&d)?;
     Ok(d)
 }

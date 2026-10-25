@@ -23,7 +23,9 @@ pub mod tags;
 mod thumbs;
 mod virtual_albums;
 
-pub use config::{data_dir, write_configured_data_dir};
+pub use config::{
+    data_dir, profile, set_profile, shared_dir, valid_profile_name, write_configured_data_dir,
+};
 pub use face_thumbs::{remove_face_thumbs_database, FaceThumbs};
 pub use faces::FaceGroup;
 pub use immich_thumbs::{

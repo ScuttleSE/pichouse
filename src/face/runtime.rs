@@ -35,7 +35,7 @@ static INIT_OK: AtomicBool = AtomicBool::new(false);
 
 /// The path where pichouse keeps the ONNX Runtime library.
 pub fn runtime_path() -> std::io::Result<PathBuf> {
-    Ok(crate::db::data_dir()?.join("runtime").join(ORT_SO_NAME))
+    Ok(crate::db::shared_dir()?.join("runtime").join(ORT_SO_NAME))
 }
 
 /// Report whether the ONNX Runtime library is present in the data folder.

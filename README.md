@@ -351,6 +351,25 @@ can see where time is spent.
 
 Databases are stored in `~/.local/share/pichouse/`.
 
+## Profiles
+
+Use `--profile NAME` to start a separate profile. A profile has its own
+settings and its own databases.
+
+    pichouse --profile private
+    pichouse --profile work
+
+- A name can contain letters, digits, `-`, and `_`.
+- The data of a named profile is in `~/.local/share/pichouse/profiles/NAME/`.
+- The config file of a named profile is in
+  `~/.config/pichouse/profiles/NAME/config`.
+- All profiles share the ONNX runtime, the face models, and the default
+  `ptr.db` path.
+- With no `--profile`, pichouse uses the default profile in
+  `~/.local/share/pichouse/`.
+- Two different profiles can run at the same time. The window title shows the
+  profile name.
+
 ## AI tagging prerequisites (optional)
 
 AI tagging needs a local [Ollama](https://ollama.com) install with a vision
