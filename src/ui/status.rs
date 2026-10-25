@@ -96,8 +96,10 @@ fn activity_indicator(state: &Rc<AppState>) -> MenuButton {
     button.set_child(Some(&spinner));
     button.set_popover(Some(&popover));
     button.add_css_class("flat");
-    button.set_tooltip_text(Some("Background jobs"));
-    button.set_visible(false);
+    // The button always keeps its space, so the status bar height does not
+    // change when a job starts or stops. Opacity hides it when idle.
+    button.set_opacity(0.0);
+    button.set_can_target(false);
 
     {
         let state = state.clone();
@@ -128,7 +130,9 @@ fn activity_indicator(state: &Rc<AppState>) -> MenuButton {
             if !any && popover.is_visible() {
                 popover.popdown();
             }
-            button.set_visible(any);
+            button.set_opacity(if any { 1.0 } else { 0.0 });
+            button.set_can_target(any);
+            button.set_tooltip_text(if any { Some("Background jobs") } else { None });
             glib::ControlFlow::Continue
         });
     }
