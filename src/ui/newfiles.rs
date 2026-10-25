@@ -23,7 +23,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc;
 use std::sync::Arc;
 
 use gtk4::gdk;
@@ -79,10 +78,36 @@ struct Done {
     index: usize,
 }
 
+/// A job queue. The workers take the newest job first. `queue_visible`
+/// removes all queued jobs before it adds the jobs for the new window, so the
+/// photos on screen never wait behind photos that the user scrolled past.
+struct JobQueue {
+    q: std::sync::Mutex<Vec<Job>>,
+    cv: std::sync::Condvar,
+}
+
+impl JobQueue {
+    fn pop(&self) -> Job {
+        let mut q = self.q.lock().unwrap();
+        loop {
+            if let Some(j) = q.pop() {
+                return j;
+            }
+            q = self.cv.wait(q).unwrap();
+        }
+    }
+}
+
+/// The load state of one photo cell.
+const ST_NONE: u8 = 0;
+const ST_QUEUED: u8 = 1;
+const ST_LOADED: u8 = 2;
+
 /// One slice of a built folder: the flat photo index range its cells occupy,
 /// whether its thumbnail jobs were already queued, and whether the slice is
 /// the folder's first (its height estimate includes the folder header).
 #[derive(Clone, Copy)]
+#[allow(dead_code)]
 struct FolderRange {
     start: usize,
     end: usize,
@@ -117,7 +142,9 @@ pub struct NewFilesView {
     content: GtkBox,
     thumb_size: std::cell::Cell<i32>,
     generation: Arc<AtomicU64>,
-    jobs: mpsc::Sender<Job>,
+    jobs: Arc<JobQueue>,
+    /// The load state of each photo (`ST_*`), by flat photo index.
+    state: Rc<RefCell<Vec<u8>>>,
     /// Images awaiting a texture for the current generation, indexed by flat
     /// photo index.
     pending: Rc<RefCell<Vec<Image>>>,
@@ -128,6 +155,8 @@ pub struct NewFilesView {
     /// Flat index range of each built folder slice, in display order.
     ranges: RefCell<Vec<FolderRange>>,
     on_activate: RefCell<Option<Box<dyn Fn(Vec<Photo>, usize)>>>,
+    /// True while a `queue_visible` run waits on the idle loop.
+    visible_scheduled: std::cell::Cell<bool>,
 }
 
 impl NewFilesView {
@@ -149,21 +178,23 @@ impl NewFilesView {
         let pending: Rc<RefCell<Vec<Image>>> = Rc::new(RefCell::new(Vec::new()));
 
         let (done_tx, done_rx) = glib::MainContext::channel::<Done>(glib::Priority::DEFAULT);
-        let (job_tx, job_rx) = mpsc::channel::<Job>();
-        let job_rx = Arc::new(std::sync::Mutex::new(job_rx));
+        let job_tx = Arc::new(JobQueue {
+            q: std::sync::Mutex::new(Vec::new()),
+            cv: std::sync::Condvar::new(),
+        });
+        let state: Rc<RefCell<Vec<u8>>> = Rc::new(RefCell::new(Vec::new()));
+        let cur_gen = generation.clone();
 
         for _ in 0..WORKERS {
-            let job_rx = job_rx.clone();
+            let job_rx = job_tx.clone();
             let done_tx = done_tx.clone();
             let gen = gen.clone();
+            let cur_gen = cur_gen.clone();
             std::thread::spawn(move || loop {
-                let job = {
-                    let rx = job_rx.lock().unwrap();
-                    match rx.recv() {
-                        Ok(j) => j,
-                        Err(_) => return,
-                    }
-                };
+                let job = job_rx.pop();
+                if job.generation != cur_gen.load(Ordering::Relaxed) {
+                    continue;
+                }
                 if let Ok(blob) =
                     gen.get(&job.hash, std::path::Path::new(&job.path), job.orientation)
                 {
@@ -178,8 +209,16 @@ impl NewFilesView {
 
         let gen_for_apply = generation.clone();
         let pending_for_apply = pending.clone();
+        let state_for_apply = state.clone();
         done_rx.attach(None, move |done: Done| {
             if done.generation == gen_for_apply.load(Ordering::Relaxed) {
+                if let Some(st) = state_for_apply.borrow_mut().get_mut(done.index) {
+                    // The cell was evicted while the job ran: do not show it.
+                    if *st != ST_QUEUED {
+                        return glib::ControlFlow::Continue;
+                    }
+                    *st = ST_LOADED;
+                }
                 if let Some(image) = pending_for_apply.borrow().get(done.index) {
                     let bytes = glib::Bytes::from_owned(done.pixels);
                     let texture = gdk::MemoryTexture::new(
@@ -201,10 +240,12 @@ impl NewFilesView {
             thumb_size: std::cell::Cell::new(thumb_size),
             generation,
             jobs: job_tx,
+            state,
             pending,
             photos: RefCell::new(Rc::new(Vec::new())),
             ranges: RefCell::new(Vec::new()),
             on_activate: RefCell::new(None),
+            visible_scheduled: std::cell::Cell::new(false),
         });
 
         // Queue thumbnail work as the user scrolls (value changes) and when the
@@ -212,17 +253,31 @@ impl NewFilesView {
         let weak = Rc::downgrade(&view);
         view.root.vadjustment().connect_value_notify(move |_| {
             if let Some(v) = weak.upgrade() {
-                v.queue_visible();
+                v.schedule_visible();
             }
         });
         let weak = Rc::downgrade(&view);
         view.root.vadjustment().connect_changed(move |_| {
             if let Some(v) = weak.upgrade() {
-                v.queue_visible();
+                v.schedule_visible();
             }
         });
 
         view
+    }
+
+    /// Run `queue_visible` one time after the current burst of scroll events.
+    fn schedule_visible(self: &Rc<Self>) {
+        if self.visible_scheduled.replace(true) {
+            return;
+        }
+        let weak = Rc::downgrade(self);
+        glib::timeout_add_local_once(std::time::Duration::from_millis(30), move || {
+            if let Some(v) = weak.upgrade() {
+                v.visible_scheduled.set(false);
+                v.queue_visible();
+            }
+        });
     }
 
     /// The view's root widget.
@@ -252,6 +307,7 @@ impl NewFilesView {
         let generation = self.generation.fetch_add(1, Ordering::Relaxed) + 1;
         self.pending.borrow_mut().clear();
         self.ranges.borrow_mut().clear();
+        self.jobs.q.lock().unwrap().clear();
 
         // Clear existing content.
         while let Some(child) = self.content.first_child() {
@@ -292,6 +348,7 @@ impl NewFilesView {
             folders.push(folder);
             flat.extend(photos);
         }
+        *self.state.borrow_mut() = vec![ST_NONE; flat.len()];
         *self.photos.borrow_mut() = Rc::new(flat);
 
         let state = RefCell::new(BuildState {
@@ -450,12 +507,16 @@ impl NewFilesView {
         glib::ControlFlow::Continue
     }
 
-    /// Queue thumbnail jobs for every built folder slice that intersects the
-    /// window `[value − page, value + PAGES_BELOW·page]`. Slices entirely
-    /// above the viewport are skipped without queueing; scrolling back
-    /// re-queues them. Queued slices far above the viewport evict their
-    /// textures so memory stays bounded. Called on scroll, on geometry
-    /// change, and whenever a folder's first slice is recorded.
+    /// Load the thumbnails near the viewport and drop the ones far from it.
+    ///
+    /// The positions come from the real widget layout (`compute_bounds` of
+    /// the first and last cell of each slice), not from an estimate. An
+    /// estimate drifts in a list of 100,000+ photos. It then loaded photos off
+    /// screen and dropped photos on screen.
+    ///
+    /// Each call removes all queued jobs first. Then it queues the photos in
+    /// the window that have no thumbnail, with the top row last, because the
+    /// workers take the newest job first.
     fn queue_visible(&self) {
         let gen = self.generation.load(Ordering::Relaxed);
         let vadj = self.root.vadjustment();
@@ -465,64 +526,81 @@ impl NewFilesView {
             // Not allocated yet; the `changed` handler runs once it is.
             return;
         }
-        let win_top = value - page;
+        let win_top = value - page * 0.5;
         let win_bottom = value + PAGES_BELOW * page;
-        let evict_below = value - PAGES_ABOVE_EVICT * page;
+        let evict_top = value - PAGES_ABOVE_EVICT * page;
+        let evict_bottom = value + (PAGES_BELOW + PAGES_ABOVE_EVICT) * page;
 
-        // Homogeneous cells: the per-cell pitch and the column count follow
-        // from the allocated width and the thumbnail size.
-        let pitch = (self.thumb_size.get() + CELL_SPACING) as f64;
-        let width = self.content.allocated_width() as f64 - 16.0; // content margins
-        let cols = if width > 0.0 {
-            ((width / pitch).floor() as usize).max(1)
-        } else {
-            6
-        };
-        let cols = cols.min(20);
-
-        let mut ranges = self.ranges.borrow_mut();
+        let ranges = self.ranges.borrow();
         let photos = self.photos.borrow();
         let pending = self.pending.borrow();
-        let mut top = 0.0f64;
-        for range in ranges.iter_mut() {
-            let count = (range.end - range.start) as f64;
-            let rows = (count / cols as f64).ceil().max(1.0);
-            let header_est = if range.first { FOLDER_HEADER_EST } else { 0.0 };
-            let range_top = top;
-            let range_bottom = range_top + rows * pitch + header_est;
-            top = range_bottom;
+        let mut state = self.state.borrow_mut();
 
-            if range.queued {
-                if range_bottom <= evict_below {
-                    // Far above the viewport: drop the textures and allow a
-                    // re-queue when the user scrolls back.
-                    for img in &pending[range.start..range.end] {
-                        img.set_paintable(None::<&gdk::Paintable>);
+        // Forget the queued jobs. Their cells go back to "none".
+        for j in self.jobs.q.lock().unwrap().drain(..) {
+            if let Some(st) = state.get_mut(j.index) {
+                if *st == ST_QUEUED {
+                    *st = ST_NONE;
+                }
+            }
+        }
+
+        let bounds_y = |img: &Image| -> Option<(f64, f64)> {
+            let b = img.compute_bounds(&self.content)?;
+            Some((b.y() as f64, (b.y() + b.height()) as f64))
+        };
+
+        let mut want: Vec<usize> = Vec::new();
+        for range in ranges.iter() {
+            if range.end <= range.start || range.end > pending.len() {
+                continue;
+            }
+            // A slice whose flow is not in the tree yet has no bounds.
+            let (Some((top, _)), Some((_, bottom))) =
+                (bounds_y(&pending[range.start]), bounds_y(&pending[range.end - 1]))
+            else {
+                continue;
+            };
+            if bottom < evict_top || top > evict_bottom {
+                // Far from the viewport: drop the textures.
+                for i in range.start..range.end {
+                    if state[i] != ST_NONE {
+                        pending[i].set_paintable(None::<&gdk::Paintable>);
+                        state[i] = ST_NONE;
                     }
-                    range.queued = false;
                 }
                 continue;
             }
-            if range_top >= win_bottom {
-                // Below the horizon; every later slice starts further down.
-                break;
-            }
-            if range_bottom <= win_top {
-                // Entirely above the viewport; skip without queueing.
+            if bottom < win_top || top > win_bottom {
                 continue;
             }
-            range.queued = true;
+            // The slice meets the window. Check each cell that needs work.
             for i in range.start..range.end {
-                let photo = &photos[i];
-                let _ = self.jobs.send(Job {
-                    hash: photo.hash.clone(),
-                    path: photo.path.clone(),
-                    orientation: photo.orientation,
-                    generation: gen,
-                    index: i,
-                });
+                if state[i] != ST_NONE {
+                    continue;
+                }
+                match bounds_y(&pending[i]) {
+                    Some((t, b)) if b >= win_top && t <= win_bottom => want.push(i),
+                    _ => {}
+                }
             }
         }
+
+        let mut q = self.jobs.q.lock().unwrap();
+        // Push the bottom cells first, so a worker takes the top cells first.
+        for &i in want.iter().rev() {
+            let photo = &photos[i];
+            state[i] = ST_QUEUED;
+            q.push(Job {
+                hash: photo.hash.clone(),
+                path: photo.path.clone(),
+                orientation: photo.orientation,
+                generation: gen,
+                index: i,
+            });
+        }
+        drop(q);
+        self.jobs.cv.notify_all();
     }
 
     fn activate(&self, index: usize) {
