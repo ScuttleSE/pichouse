@@ -321,7 +321,10 @@ FIRST scan auto-files every discovered folder into the disk-mirror album tree
 section is a tree built by `src/ui/nftree.rs`: unassigned folders nest under
 unassigned parent folder rows; parents with no folder row become synthetic
 `nfdir:<path>` nodes; a synthetic node left with one child collapses away; the
-chain stops at any ancestor of a filed folder or any library root. Clicking a
+chain stops at any ancestor of a filed folder or any library root. Each
+top-level new folder goes under a `nfparent:<path>` header for its stop point
+(the filed folder or root). A header never collapses. A drop of a header files
+each child as a separate drop. Clicking a
 synthetic node shows all photos under the directory
 (`Library::photos_under_dir`). Dragging a node onto an album files its whole
 unassigned subtree with nesting preserved (`Sidebar::move_new_folder_nodes`,

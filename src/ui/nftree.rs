@@ -14,6 +14,9 @@
 //!   library root, or the filesystem root. Everything below the stop point
 //!   counts as new, so a folder whose parent is already filed shows
 //!   standalone.
+//! - Each top-level new folder goes under a parent header
+//!   (`nfparent:<abs path>`) for its stop point: the filed folder or library
+//!   root above it. A header never collapses.
 //! - Collapse pass: a synthetic container left with exactly one child is
 //!   removed and its child promoted, up the whole tree. A single new folder
 //!   therefore shows standalone; a directory with several new subfolders
@@ -21,6 +24,11 @@
 
 /// Sidebar node id prefix for synthetic directory containers.
 pub const NFDIR_PREFIX: &str = "nfdir:";
+
+/// Sidebar node id prefix for a parent header. A header is the filed folder
+/// or library root above a group of new folders. It always shows, so the
+/// user can see where each new folder is on disk.
+pub const NFPARENT_PREFIX: &str = "nfparent:";
 
 /// A node in the New Folders tree. `id` is the sidebar node id (`folder:<fid>`
 /// for real folder rows, `nfdir:<path>` for synthetic directories).
@@ -51,11 +59,50 @@ impl NfNode {
 ///
 /// `unassigned` holds `(folder_id, path)` for every folder with no album
 /// membership. `assigned_paths` holds the paths of filed folders. `roots` are
-/// the library root paths. Returns the top-level nodes, sorted by name.
+/// the library root paths. Returns the parent headers, sorted by path. Each
+/// header holds the new folders below it.
 pub fn build(
     unassigned: &[(i64, String)],
     assigned_paths: &[String],
     roots: &[String],
+) -> Vec<NfNode> {
+    let mut headers: std::collections::BTreeMap<String, Vec<NfNode>> =
+        std::collections::BTreeMap::new();
+    for n in build_tree(unassigned, assigned_paths, roots, false) {
+        let parent = parent_of_path(&n.path).unwrap_or_else(|| n.path.clone());
+        headers.entry(parent).or_default().push(n);
+    }
+    headers
+        .into_iter()
+        .map(|(path, mut children)| {
+            sort_recursive(&mut children);
+            collapse_synthetics(&mut children);
+            NfNode {
+                id: format!("{NFPARENT_PREFIX}{path}"),
+                path,
+                children,
+            }
+        })
+        .collect()
+}
+
+/// Build the tree with no parent headers. Returns the top-level nodes.
+#[cfg(test)]
+fn build_flat(
+    unassigned: &[(i64, String)],
+    assigned_paths: &[String],
+    roots: &[String],
+) -> Vec<NfNode> {
+    build_tree(unassigned, assigned_paths, roots, true)
+}
+
+/// Build the tree. When `collapse` is false, the top-level nodes keep their
+/// stop-point parent in the path, so `build` can group them.
+fn build_tree(
+    unassigned: &[(i64, String)],
+    assigned_paths: &[String],
+    roots: &[String],
+    collapse: bool,
 ) -> Vec<NfNode> {
     let ua: std::collections::HashMap<String, i64> = unassigned
         .iter()
@@ -148,7 +195,9 @@ pub fn build(
     let top = by_parent.get(&None).cloned().unwrap_or_default();
     let mut out: Vec<NfNode> = top.iter().map(|id| assemble(id, &nodes, &by_parent)).collect();
     sort_recursive(&mut out);
-    collapse_synthetics(&mut out);
+    if collapse {
+        collapse_synthetics(&mut out);
+    }
     out
 }
 
@@ -240,7 +289,7 @@ mod tests {
 
     #[test]
     fn single_folder_shows_standalone() {
-        let tree = build(
+        let tree = build_flat(
             &[(1, format!("{ROOT}/single_folder"))],
             &[format!("{ROOT}/beach")],
             &[s(ROOT)],
@@ -251,7 +300,7 @@ mod tests {
     #[test]
     fn folder_with_subfolders_groups_under_synthetic_dir() {
         // Scenario 2: vacation (no folder row, no images) with italy + greece.
-        let tree = build(
+        let tree = build_flat(
             &[
                 (10, format!("{ROOT}/vacation/italy")),
                 (11, format!("{ROOT}/vacation/greece")),
@@ -268,7 +317,7 @@ mod tests {
     #[test]
     fn parent_dir_already_filed_shows_standalone() {
         // Scenario 3: vacation was filed (italy assigned); spain is new.
-        let tree = build(
+        let tree = build_flat(
             &[(12, format!("{ROOT}/vacation/spain"))],
             &[format!("{ROOT}/vacation/italy")],
             &[s(ROOT)],
@@ -281,7 +330,7 @@ mod tests {
     fn deep_new_folder_with_subfolders_nests() {
         // Scenario 4: italy filed; winter_vacations (no folder row) is new
         // with three subfolders. It stays as a synthetic group.
-        let tree = build(
+        let tree = build_flat(
             &[
                 (20, format!("{ROOT}/vacation/italy/winter_vacations/alps")),
                 (21, format!("{ROOT}/vacation/italy/winter_vacations/lakes")),
@@ -302,7 +351,7 @@ mod tests {
     fn new_folder_row_nests_under_unassigned_parent_folder() {
         // winter_vacations HAS a folder row and its parent italy is also
         // unassigned: it nests under the italy folder node.
-        let tree = build(
+        let tree = build_flat(
             &[
                 (30, format!("{ROOT}/vacation/italy")),
                 (31, format!("{ROOT}/vacation/italy/winter")),
@@ -318,7 +367,7 @@ mod tests {
     #[test]
     fn synthetic_chain_collapses_single_children() {
         // a/b/c with only c unassigned: synthetic a and a/b collapse away.
-        let tree = build(
+        let tree = build_flat(
             &[(40, format!("{ROOT}/a/b/c"))],
             &[format!("{ROOT}/other")],
             &[s(ROOT)],
@@ -331,13 +380,13 @@ mod tests {
     #[test]
     fn nothing_assigned_uses_roots_as_stop() {
         // Only y unassigned under root/x/y: synthetic x collapses.
-        let tree = build(&[(50, format!("{ROOT}/x/y"))], &[], &[s(ROOT)]);
+        let tree = build_flat(&[(50, format!("{ROOT}/x/y"))], &[], &[s(ROOT)]);
         assert_eq!(fids(&tree), vec![50]);
     }
 
     #[test]
     fn mixed_multi_level_tree_keeps_multi_child_synthetics() {
-        let tree = build(
+        let tree = build_flat(
             &[
                 (60, format!("{ROOT}/trip/italy")),
                 (61, format!("{ROOT}/trip/greece")),
@@ -367,7 +416,7 @@ mod tests {
     #[test]
     fn find_locates_nested_node() {
         // Two folders under trip so the synthetic dir survives the collapse.
-        let tree = build(
+        let tree = build_flat(
             &[
                 (70, format!("{ROOT}/trip/italy")),
                 (71, format!("{ROOT}/trip/greece")),
@@ -383,12 +432,32 @@ mod tests {
         assert!(NfNode::find(&tree, "folder:70").is_some());
         assert!(NfNode::find(&tree, "folder:999").is_none());
         // A collapsed synthetic id is not findable.
-        let single = build(
+        let single = build_flat(
             &[(72, format!("{ROOT}/a/b/c"))],
             &[format!("{ROOT}/other")],
             &[s(ROOT)],
         );
         assert!(NfNode::find(&single, &format!("{NFDIR_PREFIX}{ROOT}/a")).is_none());
         assert!(NfNode::find(&single, "folder:72").is_some());
+    }
+
+    #[test]
+    fn groups_new_folders_under_filed_parents() {
+        let tree = build(
+            &[
+                (80, format!("{ROOT}/A/new1")),
+                (81, format!("{ROOT}/A/new2")),
+                (82, format!("{ROOT}/B/new3")),
+                (83, format!("{ROOT}/B/x/y")),
+            ],
+            &[format!("{ROOT}/A/old"), format!("{ROOT}/B/old")],
+            &[s(ROOT)],
+        );
+        assert_eq!(tree.len(), 2);
+        assert_eq!(tree[0].id, format!("{NFPARENT_PREFIX}{ROOT}/A"));
+        assert_eq!(fids(&tree[0].children), vec![80, 81]);
+        assert_eq!(tree[1].id, format!("{NFPARENT_PREFIX}{ROOT}/B"));
+        // The single-child synthetic x collapses. The header stays.
+        assert_eq!(fids(&tree[1].children), vec![82, 83]);
     }
 }

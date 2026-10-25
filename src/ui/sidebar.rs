@@ -733,6 +733,14 @@ impl Sidebar {
                 format!("New folders ({})", data.unassigned.len()),
                 "folder-symbolic",
             )
+        } else if let Some(path) = nfparent_path_of(id) {
+            // A parent header: the filed folder or library root above the
+            // new folders. The icon marks it as already in the library.
+            let name = std::path::Path::new(&path)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.clone());
+            (format!("in {name}"), "folder-open-symbolic")
         } else if let Some(path) = nfdir_path_of(id) {
             let name = std::path::Path::new(&path)
                 .file_name()
@@ -925,7 +933,7 @@ impl Sidebar {
                     return;
                 }
             }
-            if let Some(path) = nfdir_path_of(&id) {
+            if let Some(path) = nfdir_path_of(&id).or_else(|| nfparent_path_of(&id)) {
                 if let Some(state) = self.state() {
                     state.show_new_folder_dir(&path);
                     return;
@@ -1860,7 +1868,11 @@ impl Sidebar {
         };
         self.selected_ids(&sel)
             .into_iter()
-            .filter(|id| folder_id_of(id).is_some() || nfdir_path_of(id).is_some())
+            .filter(|id| {
+                folder_id_of(id).is_some()
+                    || nfdir_path_of(id).is_some()
+                    || nfparent_path_of(id).is_some()
+            })
             .collect()
     }
 
@@ -1878,6 +1890,23 @@ impl Sidebar {
             return;
         }
         let Some(state) = self.state() else { return };
+        // A parent header files each child as if the user dropped that child.
+        // So the header itself makes no album.
+        let ids: Vec<String> = {
+            let data = self.data.borrow();
+            ids.iter()
+                .flat_map(|id| {
+                    if nfparent_path_of(id).is_some() {
+                        super::nftree::NfNode::find(&data.nf_tree, id)
+                            .map(|n| n.children.iter().map(|c| c.id.clone()).collect())
+                            .unwrap_or_default()
+                    } else {
+                        vec![id.clone()]
+                    }
+                })
+                .collect()
+        };
+        let ids = &ids[..];
         // Gather the subtree roots: (base disk path, includes the folder row
         // itself). Synthetic dirs never have a row of their own.
         let mut bases: Vec<(String, bool)> = Vec::new();
@@ -3229,6 +3258,7 @@ impl Sidebar {
                 && character_id_of(&id).is_none()
                 && character_group_id_of(&id).is_none()
                 && nfdir_path_of(&id).is_none()
+                && nfparent_path_of(&id).is_none()
             {
                 return None;
             }
@@ -3311,7 +3341,10 @@ impl Sidebar {
                 }
                 this.reparent_albums(&aids, target_album);
                 true
-            } else if folder_id_of(&dragged).is_some() || nfdir_path_of(&dragged).is_some() {
+            } else if folder_id_of(&dragged).is_some()
+                || nfdir_path_of(&dragged).is_some()
+                || nfparent_path_of(&dragged).is_some()
+            {
                 // A folder or a synthetic "New folders" directory. Unassigned
                 // folders carry their unassigned subtree with them (so dragging
                 // a new group files the whole tree); assigned folders move flat,
@@ -3900,6 +3933,10 @@ fn folder_id_of(id: &str) -> Option<i64> {
 }
 
 /// The absolute disk path of a synthetic "New folders" directory node.
+fn nfparent_path_of(id: &str) -> Option<String> {
+    id.strip_prefix(super::nftree::NFPARENT_PREFIX).map(|s| s.to_string())
+}
+
 fn nfdir_path_of(id: &str) -> Option<String> {
     id.strip_prefix(super::nftree::NFDIR_PREFIX).map(|s| s.to_string())
 }
