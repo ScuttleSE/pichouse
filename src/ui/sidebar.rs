@@ -933,9 +933,15 @@ impl Sidebar {
                     return;
                 }
             }
-            if let Some(path) = nfdir_path_of(&id).or_else(|| nfparent_path_of(&id)) {
+            if let Some(path) = nfdir_path_of(&id) {
                 if let Some(state) = self.state() {
-                    state.show_new_folder_dir(&path);
+                    state.show_new_folder_dir(&path, false);
+                    return;
+                }
+            }
+            if let Some(path) = nfparent_path_of(&id) {
+                if let Some(state) = self.state() {
+                    state.show_new_folder_dir(&path, true);
                     return;
                 }
             }

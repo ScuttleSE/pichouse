@@ -517,9 +517,12 @@ impl AppState {
     /// Show every photo under a directory and its subdirectories in the grid.
     /// Backs the synthetic directory nodes in the "New folders" sidebar
     /// section, which have no folder row of their own.
-    pub fn show_new_folder_dir(self: &Rc<Self>, path: &str) {
+    pub fn show_new_folder_dir(self: &Rc<Self>, path: &str, unassigned_only: bool) {
         *self.current_folder.borrow_mut() = 0;
-        let photos = self.lib.photos_under_dir(path).unwrap_or_default();
+        let photos = self
+            .lib
+            .photos_under_dir(path, unassigned_only)
+            .unwrap_or_default();
         let name = std::path::Path::new(path)
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())

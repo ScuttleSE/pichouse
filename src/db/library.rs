@@ -1467,17 +1467,23 @@ impl Library {
 
     /// All photos in a directory and its subdirectories, ordered by taken date
     /// then name. Backs the synthetic "New folders" directory nodes, which have
-    /// no folder row of their own.
-    pub fn photos_under_dir(&self, dir: &str) -> Result<Vec<Photo>> {
+    /// no folder row of their own. When `unassigned_only` is true, the query
+    /// skips folders that are in an album.
+    pub fn photos_under_dir(&self, dir: &str, unassigned_only: bool) -> Result<Vec<Photo>> {
         let sep = std::path::MAIN_SEPARATOR.to_string();
         let prefix = format!("{}{}%", dir, sep);
+        let filter = if unassigned_only {
+            " AND NOT EXISTS (SELECT 1 FROM album_folders af WHERE af.folder_id = f.id)"
+        } else {
+            ""
+        };
         let conn = self.read_lock();
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare(&format!(
             "SELECT p.id, p.folder_id, p.path, p.filename, p.size, p.mod_time, p.taken_at, p.width, p.height, p.hash, p.thumb_ready, p.orientation, p.ai_status, p.scan_state, p.missing, p.added_at, p.phash, p.skip_face_scan
              FROM photos p JOIN folders f ON f.id = p.folder_id
-             WHERE (f.path = ?1 OR f.path LIKE ?2) AND p.missing = 0
-             ORDER BY p.taken_at ASC, p.filename ASC",
-        )?;
+             WHERE (f.path = ?1 OR f.path LIKE ?2) AND p.missing = 0{filter}
+             ORDER BY p.taken_at ASC, p.filename ASC"
+        ))?;
         let rows = stmt.query_map(params![dir, prefix], map_photo)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
